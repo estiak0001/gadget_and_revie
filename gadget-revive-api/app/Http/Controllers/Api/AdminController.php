@@ -2865,7 +2865,10 @@ class AdminController extends BaseController
             'stock_qty', 'low_stock_threshold', 'unit', 'brand', 'model',
             'warranty', 'is_active', 'is_featured', 'sort_order',
         ]);
-        $data['always_in_stock'] = $request->boolean('always_in_stock', false);
+        // New products default to "always in stock" — most items here are effectively
+        // made-to-order/replenished-on-demand, so untracked availability is the norm rather
+        // than the exception; an admin can uncheck it for anything that needs real counting.
+        $data['always_in_stock'] = $request->boolean('always_in_stock', true);
 
         // Handle main image upload
         if ($request->hasFile('image')) {
