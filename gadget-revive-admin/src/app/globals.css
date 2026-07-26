@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-100 text-gray-900 antialiased;
+  }
+}
+
+@layer components {
+  .page-header {
+    @apply mb-6;
+  }
+  
+  .page-title {
+    @apply text-2xl font-bold text-gray-900;
+  }
+  
+  .page-description {
+    @apply text-sm text-gray-500 mt-1;
+  }
+}
+
+/* TipTap Editor Styles */
+.ProseMirror {
+  @apply outline-none;
+}
+
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  @apply text-gray-400 float-left h-0 pointer-events-none;
+}
+
+.ProseMirror h2 {
+  @apply text-2xl font-bold mt-4 mb-2;
+}
+
+.ProseMirror h3 {
+  @apply text-xl font-bold mt-3 mb-2;
+}
+
+.ProseMirror ul,
+.ProseMirror ol {
+  @apply pl-6 my-2;
+}
+
+.ProseMirror ul {
+  @apply list-disc;
+}
+
+.ProseMirror ol {
+  @apply list-decimal;
+}
+
+.ProseMirror blockquote {
+  @apply border-l-4 border-gray-300 pl-4 italic my-2;
+}
+
+.ProseMirror code {
+  @apply bg-gray-100 px-1 py-0.5 rounded text-sm font-mono;
+}
+
+.ProseMirror a {
+  @apply text-blue-600 underline;
+}
+
+.ProseMirror strong {
+  @apply font-bold;
+}
+
+.ProseMirror em {
+  @apply italic;
+}
+
+.ProseMirror s {
+  @apply line-through;
+}
+
+/* Rich content display (for rendering saved HTML outside editor) */
+.rich-content p { @apply mb-2 leading-relaxed; }
+.rich-content h2 { @apply text-xl font-bold mt-4 mb-2; }
+.rich-content h3 { @apply text-lg font-bold mt-3 mb-2; }
+.rich-content ul { @apply list-disc pl-6 my-2; }
+.rich-content ol { @apply list-decimal pl-6 my-2; }
+.rich-content li { @apply mb-1; }
+.rich-content blockquote { @apply border-l-4 border-gray-300 pl-4 italic my-2 text-gray-600; }
+.rich-content code { @apply bg-gray-100 px-1 py-0.5 rounded text-sm font-mono; }
+.rich-content a { @apply text-blue-600 underline hover:text-blue-800; }
+.rich-content strong { @apply font-bold; }
+.rich-content em { @apply italic; }
+.rich-content s { @apply line-through; }

@@ -1,0 +1,1874 @@
+{
+	"info": {
+		"_postman_id": "gadget-revive-api-2025",
+		"name": "Gadget Revive API",
+		"description": "Complete API collection for Gadget Revive - A repair services marketplace connecting customers with verified vendors",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "gadget-revive"
+	},
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "{{auth_token}}",
+				"type": "string"
+			}
+		]
+	},
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Register",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"John Doe\",\n    \"email\": \"john@example.com\",\n    \"phone\": \"01700000000\",\n    \"password\": \"password123\",\n    \"password_confirmation\": \"password123\",\n    \"role\": \"customer\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/register",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "register"]
+						}
+					}
+				},
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"const response = pm.response.json();",
+									"if (response.token) {",
+									"    pm.environment.set('auth_token', response.token);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"admin@gadgetrevive.com\",\n    \"password\": \"password\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/login",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "login"]
+						}
+					}
+				},
+				{
+					"name": "Verify Email",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"john@example.com\",\n    \"token\": \"verification_token_here\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/verify-email",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "verify-email"]
+						}
+					}
+				},
+				{
+					"name": "Get Profile",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/auth/profile",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "profile"]
+						}
+					}
+				},
+				{
+					"name": "Update Profile",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"John Doe Updated\",\n    \"phone\": \"01712345678\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/profile",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "profile"]
+						}
+					}
+				},
+				{
+					"name": "Forgot Password",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"john@example.com\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/forgot-password",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "forgot-password"]
+						}
+					}
+				},
+				{
+					"name": "Reset Password",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"john@example.com\",\n    \"token\": \"reset_token_here\",\n    \"password\": \"newpassword123\",\n    \"password_confirmation\": \"newpassword123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/reset-password",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "reset-password"]
+						}
+					}
+				},
+				{
+					"name": "Logout",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/auth/logout",
+							"host": ["{{base_url}}"],
+							"path": ["auth", "logout"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Vendors",
+			"item": [
+				{
+					"name": "Get All Vendors (Public)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/vendors?search=repair&division_id=1&rating_min=4&per_page=10&page=1",
+							"host": ["{{base_url}}"],
+							"path": ["vendors"],
+							"query": [
+								{
+									"key": "search",
+									"value": "repair"
+								},
+								{
+									"key": "division_id",
+									"value": "1"
+								},
+								{
+									"key": "district_id",
+									"value": "1",
+									"disabled": true
+								},
+								{
+									"key": "area_id",
+									"value": "1",
+									"disabled": true
+								},
+								{
+									"key": "rating_min",
+									"value": "4"
+								},
+								{
+									"key": "per_page",
+									"value": "10"
+								},
+								{
+									"key": "page",
+									"value": "1"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Vendor Details (Public)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/vendors/:slug",
+							"host": ["{{base_url}}"],
+							"path": ["vendors", ":slug"],
+							"variable": [
+								{
+									"key": "slug",
+									"value": "vendor-slug"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Vendor Onboarding",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"business_name\": \"Tech Repair Pro\",\n    \"description\": \"Professional gadget repair services\",\n    \"address\": \"123 Main Street, Dhaka\",\n    \"division_id\": 1,\n    \"district_id\": 1,\n    \"area_id\": 1,\n    \"trade_license\": \"TL123456\",\n    \"bkash_number\": \"01712345678\",\n    \"payment_instructions\": \"Send payment to bKash and provide transaction ID\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/vendor/onboarding",
+							"host": ["{{base_url}}"],
+							"path": ["vendor", "onboarding"]
+						}
+					}
+				},
+				{
+					"name": "Get Vendor Profile",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/vendor/profile",
+							"host": ["{{base_url}}"],
+							"path": ["vendor", "profile"]
+						}
+					}
+				},
+				{
+					"name": "Update Vendor Profile",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"business_name\": \"Tech Repair Pro Updated\",\n    \"description\": \"Updated description\",\n    \"bkash_number\": \"01798765432\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/vendor/profile",
+							"host": ["{{base_url}}"],
+							"path": ["vendor", "profile"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Services",
+			"item": [
+				{
+					"name": "Get All Services",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/services?category_id=1&vendor_id=1&search=screen&min_price=100&max_price=5000&per_page=10",
+							"host": ["{{base_url}}"],
+							"path": ["services"],
+							"query": [
+								{
+									"key": "category_id",
+									"value": "1"
+								},
+								{
+									"key": "vendor_id",
+									"value": "1"
+								},
+								{
+									"key": "search",
+									"value": "screen"
+								},
+								{
+									"key": "min_price",
+									"value": "100"
+								},
+								{
+									"key": "max_price",
+									"value": "5000"
+								},
+								{
+									"key": "per_page",
+									"value": "10"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Service Details",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/services/:id",
+							"host": ["{{base_url}}"],
+							"path": ["services", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Create Service (Vendor)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"service_category_id\": 1,\n    \"name\": \"Screen Replacement\",\n    \"code\": \"SRV-001\",\n    \"description\": \"Professional screen replacement service\",\n    \"base_price\": 2500,\n    \"duration_estimate\": 60,\n    \"is_active\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/vendor/services",
+							"host": ["{{base_url}}"],
+							"path": ["vendor", "services"]
+						}
+					}
+				},
+				{
+					"name": "Update Service (Vendor)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Screen Replacement Updated\",\n    \"base_price\": 2800,\n    \"is_active\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/vendor/services/:id",
+							"host": ["{{base_url}}"],
+							"path": ["vendor", "services", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Delete Service (Vendor)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/vendor/services/:id",
+							"host": ["{{base_url}}"],
+							"path": ["vendor", "services", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Products",
+			"item": [
+				{
+					"name": "Get All Products",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/products?category_id=1&vendor_id=1&search=battery&in_stock=true&per_page=10",
+							"host": ["{{base_url}}"],
+							"path": ["products"],
+							"query": [
+								{
+									"key": "category_id",
+									"value": "1"
+								},
+								{
+									"key": "vendor_id",
+									"value": "1"
+								},
+								{
+									"key": "search",
+									"value": "battery"
+								},
+								{
+									"key": "in_stock",
+									"value": "true"
+								},
+								{
+									"key": "per_page",
+									"value": "10"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Product Details",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/products/:id",
+							"host": ["{{base_url}}"],
+							"path": ["products", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Create Product (Vendor)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"product_category_id\": 1,\n    \"sku\": \"PRD-001\",\n    \"name\": \"iPhone 13 Battery\",\n    \"description\": \"Original iPhone 13 replacement battery\",\n    \"price\": 4500,\n    \"stock_qty\": 20,\n    \"low_stock_threshold\": 5,\n    \"warranty_period\": \"6 months\",\n    \"is_active\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/vendor/products",
+							"host": ["{{base_url}}"],
+							"path": ["vendor", "products"]
+						}
+					}
+				},
+				{
+					"name": "Update Product (Vendor)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"price\": 4800,\n    \"stock_qty\": 15,\n    \"is_active\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/vendor/products/:id",
+							"host": ["{{base_url}}"],
+							"path": ["vendor", "products", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Adjust Stock (Vendor)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"adjusted_qty\": -5,\n    \"type\": \"damaged\",\n    \"reason\": \"Water damaged batteries\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/vendor/products/:id/adjust-stock",
+							"host": ["{{base_url}}"],
+							"path": ["vendor", "products", ":id", "adjust-stock"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Cart",
+			"item": [
+				{
+					"name": "Get Cart",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/cart",
+							"host": ["{{base_url}}"],
+							"path": ["cart"]
+						}
+					}
+				},
+				{
+					"name": "Add Item to Cart",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"item_type\": \"product\",\n    \"item_id\": 1,\n    \"quantity\": 2,\n    \"notes\": \"Please check quality before shipping\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/cart/items",
+							"host": ["{{base_url}}"],
+							"path": ["cart", "items"]
+						}
+					}
+				},
+				{
+					"name": "Update Cart Item",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"quantity\": 3\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/cart/items/:id",
+							"host": ["{{base_url}}"],
+							"path": ["cart", "items", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Remove Cart Item",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/cart/items/:id",
+							"host": ["{{base_url}}"],
+							"path": ["cart", "items", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Clear Cart",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/cart",
+							"host": ["{{base_url}}"],
+							"path": ["cart"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Orders",
+			"item": [
+				{
+					"name": "Checkout (Customer)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"vendor_profile_id\": 1,\n    \"payment_method\": \"bkash\",\n    \"delivery_address\": \"123 Main St, Dhaka\",\n    \"division_id\": 1,\n    \"district_id\": 1,\n    \"area_id\": 1,\n    \"contact_phone\": \"01712345678\",\n    \"customer_notes\": \"Please call before delivery\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/orders/checkout",
+							"host": ["{{base_url}}"],
+							"path": ["orders", "checkout"]
+						}
+					}
+				},
+				{
+					"name": "Get My Orders (Customer)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/orders?status=pending&per_page=10",
+							"host": ["{{base_url}}"],
+							"path": ["orders"],
+							"query": [
+								{
+									"key": "status",
+									"value": "pending"
+								},
+								{
+									"key": "per_page",
+									"value": "10"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Order Details (Customer)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/orders/:id",
+							"host": ["{{base_url}}"],
+							"path": ["orders", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Cancel Order (Customer)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"cancellation_reason\": \"Changed my mind\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/orders/:id/cancel",
+							"host": ["{{base_url}}"],
+							"path": ["orders", ":id", "cancel"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Vendor Orders (Vendor)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/vendor/orders?status=pending&per_page=10",
+							"host": ["{{base_url}}"],
+							"path": ["vendor", "orders"],
+							"query": [
+								{
+									"key": "status",
+									"value": "pending"
+								},
+								{
+									"key": "per_page",
+									"value": "10"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Accept Order (Vendor)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/vendor/orders/:id/accept",
+							"host": ["{{base_url}}"],
+							"path": ["vendor", "orders", ":id", "accept"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Reject Order (Vendor)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"reason\": \"Out of stock\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/vendor/orders/:id/reject",
+							"host": ["{{base_url}}"],
+							"path": ["vendor", "orders", ":id", "reject"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Update Order Status (Vendor)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"status\": \"in_progress\",\n    \"vendor_notes\": \"Started working on the repair\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/vendor/orders/:id/status",
+							"host": ["{{base_url}}"],
+							"path": ["vendor", "orders", ":id", "status"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Mark Payment Received (Vendor)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"transaction_reference\": \"TRX123456789\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/vendor/orders/:id/payment-received",
+							"host": ["{{base_url}}"],
+							"path": ["vendor", "orders", ":id", "payment-received"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Reviews",
+			"item": [
+				{
+					"name": "Submit Review (Customer)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"order_id\": 1,\n    \"rating\": 5,\n    \"comment\": \"Excellent service! Very professional and quick.\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/reviews",
+							"host": ["{{base_url}}"],
+							"path": ["reviews"]
+						}
+					}
+				},
+				{
+					"name": "Get Vendor Reviews (Public)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/vendors/:vendorId/reviews?per_page=10",
+							"host": ["{{base_url}}"],
+							"path": ["vendors", ":vendorId", "reviews"],
+							"query": [
+								{
+									"key": "per_page",
+									"value": "10"
+								}
+							],
+							"variable": [
+								{
+									"key": "vendorId",
+									"value": "1"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Reply to Review (Vendor)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"vendor_reply\": \"Thank you for your kind words! We're glad you're satisfied.\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/vendor/reviews/:id/reply",
+							"host": ["{{base_url}}"],
+							"path": ["vendor", "reviews", ":id", "reply"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Support Tickets",
+			"item": [
+				{
+					"name": "Create Ticket",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"subject\": \"Issue with my order\",\n    \"message\": \"I haven't received my order yet\",\n    \"order_id\": 1,\n    \"priority\": \"high\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/tickets",
+							"host": ["{{base_url}}"],
+							"path": ["tickets"]
+						}
+					}
+				},
+				{
+					"name": "Get My Tickets",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/tickets?status=open&per_page=10",
+							"host": ["{{base_url}}"],
+							"path": ["tickets"],
+							"query": [
+								{
+									"key": "status",
+									"value": "open"
+								},
+								{
+									"key": "per_page",
+									"value": "10"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Ticket Details",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/tickets/:id",
+							"host": ["{{base_url}}"],
+							"path": ["tickets", ":id"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Add Message to Ticket",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"message\": \"Any update on this?\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/tickets/:id/messages",
+							"host": ["{{base_url}}"],
+							"path": ["tickets", ":id", "messages"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Close Ticket",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/tickets/:id/close",
+							"host": ["{{base_url}}"],
+							"path": ["tickets", ":id", "close"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Locations",
+			"item": [
+				{
+					"name": "Get Divisions",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/locations/divisions",
+							"host": ["{{base_url}}"],
+							"path": ["locations", "divisions"]
+						}
+					}
+				},
+				{
+					"name": "Get Districts by Division",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/locations/divisions/:divisionId/districts",
+							"host": ["{{base_url}}"],
+							"path": ["locations", "divisions", ":divisionId", "districts"],
+							"variable": [
+								{
+									"key": "divisionId",
+									"value": "1"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Get Areas by District",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/locations/districts/:districtId/areas",
+							"host": ["{{base_url}}"],
+							"path": ["locations", "districts", ":districtId", "areas"],
+							"variable": [
+								{
+									"key": "districtId",
+									"value": "1"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Admin - Vendors",
+			"item": [
+				{
+					"name": "Get Pending Vendors",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/admin/vendors/pending",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "vendors", "pending"]
+						}
+					}
+				},
+				{
+					"name": "Approve Vendor",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/admin/vendors/:id/approve",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "vendors", ":id", "approve"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Reject Vendor",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"rejection_reason\": \"Invalid trade license\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/admin/vendors/:id/reject",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "vendors", ":id", "reject"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Request More Info",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"info_request\": \"Please provide clearer images of your trade license\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/admin/vendors/:id/request-info",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "vendors", ":id", "request-info"],
+							"variable": [
+								{
+									"key": "id",
+									"value": "1"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Admin - CMS",
+			"item": [
+				{
+					"name": "Get All Pages",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/admin/cms/pages",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "cms", "pages"]
+						}
+					}
+				},
+				{
+					"name": "Create Page",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"title\": \"About Us\",\n    \"slug\": \"about-us\",\n    \"content\": \"<h1>About Gadget Revive</h1><p>We connect customers with trusted repair vendors...</p>\",\n    \"meta_title\": \"About Us - Gadget Revive\",\n    \"meta_description\": \"Learn about Gadget Revive marketplace\",\n    \"is_active\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/admin/cms/pages",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "cms", "pages"]
+						}
+					}
+				},
+				{
+					"name": "Get Banners",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/admin/cms/banners",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "cms", "banners"]
+						}
+					}
+				},
+				{
+					"name": "Create Banner",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"title\": \"Summer Sale\",\n    \"description\": \"Get 20% off on all repairs\",\n    \"image\": \"banners/summer-sale.jpg\",\n    \"link\": \"/services\",\n    \"position\": \"home_slider\",\n    \"is_active\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/admin/cms/banners",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "cms", "banners"]
+						}
+					}
+				},
+				{
+					"name": "Get Service Categories",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/admin/cms/service-categories",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "cms", "service-categories"]
+						}
+					}
+				},
+				{
+					"name": "Create Service Category",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"Laptop Repair\",\n    \"slug\": \"laptop-repair\",\n    \"description\": \"All types of laptop repair services\",\n    \"is_active\": true\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/admin/cms/service-categories",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "cms", "service-categories"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Admin - Reports",
+			"item": [
+				{
+					"name": "Dashboard Stats",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/admin/reports/dashboard",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "reports", "dashboard"]
+						}
+					}
+				},
+				{
+					"name": "Sales Report",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/admin/reports/sales?start_date=2025-01-01&end_date=2025-12-31&vendor_id=1",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "reports", "sales"],
+							"query": [
+								{
+									"key": "start_date",
+									"value": "2025-01-01"
+								},
+								{
+									"key": "end_date",
+									"value": "2025-12-31"
+								},
+								{
+									"key": "vendor_id",
+									"value": "1"
+								}
+							]
+						}
+					}
+				},
+				{
+					"name": "Audit Logs",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{auth_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/admin/reports/audit-logs?action=create&resource_type=Order&per_page=20",
+							"host": ["{{base_url}}"],
+							"path": ["admin", "reports", "audit-logs"],
+							"query": [
+								{
+									"key": "action",
+									"value": "create"
+								},
+								{
+									"key": "resource_type",
+									"value": "Order"
+								},
+								{
+									"key": "per_page",
+									"value": "20"
+								}
+							]
+						}
+					}
+				}
+			]
+		}
+	],
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"exec": [
+					""
+				]
+			}
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:8000/api",
+			"type": "string"
+		},
+		{
+			"key": "auth_token",
+			"value": "",
+			"type": "string"
+		}
+	]
+}

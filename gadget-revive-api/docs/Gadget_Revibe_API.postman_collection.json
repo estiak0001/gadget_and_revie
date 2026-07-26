@@ -1,0 +1,1858 @@
+{
+  "info": {
+    "_postman_id": "gadget-revibe-api-collection",
+    "name": "Gadget Revibe API",
+    "description": "Complete API collection for Gadget Revibe - Repair Services Web Application\n\n## Overview\nThis API supports a multi-tenant repair services marketplace with Customer, Vendor, and Admin roles.\n\n## Authentication\n- Uses Laravel Sanctum for token-based authentication\n- After login, include the token in Authorization header as: `Bearer {token}`\n\n## Base URL\n`{{base_url}}/api`\n\n## Default Credentials\n- Admin: admin@gadgetrevibe.com / Admin@123456\n- Customer: customer@gadgetrevibe.com / Customer@123456\n- Vendor: vendor@gadgetrevibe.com / Vendor@123456",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Register Customer",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"John Doe\",\n  \"email\": \"john@example.com\",\n  \"phone\": \"01712345678\",\n  \"password\": \"Password@123\",\n  \"password_confirmation\": \"Password@123\"\n}"
+            },
+            "url": "{{base_url}}/api/auth/register/customer"
+          }
+        },
+        {
+          "name": "Register Vendor",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Vendor Owner\",\n  \"email\": \"vendor@example.com\",\n  \"phone\": \"01812345678\",\n  \"password\": \"Password@123\",\n  \"password_confirmation\": \"Password@123\",\n  \"business_name\": \"Tech Repair Shop\",\n  \"owner_name\": \"Vendor Owner\",\n  \"division_id\": 1,\n  \"district_id\": 1,\n  \"area_id\": 1,\n  \"address\": \"123 Main Street\"\n}"
+            },
+            "url": "{{base_url}}/api/auth/register/vendor"
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.data && jsonData.data.token) {",
+                  "    pm.collectionVariables.set('token', jsonData.data.token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@gadgetrevibe.com\",\n  \"password\": \"Admin@123456\"\n}"
+            },
+            "url": "{{base_url}}/api/auth/login"
+          }
+        },
+        {
+          "name": "Get Current User",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/auth/me"
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/auth/logout"
+          }
+        },
+        {
+          "name": "Forgot Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\"\n}"
+            },
+            "url": "{{base_url}}/api/auth/forgot-password"
+          }
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"token\": \"reset_token_here\",\n  \"password\": \"NewPassword@123\",\n  \"password_confirmation\": \"NewPassword@123\"\n}"
+            },
+            "url": "{{base_url}}/api/auth/reset-password"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Locations",
+      "item": [
+        {
+          "name": "Get All Divisions",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/api/locations/divisions"
+          }
+        },
+        {
+          "name": "Get Districts by Division",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/api/locations/divisions/1/districts"
+          }
+        },
+        {
+          "name": "Get Areas by District",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/api/locations/districts/1/areas"
+          }
+        },
+        {
+          "name": "Search Locations",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/locations/search?query=Dhaka",
+              "host": ["{{base_url}}"],
+              "path": ["api", "locations", "search"],
+              "query": [{ "key": "query", "value": "Dhaka" }]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Categories",
+      "item": [
+        {
+          "name": "Get Service Categories",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/api/categories/services"
+          }
+        },
+        {
+          "name": "Get Service Category",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/api/categories/services/1"
+          }
+        },
+        {
+          "name": "Get Product Categories",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/api/categories/products"
+          }
+        },
+        {
+          "name": "Get Product Category",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/api/categories/products/1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public - Vendors",
+      "item": [
+        {
+          "name": "Get All Vendors",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/vendors?per_page=10",
+              "host": ["{{base_url}}"],
+              "path": ["api", "vendors"],
+              "query": [{ "key": "per_page", "value": "10" }]
+            }
+          }
+        },
+        {
+          "name": "Search Vendors",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/vendors/search?query=repair&division_id=1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "vendors", "search"],
+              "query": [
+                { "key": "query", "value": "repair" },
+                { "key": "division_id", "value": "1" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Featured Vendors",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/api/vendors/featured"
+          }
+        },
+        {
+          "name": "Get Vendor Details",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/api/vendors/1"
+          }
+        },
+        {
+          "name": "Get Vendor Services",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/api/vendors/1/services"
+          }
+        },
+        {
+          "name": "Get Vendor Products",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/api/vendors/1/products"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public - Services",
+      "item": [
+        {
+          "name": "Get All Services",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/api/services"
+          }
+        },
+        {
+          "name": "Search Services",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/services/search?query=screen&category_id=1",
+              "host": ["{{base_url}}"],
+              "path": ["api", "services", "search"],
+              "query": [
+                { "key": "query", "value": "screen" },
+                { "key": "category_id", "value": "1" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Featured Services",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/api/services/featured"
+          }
+        },
+        {
+          "name": "Get Services by Category",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/api/services/category/1"
+          }
+        },
+        {
+          "name": "Get Service Details",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/api/services/1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public - Products",
+      "item": [
+        {
+          "name": "Get All Products",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/api/products"
+          }
+        },
+        {
+          "name": "Search Products",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/products/search?query=battery",
+              "host": ["{{base_url}}"],
+              "path": ["api", "products", "search"],
+              "query": [{ "key": "query", "value": "battery" }]
+            }
+          }
+        },
+        {
+          "name": "Get Featured Products",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/api/products/featured"
+          }
+        },
+        {
+          "name": "Get Products by Category",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/api/products/category/1"
+          }
+        },
+        {
+          "name": "Get Product Details",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/api/products/1"
+          }
+        },
+        {
+          "name": "Check Product Stock",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/products/1/check-stock?quantity=2",
+              "host": ["{{base_url}}"],
+              "path": ["api", "products", "1", "check-stock"],
+              "query": [{ "key": "quantity", "value": "2" }]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public - CMS & Content",
+      "item": [
+        {
+          "name": "Get Home Page Data",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/api/public/home"
+          }
+        },
+        {
+          "name": "Get CMS Page",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/api/public/pages/about-us"
+          }
+        },
+        {
+          "name": "Get Banners",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/api/public/banners?position=home_hero",
+              "host": ["{{base_url}}"],
+              "path": ["api", "public", "banners"],
+              "query": [{ "key": "position", "value": "home_hero" }]
+            }
+          }
+        },
+        {
+          "name": "Get FAQs",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/api/public/faqs"
+          }
+        },
+        {
+          "name": "Get Site Settings",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/api/public/settings"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customer - Cart",
+      "item": [
+        {
+          "name": "Get Cart",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/cart"
+          }
+        },
+        {
+          "name": "Add Item to Cart",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vendor_profile_id\": 1,\n  \"service_id\": 1,\n  \"quantity\": 1\n}"
+            },
+            "url": "{{base_url}}/api/cart/items"
+          }
+        },
+        {
+          "name": "Update Cart Item",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 2\n}"
+            },
+            "url": "{{base_url}}/api/cart/items/1"
+          }
+        },
+        {
+          "name": "Remove Cart Item",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/cart/items/1"
+          }
+        },
+        {
+          "name": "Clear Cart",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/cart"
+          }
+        },
+        {
+          "name": "Save Item for Later",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/cart/items/1/save-later"
+          }
+        },
+        {
+          "name": "Move to Cart",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/cart/items/1/move-to-cart"
+          }
+        },
+        {
+          "name": "Get Saved Items",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/cart/saved"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customer - Orders",
+      "item": [
+        {
+          "name": "Get My Orders",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/orders?status=pending",
+              "host": ["{{base_url}}"],
+              "path": ["api", "orders"],
+              "query": [{ "key": "status", "value": "pending" }]
+            }
+          }
+        },
+        {
+          "name": "Create Order (Checkout)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payment_method\": \"bkash\",\n  \"delivery_address\": \"House 123, Road 5, Gulshan\",\n  \"delivery_division_id\": 1,\n  \"delivery_district_id\": 1,\n  \"delivery_area_id\": 1,\n  \"customer_notes\": \"Please call before delivery\"\n}"
+            },
+            "url": "{{base_url}}/api/orders"
+          }
+        },
+        {
+          "name": "Get Order Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/orders/1"
+          }
+        },
+        {
+          "name": "Cancel Order",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Changed my mind\"\n}"
+            },
+            "url": "{{base_url}}/api/orders/1/cancel"
+          }
+        },
+        {
+          "name": "Submit Payment Proof",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "transaction_id", "value": "TXN123456", "type": "text" },
+                { "key": "sender_number", "value": "01712345678", "type": "text" },
+                { "key": "proof_image", "type": "file", "src": "" }
+              ]
+            },
+            "url": "{{base_url}}/api/orders/1/payment-proof"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customer - Reviews",
+      "item": [
+        {
+          "name": "Get My Reviews",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/reviews"
+          }
+        },
+        {
+          "name": "Create Review",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": 1,\n  \"rating\": 5,\n  \"review\": \"Excellent service! Highly recommended.\"\n}"
+            },
+            "url": "{{base_url}}/api/reviews"
+          }
+        },
+        {
+          "name": "Update Review",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rating\": 4,\n  \"review\": \"Good service overall.\"\n}"
+            },
+            "url": "{{base_url}}/api/reviews/1"
+          }
+        },
+        {
+          "name": "Delete Review",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/reviews/1"
+          }
+        },
+        {
+          "name": "Get Vendor Reviews (Public)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/api/vendors/1/reviews"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customer - Tickets",
+      "item": [
+        {
+          "name": "Get My Tickets",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/tickets"
+          }
+        },
+        {
+          "name": "Create Ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject\": \"Issue with my order\",\n  \"message\": \"I have not received my order yet. Please help.\",\n  \"order_id\": 1,\n  \"priority\": \"high\"\n}"
+            },
+            "url": "{{base_url}}/api/tickets"
+          }
+        },
+        {
+          "name": "Get Ticket Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/tickets/1"
+          }
+        },
+        {
+          "name": "Add Message to Ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Any update on this?\"\n}"
+            },
+            "url": "{{base_url}}/api/tickets/1/messages"
+          }
+        },
+        {
+          "name": "Close Ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/tickets/1/close"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "Get Notifications",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/notifications"
+          }
+        },
+        {
+          "name": "Get Unread Count",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/notifications/unread-count"
+          }
+        },
+        {
+          "name": "Mark as Read",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/notifications/1/read"
+          }
+        },
+        {
+          "name": "Mark All as Read",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/notifications/read-all"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Vendor Dashboard",
+      "item": [
+        {
+          "name": "Get Dashboard Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/vendor/dashboard"
+          }
+        },
+        {
+          "name": "Update Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Updated shop description\",\n  \"address\": \"New address\"\n}"
+            },
+            "url": "{{base_url}}/api/vendor/profile"
+          }
+        },
+        {
+          "name": "Get Service Areas",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/vendor/service-areas"
+          }
+        },
+        {
+          "name": "Add Service Area",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"division_id\": 1,\n  \"district_id\": 1,\n  \"area_id\": 2,\n  \"delivery_charge\": 50\n}"
+            },
+            "url": "{{base_url}}/api/vendor/service-areas"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Vendor - Services",
+      "item": [
+        {
+          "name": "Get My Services",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/vendor/services"
+          }
+        },
+        {
+          "name": "Create Service",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"service_category_id\": 1,\n  \"name\": \"Screen Replacement\",\n  \"description\": \"Professional screen replacement service\",\n  \"price\": 1500,\n  \"estimated_duration\": \"1-2 hours\",\n  \"is_active\": true\n}"
+            },
+            "url": "{{base_url}}/api/vendor/services"
+          }
+        },
+        {
+          "name": "Update Service",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 1800,\n  \"sale_price\": 1500\n}"
+            },
+            "url": "{{base_url}}/api/vendor/services/1"
+          }
+        },
+        {
+          "name": "Delete Service",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/vendor/services/1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Vendor - Products",
+      "item": [
+        {
+          "name": "Get My Products",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/vendor/products"
+          }
+        },
+        {
+          "name": "Create Product",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"product_category_id\": 1,\n  \"name\": \"iPhone 14 Screen\",\n  \"sku\": \"IP14-SCR-001\",\n  \"description\": \"Original iPhone 14 display\",\n  \"price\": 5000,\n  \"stock_quantity\": 10,\n  \"low_stock_threshold\": 3,\n  \"is_active\": true\n}"
+            },
+            "url": "{{base_url}}/api/vendor/products"
+          }
+        },
+        {
+          "name": "Update Product",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 4500,\n  \"sale_price\": 4000\n}"
+            },
+            "url": "{{base_url}}/api/vendor/products/1"
+          }
+        },
+        {
+          "name": "Update Stock",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": 5,\n  \"type\": \"addition\",\n  \"reason\": \"New stock arrival\"\n}"
+            },
+            "url": "{{base_url}}/api/vendor/products/1/stock"
+          }
+        },
+        {
+          "name": "Delete Product",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/vendor/products/1"
+          }
+        },
+        {
+          "name": "Get Inventory Logs",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/vendor/inventory-logs"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Vendor - Orders",
+      "item": [
+        {
+          "name": "Get Orders",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/vendor/orders?status=pending",
+              "host": ["{{base_url}}"],
+              "path": ["api", "vendor", "orders"],
+              "query": [{ "key": "status", "value": "pending" }]
+            }
+          }
+        },
+        {
+          "name": "Update Order Status",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"confirmed\",\n  \"notes\": \"Order confirmed, will process soon\"\n}"
+            },
+            "url": "{{base_url}}/api/vendor/orders/1/status"
+          }
+        },
+        {
+          "name": "Confirm Payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/vendor/orders/1/confirm-payment"
+          }
+        },
+        {
+          "name": "Get Payment Notices",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/vendor/payment-notices"
+          }
+        },
+        {
+          "name": "Verify Payment Notice",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"verified\",\n  \"admin_notes\": \"Payment confirmed\"\n}"
+            },
+            "url": "{{base_url}}/api/vendor/payment-notices/1/verify"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Vendor - Reports",
+      "item": [
+        {
+          "name": "Get Sales Report",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/vendor/reports/sales?start_date=2024-01-01&end_date=2024-12-31",
+              "host": ["{{base_url}}"],
+              "path": ["api", "vendor", "reports", "sales"],
+              "query": [
+                { "key": "start_date", "value": "2024-01-01" },
+                { "key": "end_date", "value": "2024-12-31" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Dashboard",
+      "item": [
+        {
+          "name": "Get Dashboard Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/admin/dashboard"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Users",
+      "item": [
+        {
+          "name": "Get All Users",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/users?role=customer",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "users"],
+              "query": [{ "key": "role", "value": "customer" }]
+            }
+          }
+        },
+        {
+          "name": "Get User Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/admin/users/1"
+          }
+        },
+        {
+          "name": "Update User Status",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"suspended\",\n  \"reason\": \"Violation of terms\"\n}"
+            },
+            "url": "{{base_url}}/api/admin/users/2/status"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Vendors",
+      "item": [
+        {
+          "name": "Get All Vendors",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/vendors?status=pending",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "vendors"],
+              "query": [{ "key": "status", "value": "pending" }]
+            }
+          }
+        },
+        {
+          "name": "Get Vendor Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/admin/vendors/1"
+          }
+        },
+        {
+          "name": "Approve Vendor",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/admin/vendors/1/approve"
+          }
+        },
+        {
+          "name": "Reject Vendor",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Incomplete documentation\"\n}"
+            },
+            "url": "{{base_url}}/api/admin/vendors/1/reject"
+          }
+        },
+        {
+          "name": "Suspend Vendor",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Policy violation\"\n}"
+            },
+            "url": "{{base_url}}/api/admin/vendors/1/suspend"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - CMS",
+      "item": [
+        {
+          "name": "Get CMS Pages",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/admin/cms-pages"
+          }
+        },
+        {
+          "name": "Create CMS Page",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"About Us\",\n  \"slug\": \"about-us\",\n  \"content\": \"<h1>About Us</h1><p>Content here...</p>\",\n  \"meta_title\": \"About Us - Gadget Revibe\",\n  \"status\": \"published\"\n}"
+            },
+            "url": "{{base_url}}/api/admin/cms-pages"
+          }
+        },
+        {
+          "name": "Update CMS Page",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"<h1>Updated Content</h1>\"\n}"
+            },
+            "url": "{{base_url}}/api/admin/cms-pages/1"
+          }
+        },
+        {
+          "name": "Delete CMS Page",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/admin/cms-pages/1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Banners",
+      "item": [
+        {
+          "name": "Get Banners",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/admin/banners"
+          }
+        },
+        {
+          "name": "Create Banner",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "title", "value": "Summer Sale", "type": "text" },
+                { "key": "position", "value": "home_hero", "type": "text" },
+                { "key": "link", "value": "/offers", "type": "text" },
+                { "key": "image", "type": "file", "src": "" }
+              ]
+            },
+            "url": "{{base_url}}/api/admin/banners"
+          }
+        },
+        {
+          "name": "Delete Banner",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/admin/banners/1"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - FAQs",
+      "item": [
+        {
+          "name": "Get FAQs",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/admin/faqs"
+          }
+        },
+        {
+          "name": "Create FAQ",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"How do I track my order?\",\n  \"answer\": \"You can track your order from the Orders page.\",\n  \"category\": \"Orders\",\n  \"is_active\": true\n}"
+            },
+            "url": "{{base_url}}/api/admin/faqs"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Settings",
+      "item": [
+        {
+          "name": "Get Settings",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/admin/settings"
+          }
+        },
+        {
+          "name": "Update Settings",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"settings\": [\n    { \"key\": \"site_name\", \"value\": \"Gadget Revibe\", \"group\": \"general\" },\n    { \"key\": \"contact_email\", \"value\": \"info@gadgetrevibe.com\", \"group\": \"contact\" }\n  ]\n}"
+            },
+            "url": "{{base_url}}/api/admin/settings"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Reports",
+      "item": [
+        {
+          "name": "Sales Report",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/reports/sales?start_date=2024-01-01&end_date=2024-12-31&group_by=month",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "reports", "sales"],
+              "query": [
+                { "key": "start_date", "value": "2024-01-01" },
+                { "key": "end_date", "value": "2024-12-31" },
+                { "key": "group_by", "value": "month" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Vendor Report",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/reports/vendors?start_date=2024-01-01&end_date=2024-12-31",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "reports", "vendors"],
+              "query": [
+                { "key": "start_date", "value": "2024-01-01" },
+                { "key": "end_date", "value": "2024-12-31" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Customer Report",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/reports/customers?start_date=2024-01-01&end_date=2024-12-31",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "reports", "customers"],
+              "query": [
+                { "key": "start_date", "value": "2024-01-01" },
+                { "key": "end_date", "value": "2024-12-31" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Export Sales CSV",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/reports/export/sales/csv?start_date=2024-01-01&end_date=2024-12-31",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "reports", "export", "sales", "csv"],
+              "query": [
+                { "key": "start_date", "value": "2024-01-01" },
+                { "key": "end_date", "value": "2024-12-31" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Export Sales PDF",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/reports/export/sales/pdf?start_date=2024-01-01&end_date=2024-12-31",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "reports", "export", "sales", "pdf"],
+              "query": [
+                { "key": "start_date", "value": "2024-01-01" },
+                { "key": "end_date", "value": "2024-12-31" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Audit Logs",
+      "item": [
+        {
+          "name": "Get Audit Logs",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/audit-logs?action=login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "audit-logs"],
+              "query": [{ "key": "action", "value": "login" }]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Roles (RBAC)",
+      "item": [
+        {
+          "name": "Get All Roles",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/roles?search=",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "roles"],
+              "query": [{ "key": "search", "value": "" }]
+            }
+          }
+        },
+        {
+          "name": "Get Role Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/admin/roles/1"
+          }
+        },
+        {
+          "name": "Create Role",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"support-agent\",\n  \"permissions\": [1, 2, 3]\n}"
+            },
+            "url": "{{base_url}}/api/admin/roles"
+          }
+        },
+        {
+          "name": "Update Role",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"support-manager\",\n  \"permissions\": [1, 2, 3, 4, 5]\n}"
+            },
+            "url": "{{base_url}}/api/admin/roles/4"
+          }
+        },
+        {
+          "name": "Delete Role",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/admin/roles/4"
+          }
+        },
+        {
+          "name": "Get Users by Role",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/roles/1/users?search=&per_page=15",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "roles", "1", "users"],
+              "query": [
+                { "key": "search", "value": "" },
+                { "key": "per_page", "value": "15" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Assign Role to User",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": 2,\n  \"role_id\": 1\n}"
+            },
+            "url": "{{base_url}}/api/admin/roles/assign"
+          }
+        },
+        {
+          "name": "Remove Role from User",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": 2,\n  \"role_id\": 4\n}"
+            },
+            "url": "{{base_url}}/api/admin/roles/remove"
+          }
+        },
+        {
+          "name": "Sync User Roles",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": 2,\n  \"role_ids\": [1, 4]\n}"
+            },
+            "url": "{{base_url}}/api/admin/roles/sync-user"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Permissions (RBAC)",
+      "item": [
+        {
+          "name": "Get All Permissions",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/permissions?grouped=true",
+              "host": ["{{base_url}}"],
+              "path": ["api", "admin", "permissions"],
+              "query": [{ "key": "grouped", "value": "true" }]
+            }
+          }
+        },
+        {
+          "name": "Get Permission Modules",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/admin/permissions/modules"
+          }
+        },
+        {
+          "name": "Get Permission Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/admin/permissions/1"
+          }
+        },
+        {
+          "name": "Get Permissions by Role",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/admin/permissions/role/1"
+          }
+        },
+        {
+          "name": "Create Permission",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"reports.export\"\n}"
+            },
+            "url": "{{base_url}}/api/admin/permissions"
+          }
+        },
+        {
+          "name": "Update Permission",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"reports.export-all\"\n}"
+            },
+            "url": "{{base_url}}/api/admin/permissions/25"
+          }
+        },
+        {
+          "name": "Delete Permission",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": "{{base_url}}/api/admin/permissions/25"
+          }
+        },
+        {
+          "name": "Bulk Create Permissions",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"permissions\": [\n    \"inventory.view\",\n    \"inventory.create\",\n    \"inventory.update\",\n    \"inventory.delete\"\n  ]\n}"
+            },
+            "url": "{{base_url}}/api/admin/permissions/bulk-create"
+          }
+        },
+        {
+          "name": "Assign Permission to Role",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role_id\": 2,\n  \"permission_id\": 5\n}"
+            },
+            "url": "{{base_url}}/api/admin/permissions/assign"
+          }
+        },
+        {
+          "name": "Remove Permission from Role",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role_id\": 2,\n  \"permission_id\": 5\n}"
+            },
+            "url": "{{base_url}}/api/admin/permissions/remove"
+          }
+        },
+        {
+          "name": "Sync Role Permissions",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role_id\": 4,\n  \"permission_ids\": [1, 2, 3, 4, 5, 6, 7]\n}"
+            },
+            "url": "{{base_url}}/api/admin/permissions/sync-role"
+          }
+        }
+      ]
+    }
+  ]
+}
