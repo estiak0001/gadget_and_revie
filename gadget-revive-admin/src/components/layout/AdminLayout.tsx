@@ -129,7 +129,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
         )}
       >
         <Header onToggleSidebar={toggleSidebar} />
-        <main className="p-4 lg:p-6">{children}</main>
+        <main className="p-3 sm:p-4 lg:p-5">{children}</main>
       </div>
     </div>
   );

@@ -10,15 +10,15 @@
 
 @layer components {
   .page-header {
-    @apply mb-6;
+    @apply mb-3 sm:mb-4;
   }
-  
+
   .page-title {
-    @apply text-2xl font-bold text-gray-900;
+    @apply text-lg sm:text-xl font-bold text-gray-900;
   }
-  
+
   .page-description {
-    @apply text-sm text-gray-500 mt-1;
+    @apply text-xs sm:text-sm text-gray-500 mt-0.5;
   }
 }
 

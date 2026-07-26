@@ -272,6 +272,7 @@ export default function PurchaseOrderDetailPage() {
               <CardContent className="p-0">
                 {po.items && po.items.length > 0 ? (
                   <>
+                    <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead className="bg-gray-50 border-y">
                         <tr>
@@ -310,6 +311,7 @@ export default function PurchaseOrderDetailPage() {
                         })}
                       </tbody>
                     </table>
+                    </div>
 
                     <div className="px-6 py-4 bg-gray-50 space-y-2">
                       <div className="flex justify-between text-sm text-gray-600">

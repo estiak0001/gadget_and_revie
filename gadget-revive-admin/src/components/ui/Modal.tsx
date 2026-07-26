@@ -51,17 +51,17 @@ const Modal: React.FC<ModalProps> = ({
         className="fixed inset-0 bg-black/50 z-40 transition-opacity"
         onClick={onClose}
       />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4">
         <div
           className={cn(
-            'bg-white rounded-lg shadow-xl w-full transform transition-all',
+            'bg-white rounded-lg shadow-xl w-full transform transition-all max-h-[90vh] flex flex-col',
             sizes[size]
           )}
           onClick={(e) => e.stopPropagation()}
         >
           {title && (
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-shrink-0">
+              <h2 className="text-base font-semibold text-gray-900">{title}</h2>
               <button
                 onClick={onClose}
                 className="p-1 rounded-md hover:bg-gray-100 transition-colors"
@@ -70,7 +70,7 @@ const Modal: React.FC<ModalProps> = ({
               </button>
             </div>
           )}
-          <div className="px-6 py-4 max-h-[calc(100vh-200px)] overflow-y-auto">
+          <div className="px-4 py-3 overflow-y-auto">
             {children}
           </div>
         </div>

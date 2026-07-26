@@ -94,6 +94,7 @@ export default function BalanceSheetPage() {
             <Card>
               <CardHeader><CardTitle>Assets</CardTitle></CardHeader>
               <CardContent>
+                <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <tbody className="divide-y divide-gray-100">
                     {data.assets.map((row) => (
@@ -111,12 +112,14 @@ export default function BalanceSheetPage() {
                     </tr>
                   </tfoot>
                 </table>
+                </div>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader><CardTitle>Liabilities</CardTitle></CardHeader>
               <CardContent>
+                <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <tbody className="divide-y divide-gray-100">
                     {data.liabilities.map((row) => (
@@ -134,12 +137,14 @@ export default function BalanceSheetPage() {
                     </tr>
                   </tfoot>
                 </table>
+                </div>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader><CardTitle>Equity</CardTitle></CardHeader>
               <CardContent>
+                <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <tbody className="divide-y divide-gray-100">
                     {data.equity.map((row) => (
@@ -162,6 +167,7 @@ export default function BalanceSheetPage() {
                     </tr>
                   </tfoot>
                 </table>
+                </div>
               </CardContent>
             </Card>
 

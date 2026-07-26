@@ -390,7 +390,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen }) => {
     >
       <div className="flex h-full flex-col overflow-hidden">
         {/* Logo */}
-        <div className="flex h-16 items-center justify-center border-b border-gray-700">
+        <div className="flex h-14 items-center justify-center border-b border-gray-700">
           <Link href="/dashboard" className="flex items-center gap-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 p-1">
               <Image

@@ -39,7 +39,7 @@ const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
 
   return (
     <header className="sticky top-0 z-20 bg-white border-b border-gray-200">
-      <div className="flex h-16 items-center justify-between px-4 lg:px-6">
+      <div className="flex h-14 items-center justify-between px-3 sm:px-4 lg:px-5">
         {/* Left side */}
         <div className="flex items-center gap-4">
           <button

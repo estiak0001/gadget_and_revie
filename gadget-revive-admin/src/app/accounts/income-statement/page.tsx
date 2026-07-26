@@ -90,6 +90,7 @@ export default function IncomeStatementPage() {
             <Card>
               <CardHeader><CardTitle>Revenue</CardTitle></CardHeader>
               <CardContent>
+                <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <tbody className="divide-y divide-gray-100">
                     {data.revenue.map((row) => (
@@ -107,12 +108,14 @@ export default function IncomeStatementPage() {
                     </tr>
                   </tfoot>
                 </table>
+                </div>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader><CardTitle>Expenses</CardTitle></CardHeader>
               <CardContent>
+                <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <tbody className="divide-y divide-gray-100">
                     {data.expenses.map((row) => (
@@ -130,6 +133,7 @@ export default function IncomeStatementPage() {
                     </tr>
                   </tfoot>
                 </table>
+                </div>
               </CardContent>
             </Card>
 
