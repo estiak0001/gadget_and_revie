@@ -363,8 +363,16 @@ class AdminController extends BaseController
         $user = User::findOrFail($id);
         $selectedRole = $request->input('role');
 
-        // Prevent admin from changing own role
-        if ($user->id === $admin->id && $request->has('role')) {
+        // The edit form always resubmits the role field alongside name/email/phone/status, so
+        // "is a role actually being changed" must compare values, not just check the key is
+        // present — otherwise every self-edit (even just renaming yourself) would look like a
+        // role-change attempt. Compare against the effective role (custom role if one's assigned,
+        // otherwise the tier) since users.role only ever stores a tier name.
+        $currentEffectiveRole = $user->roles->pluck('name')->first() ?? $user->role;
+        $roleIsActuallyChanging = $request->has('role') && $selectedRole !== $currentEffectiveRole;
+
+        // Prevent admin from changing their own role (but editing your own other fields is fine).
+        if ($user->id === $admin->id && $roleIsActuallyChanging) {
             return $this->error('Cannot change your own role', 400);
         }
 
@@ -372,7 +380,7 @@ class AdminController extends BaseController
         // account is protected from everyone but another super_admin. Promoting someone *to*
         // admin/super_admin is a separate, still super_admin-only concern (role assignment).
         $targetIsSuperAdmin = $user->role === 'super_admin';
-        $promotingToPrivileged = $request->has('role') && in_array($selectedRole, ['admin', 'super_admin'], true);
+        $promotingToPrivileged = $roleIsActuallyChanging && in_array($selectedRole, ['admin', 'super_admin'], true);
         if (($targetIsSuperAdmin || $promotingToPrivileged) && !$admin->hasRole('super_admin')) {
             return $this->error('Only a super admin can edit a super admin account, or promote a user to admin/super admin', 403);
         }
@@ -380,16 +388,17 @@ class AdminController extends BaseController
         $oldData = $user->toArray();
 
         $updateData = $request->only(['name', 'email', 'phone', 'status']);
-        if ($request->has('role')) {
+        if ($roleIsActuallyChanging) {
             $updateData['role'] = $this->tierForRole($selectedRole);
         }
         $user->update($updateData);
 
-        if ($request->has('role')) {
+        if ($roleIsActuallyChanging) {
             $this->syncSelectedRole($user, $selectedRole);
             // Their old session may still carry stale permissions (cached client-side from
             // login/me) — force an immediate re-login so the new role takes effect right away
-            // instead of whenever their token would otherwise expire.
+            // instead of whenever their token would otherwise expire. (Never fires for a self-edit
+            // — role changes to yourself are blocked above — so this can't log the actor out.)
             $user->tokens()->delete();
         }
 
