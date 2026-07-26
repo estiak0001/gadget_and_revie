@@ -824,6 +824,17 @@ class AdminController extends BaseController
                     'total_price' => $item['unit_price'] * $item['quantity'],
                     'notes'       => $item['notes'] ?? null,
                 ]);
+
+                // Sale reduces stock; cancel/refund restore it (see restockOrderItems), so this
+                // side must actually run for that restock to mean anything instead of inflating
+                // stock above reality. 'custom' charges have no product_id — nothing to decrement.
+                if ($itemType === 'product' && !empty($item['product_id'])) {
+                    $product = Product::find($item['product_id']);
+                    if ($product) {
+                        InventoryLog::logChange($product, 'sale', $item['quantity'], $order, 'Manual order created by admin', $admin);
+                        $product->decrementStock($item['quantity']);
+                    }
+                }
             }
 
             // Notify linked customer
@@ -1756,6 +1767,18 @@ class AdminController extends BaseController
                     $oldItemsByKey[$key][] = $oldItem->costs->pluck('id')->all();
                 }
 
+                // Restore stock for every old product line before it's deleted — the whole set
+                // gets recreated below with no stable ID to diff against, so "adjust by the
+                // delta" isn't available; restoring everything then decrementing the new set
+                // nets out to the same result (quantity changed, product swapped, item removed
+                // all fall out correctly) without needing to match old-to-new items at all.
+                foreach ($order->items as $oldItem) {
+                    if ($oldItem->item_type === 'product' && $oldItem->product) {
+                        InventoryLog::logChange($oldItem->product, 'return', $oldItem->quantity, $order, 'Order edited by admin — item replaced', $admin);
+                        $oldItem->product->incrementStock($oldItem->quantity);
+                    }
+                }
+
                 $order->items()->delete();
                 foreach ($data['items'] as $item) {
                     $itemType = $item['item_type'] === 'custom' ? 'product' : $item['item_type'];
@@ -1771,6 +1794,14 @@ class AdminController extends BaseController
                         'total_price' => $item['unit_price'] * $item['quantity'],
                         'notes'       => $item['notes'] ?? null,
                     ]);
+
+                    if ($itemType === 'product' && !empty($item['product_id'])) {
+                        $product = Product::find($item['product_id']);
+                        if ($product) {
+                            InventoryLog::logChange($product, 'sale', $item['quantity'], $order, 'Order edited by admin', $admin);
+                            $product->decrementStock($item['quantity']);
+                        }
+                    }
 
                     $key = $itemType . '|' . ($item['product_id'] ?? null) . '|' . ($item['service_id'] ?? null) . '|' . $item['item_name'];
                     if (!empty($oldItemsByKey[$key])) {
@@ -2810,6 +2841,7 @@ class AdminController extends BaseController
             'discount_price' => 'nullable|numeric|min:0',
             'stock_qty' => 'required|integer|min:0',
             'low_stock_threshold' => 'nullable|integer|min:0',
+            'always_in_stock' => 'nullable',
             'unit' => 'nullable|string|max:50',
             'image' => 'nullable|image|max:4096',
             'gallery' => 'nullable|array',
@@ -2833,6 +2865,7 @@ class AdminController extends BaseController
             'stock_qty', 'low_stock_threshold', 'unit', 'brand', 'model',
             'warranty', 'is_active', 'is_featured', 'sort_order',
         ]);
+        $data['always_in_stock'] = $request->boolean('always_in_stock', false);
 
         // Handle main image upload
         if ($request->hasFile('image')) {
@@ -2899,6 +2932,7 @@ class AdminController extends BaseController
             'discount_price' => 'nullable|numeric|min:0',
             'stock_qty' => 'sometimes|integer|min:0',
             'low_stock_threshold' => 'nullable|integer|min:0',
+            'always_in_stock' => 'nullable',
             'unit' => 'nullable|string|max:50',
             'image' => 'nullable|image|max:4096',
             'gallery' => 'nullable|array',
@@ -2958,6 +2992,9 @@ class AdminController extends BaseController
         }
         if ($request->has('is_featured')) {
             $data['is_featured'] = $request->boolean('is_featured');
+        }
+        if ($request->has('always_in_stock')) {
+            $data['always_in_stock'] = $request->boolean('always_in_stock');
         }
 
         // Any save through the normal product edit form means the admin has now

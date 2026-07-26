@@ -244,6 +244,7 @@ export interface Product {
   discount_price?: number;
   stock_qty: number;
   low_stock_threshold: number;
+  always_in_stock?: boolean;
   warranty_period?: string;
   image?: string;
   gallery?: string[];

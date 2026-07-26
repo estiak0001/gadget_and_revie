@@ -170,6 +170,7 @@ export interface Product {
   discount_price?: number;
   stock_qty: number;
   low_stock_threshold: number;
+  always_in_stock?: boolean;
   unit?: string;
   brand?: string; // Deprecated text field
   brand_name?: string;

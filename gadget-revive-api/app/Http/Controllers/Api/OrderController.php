@@ -168,6 +168,13 @@ class OrderController extends BaseController
                     'total_price' => $cartItem->unit_price * $cartItem->quantity,
                     'notes' => $cartItem->notes,
                 ]);
+
+                // Sale reduces stock; cancel()/refund restore it, so this side must actually run
+                // for that restock to mean anything instead of inflating stock above reality.
+                if ($cartItem->item_type === 'product') {
+                    InventoryLog::logChange($item, 'sale', $cartItem->quantity, $order, 'Order placed', $user);
+                    $item->decrementStock($cartItem->quantity);
+                }
             }
 
             // Create payment notice (skip vendor-specific instructions)

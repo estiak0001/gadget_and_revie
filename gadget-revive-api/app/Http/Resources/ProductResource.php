@@ -25,6 +25,7 @@ class ProductResource extends JsonResource
             'has_discount' => $this->hasDiscount(),
             'stock_qty' => $this->stock_qty,
             'low_stock_threshold' => $this->low_stock_threshold,
+            'always_in_stock' => $this->always_in_stock,
             'is_in_stock' => $this->isInStock(),
             'is_low_stock' => $this->isLowStock(),
             'unit' => $this->unit,

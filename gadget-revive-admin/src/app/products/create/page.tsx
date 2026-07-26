@@ -29,6 +29,7 @@ export default function CreateProductPage() {
     discount_price: '',
     stock_qty: '',
     low_stock_threshold: '5',
+    always_in_stock: false,
     unit: 'piece',
     brand_id: '',
     model: '',
@@ -1034,6 +1035,22 @@ export default function CreateProductPage() {
                     placeholder="piece / kg / meter"
                   />
                 </div>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <div className="relative">
+                    <input
+                      type="checkbox"
+                      checked={formData.always_in_stock}
+                      onChange={(e) => setFormData({ ...formData, always_in_stock: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-10 h-6 bg-gray-200 rounded-full peer peer-checked:bg-primary-600 transition-colors"></div>
+                    <div className="absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full shadow-sm peer-checked:translate-x-4 transition-transform"></div>
+                  </div>
+                  <div>
+                    <span className="text-sm text-gray-700">Always show as In Stock</span>
+                    <p className="text-xs text-gray-400">Overrides stock quantity — shows &quot;In Stock&quot; on the storefront even at 0, for made-to-order or untracked items.</p>
+                  </div>
+                </label>
               </CardContent>
             </Card>
 

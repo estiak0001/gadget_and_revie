@@ -628,7 +628,7 @@ export default function Header() {
                               )}
                             </p>
                           </div>
-                          {product.stock_qty <= 0 && (
+                          {!(product.is_in_stock ?? product.stock_qty > 0) && (
                             <span className="text-[10px] text-red-500 font-medium flex-shrink-0">Out of Stock</span>
                           )}
                         </Link>

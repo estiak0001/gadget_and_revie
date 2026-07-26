@@ -86,7 +86,7 @@ export default function CompareDrawer() {
         { label: 'Price', values: items.map((p) => `৳${p.discount_price || p.price}`) },
         { label: 'Original Price', values: items.map((p) => p.discount_price ? `৳${p.price}` : '—') },
         { label: 'Discount', values: items.map((p) => p.discount_price ? `${Math.round(((p.price - p.discount_price) / p.price) * 100)}% OFF` : '—') },
-        { label: 'Stock', values: items.map((p) => p.stock_qty > 0 ? `${p.stock_qty} units` : 'Out of Stock') },
+        { label: 'Stock', values: items.map((p) => (p.is_in_stock ?? p.stock_qty > 0) ? (p.stock_qty > 0 ? `${p.stock_qty} units` : 'In Stock') : 'Out of Stock') },
         { label: 'SKU', values: items.map((p) => p.sku || '—') },
         { label: 'Brand', values: items.map((p) => p.brand_name || p.brand || '—') },
         { label: 'Warranty', values: items.map((p) => (p as any).warranty_period || '—') },
@@ -259,14 +259,14 @@ export default function CompareDrawer() {
                                                     </div>
                                                     <button
                                                         onClick={() => handleAddToCart(p)}
-                                                        disabled={p.stock_qty <= 0}
-                                                        className={`flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[11px] sm:text-sm font-semibold transition-all w-full ${p.stock_qty > 0
+                                                        disabled={!(p.is_in_stock ?? p.stock_qty > 0)}
+                                                        className={`flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[11px] sm:text-sm font-semibold transition-all w-full ${(p.is_in_stock ?? p.stock_qty > 0)
                                                                 ? 'bg-ink text-white hover:bg-ink/90 hover:shadow-lg'
                                                                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                                             }`}
                                                     >
                                                         <ShoppingCartIcon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                                                        <span className="whitespace-nowrap">{p.stock_qty > 0 ? 'Add to Cart' : 'Out of Stock'}</span>
+                                                        <span className="whitespace-nowrap">{(p.is_in_stock ?? p.stock_qty > 0) ? 'Add to Cart' : 'Out of Stock'}</span>
                                                     </button>
                                                 </div>
                                             </th>

@@ -111,7 +111,7 @@ export default function WishlistDrawer({ open, onClose }: WishlistDrawerProps) {
                         <div className="divide-y divide-gray-100">
                             {items.map((product) => {
                                 const inCompare = isInCompare(product.id);
-                                const inStock = product.stock_qty > 0;
+                                const inStock = product.is_in_stock ?? product.stock_qty > 0;
                                 return (
                                     <div key={product.id} className="flex gap-3 p-4 hover:bg-gray-50 transition-colors group">
                                         {/* Image */}

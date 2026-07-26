@@ -658,7 +658,7 @@ function CategoryView({ category }: { category: ProductCategory }) {
                           >
                             <ArrowsRightLeftIcon className="h-4 w-4" />
                           </button>
-                          <button onClick={() => handleAddToCart(p)} disabled={p.stock_qty <= 0} className={`p-2 rounded ${p.stock_qty > 0 ? 'bg-ink text-white hover:bg-ink/90' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>
+                          <button onClick={() => handleAddToCart(p)} disabled={!(p.is_in_stock ?? p.stock_qty > 0)} className={`p-2 rounded ${(p.is_in_stock ?? p.stock_qty > 0) ? 'bg-ink text-white hover:bg-ink/90' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>
                             <ShoppingCartIcon className="h-4 w-4" />
                           </button>
                         </div>
@@ -721,7 +721,7 @@ function ProductCard({ product: p, onWishlist, onCompare, onAddToCart, isWishlis
             <ArrowsRightLeftIcon className="h-4 w-4" />
           </button>
         </div>
-        {p.stock_qty <= 0 && (
+        {!(p.is_in_stock ?? p.stock_qty > 0) && (
           <div className="absolute top-2 left-2">
             <span className="px-2 py-0.5 bg-ink text-white text-xs font-medium rounded">Out of Stock</span>
           </div>
@@ -742,12 +742,12 @@ function ProductCard({ product: p, onWishlist, onCompare, onAddToCart, isWishlis
         <div className="flex items-end justify-between">
           <div>
             <div className="text-lg font-bold text-gray-900">৳{p.discount_price || p.price}</div>
-            {p.stock_qty > 0 && <div className="text-[10px] text-green-600">In Stock</div>}
+            {(p.is_in_stock ?? p.stock_qty > 0) && <div className="text-[10px] text-green-600">In Stock</div>}
           </div>
           <button
             onClick={() => onAddToCart(p)}
-            disabled={p.stock_qty <= 0}
-            className={`p-2 rounded transition-all ${p.stock_qty > 0 ? 'bg-ink text-white hover:bg-ink/90' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
+            disabled={!(p.is_in_stock ?? p.stock_qty > 0)}
+            className={`p-2 rounded transition-all ${(p.is_in_stock ?? p.stock_qty > 0) ? 'bg-ink text-white hover:bg-ink/90' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
           >
             <ShoppingCartIcon className="h-4 w-4" />
           </button>
@@ -876,6 +876,11 @@ function ProductDetailView({ product: initialProduct }: { product: Product }) {
 
   const brandName = product.brand_name || product.brand_details?.name || product.brand || '';
   const avgRating = reviews.length > 0 ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length : 0;
+  // always_in_stock lets a made-to-order/untracked product show as available regardless of the
+  // physical stock_qty count — prefer the API's own computed is_in_stock, which already accounts
+  // for that override, over re-deriving it from stock_qty alone.
+  const inStock = product.is_in_stock ?? product.stock_qty > 0;
+  const maxOrderQty = product.always_in_stock ? 99 : product.stock_qty;
 
   return (
     <div className="bg-gray-50 min-h-screen">
@@ -928,7 +933,7 @@ function ProductDetailView({ product: initialProduct }: { product: Product }) {
                     alt={product.name}
                     className="w-full h-full object-contain p-3"
                   />
-                  {product.stock_qty <= 0 && (
+                  {!inStock && (
                     <span className="absolute top-3 left-3 px-3 py-1 bg-ink text-white text-xs font-semibold rounded-full">Out of Stock</span>
                   )}
                   {product.discount_price && (
@@ -972,8 +977,8 @@ function ProductDetailView({ product: initialProduct }: { product: Product }) {
 
                 {/* Info badges: stock, code, brand, model, warranty */}
                 <div className="flex flex-wrap items-center gap-2 mb-2.5">
-                  <span className={`inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-md border ${product.stock_qty > 0 ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
-                    Stock: {product.stock_qty > 0 ? 'In Stock' : 'Out of Stock'}
+                  <span className={`inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-md border ${inStock ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+                    Stock: {inStock ? 'In Stock' : 'Out of Stock'}
                   </span>
                   {product.sku && (
                     <span className="inline-flex items-center text-xs font-medium px-2.5 py-1 rounded-md border border-blue-200 bg-blue-50 text-blue-700">
@@ -1035,17 +1040,17 @@ function ProductDetailView({ product: initialProduct }: { product: Product }) {
 
                 {/* Quantity + Actions — single row */}
                 <div className="flex flex-wrap items-center gap-2.5 mb-3">
-                  {product.stock_qty > 0 && (
+                  {inStock && (
                     <div className="flex items-center border-2 border-gray-300 rounded-lg">
                       <button onClick={() => setQuantity((q) => Math.max(1, q - 1))} className="px-3 py-2 text-gray-600 hover:bg-gray-50">-</button>
                       <span className="px-4 py-2 font-semibold text-gray-900 border-x-2 border-gray-300">{quantity}</span>
-                      <button onClick={() => setQuantity((q) => Math.min(product.stock_qty, q + 1))} className="px-3 py-2 text-gray-600 hover:bg-gray-50">+</button>
+                      <button onClick={() => setQuantity((q) => Math.min(maxOrderQty, q + 1))} className="px-3 py-2 text-gray-600 hover:bg-gray-50">+</button>
                     </div>
                   )}
-                  <button onClick={handleAddToCart} disabled={product.stock_qty <= 0} className={`flex-1 min-w-[140px] px-5 py-2.5 font-bold text-sm sm:text-base rounded-xl border-2 transition-all ${product.stock_qty > 0 ? 'border-ink text-gray-900 hover:bg-gray-100' : 'border-gray-200 text-gray-400 cursor-not-allowed'}`}>
+                  <button onClick={handleAddToCart} disabled={!inStock} className={`flex-1 min-w-[140px] px-5 py-2.5 font-bold text-sm sm:text-base rounded-xl border-2 transition-all ${inStock ? 'border-ink text-gray-900 hover:bg-gray-100' : 'border-gray-200 text-gray-400 cursor-not-allowed'}`}>
                     <ShoppingCartIcon className="h-5 w-5 inline mr-1.5" />Add to Cart
                   </button>
-                  <button onClick={handleBuyNow} disabled={product.stock_qty <= 0} className={`flex-1 min-w-[120px] px-5 py-2.5 font-bold text-sm sm:text-base rounded-xl transition-all ${product.stock_qty > 0 ? 'bg-gradient-to-r from-ink to-ink text-white hover:shadow-lg' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
+                  <button onClick={handleBuyNow} disabled={!inStock} className={`flex-1 min-w-[120px] px-5 py-2.5 font-bold text-sm sm:text-base rounded-xl transition-all ${inStock ? 'bg-gradient-to-r from-ink to-ink text-white hover:shadow-lg' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
                     Buy Now
                   </button>
                   <button onClick={handleToggleWishlist} aria-label="Wishlist" className={`p-2.5 rounded-xl border-2 transition-all ${isWishlisted ? 'border-rose-500 bg-rose-50 text-rose-600' : 'border-gray-200 text-gray-600 hover:border-rose-400 hover:bg-rose-50 hover:text-rose-600'}`}>

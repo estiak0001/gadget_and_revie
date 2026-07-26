@@ -25,6 +25,7 @@ class Product extends Model
         'discount_price',
         'stock_qty',
         'low_stock_threshold',
+        'always_in_stock',
         'unit',
         'image',
         'gallery',
@@ -44,6 +45,7 @@ class Product extends Model
         'discount_price' => 'decimal:2',
         'stock_qty' => 'integer',
         'low_stock_threshold' => 'integer',
+        'always_in_stock' => 'boolean',
         'gallery' => 'array',
         'specifications' => 'array',
         'is_active' => 'boolean',
@@ -132,12 +134,12 @@ class Product extends Model
 
     public function scopeInStock($query)
     {
-        return $query->where('stock_qty', '>', 0);
+        return $query->where(fn ($q) => $q->where('always_in_stock', true)->orWhere('stock_qty', '>', 0));
     }
 
     public function scopeLowStock($query)
     {
-        return $query->whereColumn('stock_qty', '<=', 'low_stock_threshold');
+        return $query->where('always_in_stock', false)->whereColumn('stock_qty', '<=', 'low_stock_threshold');
     }
 
     public function scopeByCategory($query, $categoryId)
@@ -163,17 +165,17 @@ class Product extends Model
 
     public function isInStock(): bool
     {
-        return $this->stock_qty > 0;
+        return $this->always_in_stock || $this->stock_qty > 0;
     }
 
     public function isLowStock(): bool
     {
-        return $this->stock_qty <= $this->low_stock_threshold;
+        return !$this->always_in_stock && $this->stock_qty <= $this->low_stock_threshold;
     }
 
     public function canFulfill(int $quantity): bool
     {
-        return $this->stock_qty >= $quantity;
+        return $this->always_in_stock || $this->stock_qty >= $quantity;
     }
 
     public function decrementStock(int $quantity): void

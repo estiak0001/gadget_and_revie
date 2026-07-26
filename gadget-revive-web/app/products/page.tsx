@@ -584,7 +584,7 @@ function ProductsPageInner() {
 
                         {/* Badges */}
                         <div className="absolute top-2 left-2 flex flex-col gap-1">
-                          {product.stock_qty <= 0 && (
+                          {!(product.is_in_stock ?? product.stock_qty > 0) && (
                             <span className="px-2 py-0.5 bg-ink/90 text-white text-[10px] font-bold rounded">OUT OF STOCK</span>
                           )}
                           {discountPercent(product) > 0 && (
@@ -626,15 +626,15 @@ function ProductsPageInner() {
                             {product.discount_price && (
                               <div className="text-[10px] text-gray-400 line-through">৳{product.price.toLocaleString()}</div>
                             )}
-                            {product.stock_qty > 0 && (
+                            {(product.is_in_stock ?? product.stock_qty > 0) && (
                               <div className="text-[10px] text-emerald-600 font-medium">● In Stock</div>
                             )}
                           </div>
                           <button
                             onClick={() => handleAddToCart(product)}
-                            disabled={product.stock_qty <= 0}
+                            disabled={!(product.is_in_stock ?? product.stock_qty > 0)}
                             className={`p-2 rounded-lg transition-all flex-shrink-0 ${
-                              product.stock_qty > 0
+                              (product.is_in_stock ?? product.stock_qty > 0)
                                 ? 'bg-ink text-white hover:bg-ink/90 hover:shadow-md active:scale-95'
                                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                             }`}
@@ -698,7 +698,7 @@ function ProductsPageInner() {
                                 <span className="ml-2 text-xs text-gray-400 line-through">৳{product.price.toLocaleString()}</span>
                               )}
                             </div>
-                            {product.stock_qty > 0
+                            {(product.is_in_stock ?? product.stock_qty > 0)
                               ? <span className="text-xs text-emerald-600 font-medium">In Stock</span>
                               : <span className="text-xs text-red-500 font-medium">Out of Stock</span>
                             }
@@ -724,9 +724,9 @@ function ProductsPageInner() {
                           </button>
                           <button
                             onClick={() => handleAddToCart(product)}
-                            disabled={product.stock_qty <= 0}
+                            disabled={!(product.is_in_stock ?? product.stock_qty > 0)}
                             className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                              product.stock_qty > 0
+                              (product.is_in_stock ?? product.stock_qty > 0)
                                 ? 'bg-ink text-white hover:bg-ink/90'
                                 : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                             }`}
