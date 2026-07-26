@@ -226,21 +226,31 @@ export default function OrdersPage() {
     }
   };
 
-  const handleDownloadInvoice = async (order: Order) => {
+  // Opens the PDF in a new tab via a blob URL, same as the receipt preview and the order
+  // detail page's own invoice preview. The tab must open synchronously in the click handler —
+  // opening it after the `await` below loses the user-gesture context and the browser blocks
+  // the popup. Navigating the tab straight to a blob: URL also triggers a download in some
+  // browsers instead of the inline viewer, so we write a minimal page with an <embed> instead —
+  // that reliably renders the browser's native PDF viewer (with its own Print/Save controls).
+  const handlePreviewInvoice = async (order: Order) => {
+    const newTab = window.open('', '_blank');
     setDownloadingInvoice(order.id);
     try {
       const response = await adminService.downloadInvoice(order.id);
       const blob = new Blob([response.data as BlobPart], { type: 'application/pdf' });
       const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `Invoice-${order.order_number}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
-      toast.success(`Invoice for ${order.order_number} downloaded!`);
+      if (newTab) {
+        newTab.document.write(
+          `<!DOCTYPE html><html><head><title>Invoice-${order.order_number}</title></head>` +
+          `<body style="margin:0"><embed src="${url}" type="application/pdf" width="100%" height="100%" style="border:none;position:fixed;inset:0" /></body></html>`
+        );
+        newTab.document.close();
+      } else {
+        toast.error('Please allow pop-ups to preview the invoice.');
+      }
+      setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
     } catch (err) {
+      newTab?.close();
       toast.error(getErrorMessage(err));
     } finally {
       setDownloadingInvoice(null);
@@ -459,9 +469,9 @@ export default function OrdersPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleDownloadInvoice(order)}
+                            onClick={() => handlePreviewInvoice(order)}
                             disabled={downloadingInvoice === order.id}
-                            title="Download Invoice PDF"
+                            title="Preview & Print Invoice"
                           >
                             <FileText className={`w-4 h-4 ${downloadingInvoice === order.id ? 'animate-pulse text-orange-500' : 'text-orange-600'}`} />
                           </Button>
@@ -674,12 +684,12 @@ export default function OrdersPage() {
             <div className="flex justify-end gap-2 pt-4 border-t">
               <Button
                 variant="outline"
-                onClick={() => selectedOrder && handleDownloadInvoice(selectedOrder)}
+                onClick={() => selectedOrder && handlePreviewInvoice(selectedOrder)}
                 disabled={!!(selectedOrder && downloadingInvoice === selectedOrder.id)}
                 className="border-orange-300 text-orange-700 hover:bg-orange-50"
               >
                 <FileText className="w-4 h-4 mr-1" />
-                {selectedOrder && downloadingInvoice === selectedOrder.id ? 'Generating...' : 'Download Invoice'}
+                {selectedOrder && downloadingInvoice === selectedOrder.id ? 'Opening…' : 'Preview Invoice'}
               </Button>
               {(selectedOrder?.customer_email || selectedOrder?.customer?.email) && (
                 <Button

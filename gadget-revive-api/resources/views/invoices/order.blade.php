@@ -140,6 +140,9 @@
         /* ── BODY ────────────────────────────────────── */
         .body-wrap {
             padding: 16px 32px;
+            /* Clears space for .page-footer-fixed so flowing content (the items table on a
+               multi-page invoice) never runs underneath the fixed footer. */
+            padding-bottom: 34mm;
             background: #ffffff;
         }
 
@@ -411,9 +414,20 @@
         }
 
         /* ── FOOTER ──────────────────────────────────── */
+        /* Fixed to the bottom of the page box (DomPDF positions `fixed` elements relative to
+           the page's margin box) so short invoices — few line items — don't end up with the
+           branding/reference footer stranded partway down a mostly-blank page; it always sits
+           flush with the bottom margin, on every page, the same way a running footer would. */
+        .page-footer-fixed {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+        }
         .invoice-footer {
             margin-top: 10px;
             padding-top: 10px;
+            border-top: 1px solid #e5e7eb;
             display: table;
             width: 100%;
         }
@@ -700,25 +714,27 @@
         <div class="terms-banner">Please read the Terms &amp; Conditions below before you receive your product.</div>
         <div class="terms-text">{{ $settings['terms'] ?? '' }}</div>
 
-        {{-- FOOTER --}}
-        <div class="invoice-footer">
-            <div class="footer-left">
-                <div class="footer-brand">{{ $settings['footer_brand'] ?? 'Gadget Revive Bangladesh Ltd.' }}</div>
-                <div class="footer-sub">
-                    {{ $settings['footer_address'] ?? 'House 12, Road 4, Block C, Bashundhara R/A, Dhaka - 1229' }}<br>
-                    Phone: {{ $settings['footer_phone'] ?? '+880 1800-000000' }} | Email: {{ $settings['footer_email'] ?? 'support@gadgetrevive.com' }}
+        {{-- FOOTER — fixed to the page bottom, see .page-footer-fixed --}}
+        <div class="page-footer-fixed">
+            <div class="invoice-footer">
+                <div class="footer-left">
+                    <div class="footer-brand">{{ $settings['footer_brand'] ?? 'Gadget Revive Bangladesh Ltd.' }}</div>
+                    <div class="footer-sub">
+                        {{ $settings['footer_address'] ?? 'House 12, Road 4, Block C, Bashundhara R/A, Dhaka - 1229' }}<br>
+                        Phone: {{ $settings['footer_phone'] ?? '+880 1800-000000' }} | Email: {{ $settings['footer_email'] ?? 'support@gadgetrevive.com' }}
+                    </div>
+                </div>
+                <div class="footer-right">
+                    <div class="footer-ref-label">Document Reference</div>
+                    <div class="footer-ref-code">{{ $order->order_number }}</div>
+                    <div class="footer-timestamp">Generated: {{ now()->format('d M Y, h:i A') }}</div>
                 </div>
             </div>
-            <div class="footer-right">
-                <div class="footer-ref-label">Document Reference</div>
-                <div class="footer-ref-code">{{ $order->order_number }}</div>
-                <div class="footer-timestamp">Generated: {{ now()->format('d M Y, h:i A') }}</div>
-            </div>
-        </div>
 
-        <div class="legal">
-            This is a computer-generated invoice and does not require a physical signature.
-            &copy; {{ date('Y') }} {{ $settings['legal_entity'] ?? 'Gadget Revive Bangladesh Ltd.' }}. All rights reserved.
+            <div class="legal">
+                This is a computer-generated invoice and does not require a physical signature.
+                &copy; {{ date('Y') }} {{ $settings['legal_entity'] ?? 'Gadget Revive Bangladesh Ltd.' }}. All rights reserved.
+            </div>
         </div>
 
     </div>{{-- /body-wrap --}}
