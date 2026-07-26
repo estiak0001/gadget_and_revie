@@ -129,6 +129,7 @@ class ProductController extends BaseController
 
         $perPage = min($request->get('per_page', 15), 50);
         $products = $query->paginate($perPage);
+        $products->getCollection()->transform(fn ($product) => new ProductResource($product));
 
         return $this->paginated($products);
     }
@@ -225,6 +226,7 @@ class ProductController extends BaseController
             ->with(['category.parent.parent.parent', 'vendorProfile', 'brand'])
             ->orderBy('sort_order')
             ->paginate(15);
+        $products->getCollection()->transform(fn ($product) => new ProductResource($product));
 
         return $this->paginated($products);
     }
