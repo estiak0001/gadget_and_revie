@@ -2762,12 +2762,14 @@ class AdminController extends BaseController
             $query->where('is_draft', $request->boolean('is_draft'));
         }
 
-        // Filter by stock status
+        // Filter by stock status — always_in_stock overrides the raw quantity everywhere else
+        // (storefront, isInStock()), so "out of stock" here must exclude it too, or every
+        // always-in-stock item (stock_qty left at 0 on purpose) wrongly shows as out of stock.
         if ($request->has('stock_status')) {
             if ($request->stock_status === 'low') {
                 $query->lowStock();
             } elseif ($request->stock_status === 'out') {
-                $query->where('stock_qty', 0);
+                $query->where('stock_qty', 0)->where('always_in_stock', false);
             } elseif ($request->stock_status === 'in') {
                 $query->inStock();
             }
@@ -2803,6 +2805,23 @@ class AdminController extends BaseController
         $products = $query->paginate($request->get('per_page', 15));
 
         return $this->paginated($products);
+    }
+
+    /**
+     * Product counts by status, independent of whatever filter/pagination is currently
+     * applied on the list — the tab badges and stat cards need the true totals for every
+     * category regardless of which tab the admin is actually viewing.
+     */
+    public function adminProductStats(): JsonResponse
+    {
+        return $this->success([
+            'total' => Product::count(),
+            'active' => Product::where('is_active', true)->count(),
+            'inactive' => Product::where('is_active', false)->count(),
+            'draft' => Product::where('is_draft', true)->count(),
+            'low_stock' => Product::lowStock()->count(),
+            'out_of_stock' => Product::where('stock_qty', 0)->where('always_in_stock', false)->count(),
+        ]);
     }
 
     /**

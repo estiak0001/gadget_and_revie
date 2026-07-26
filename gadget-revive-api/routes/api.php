@@ -528,6 +528,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Products Management (Admin)
         Route::middleware(['permission:manage_products,create_products,edit_products,delete_products,manage_inventory'])->prefix('products')->group(function () {
             Route::get('/', [AdminController::class, 'adminProducts']);
+            Route::get('/stats', [AdminController::class, 'adminProductStats']);
             Route::get('/spec-suggestions', [AdminController::class, 'adminProductSpecSuggestions']);
             Route::post('/', [AdminController::class, 'adminProductStore']);
             Route::get('/{id}', [AdminController::class, 'adminProductShow']);

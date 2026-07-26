@@ -87,14 +87,25 @@ export default function ProductsPage() {
   const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
   const [isFeaturedLoading, setIsFeaturedLoading] = useState(false);
 
-  // Stats derived from products
-  const stats = {
-    total: totalProducts,
-    active: products.filter(p => p.is_active).length,
-    draft: products.filter(p => p.is_draft).length,
-    lowStock: products.filter(p => (p.stock_qty || 0) > 0 && (p.stock_qty || 0) <= (p.low_stock_threshold || 5)).length,
-    outOfStock: products.filter(p => (p.stock_qty || 0) === 0).length,
-  };
+  // True counts across the whole catalog, independent of whichever tab/filter is currently
+  // applied to the list below — deriving these from `products` (the current page's already
+  // server-filtered results) is what made every count wrong the moment you left the "All" tab.
+  const [stats, setStats] = useState({
+    total: 0, active: 0, inactive: 0, draft: 0, lowStock: 0, outOfStock: 0,
+  });
+
+  const fetchStats = useCallback(async () => {
+    try {
+      const res = await adminService.getProductStats();
+      const d = res.data.data;
+      setStats({
+        total: d.total, active: d.active, inactive: d.inactive,
+        draft: d.draft, lowStock: d.low_stock, outOfStock: d.out_of_stock,
+      });
+    } catch (err) {
+      console.error('Error fetching product stats:', err);
+    }
+  }, []);
 
   const fetchProducts = useCallback(async () => {
     setIsLoading(true);
@@ -143,6 +154,10 @@ export default function ProductsPage() {
   }, [fetchCategories]);
 
   useEffect(() => {
+    fetchStats();
+  }, [fetchStats]);
+
+  useEffect(() => {
     fetchProducts();
   }, [fetchProducts]);
 
@@ -156,6 +171,7 @@ export default function ProductsPage() {
       await adminService.toggleProductStatus(product.id);
       toast.success(`Product ${product.is_active ? 'deactivated' : 'activated'}`);
       fetchProducts();
+      fetchStats();
     } catch (err) {
       toast.error(getErrorMessage(err));
     }
@@ -237,6 +253,7 @@ export default function ProductsPage() {
       toast.success('Product deleted successfully');
       setIsDeleteModalOpen(false);
       fetchProducts();
+      fetchStats();
     } catch (err) {
       console.error('Error deleting product:', err);
       toast.error(getErrorMessage(err));
@@ -274,9 +291,9 @@ export default function ProductsPage() {
   };
 
   const tabCounts = {
-    all: totalProducts,
+    all: stats.total,
     active: stats.active,
-    inactive: totalProducts - stats.active,
+    inactive: stats.inactive,
     draft: stats.draft,
     'low-stock': stats.lowStock,
     'out-of-stock': stats.outOfStock,
@@ -321,55 +338,55 @@ export default function ProductsPage() {
       </div>
 
       {/* Stats Overview Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
         <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => { setActiveTab('all'); setCurrentPage(1); }}>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                <Package className="w-5 h-5 text-blue-600" />
+          <CardContent className="p-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Package className="w-4 h-4 text-blue-600" />
               </div>
               <div>
                 <p className="text-xs text-gray-500">Total Products</p>
-                <p className="text-xl font-bold">{stats.total}</p>
+                <p className="text-lg font-bold">{stats.total}</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => { setActiveTab('active'); setCurrentPage(1); }}>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                <BarChart3 className="w-5 h-5 text-green-600" />
+          <CardContent className="p-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <BarChart3 className="w-4 h-4 text-green-600" />
               </div>
               <div>
                 <p className="text-xs text-gray-500">Active</p>
-                <p className="text-xl font-bold">{stats.active}</p>
+                <p className="text-lg font-bold">{stats.active}</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => { setActiveTab('low-stock'); setCurrentPage(1); }}>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
-                <TrendingDown className="w-5 h-5 text-yellow-600" />
+          <CardContent className="p-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <TrendingDown className="w-4 h-4 text-yellow-600" />
               </div>
               <div>
                 <p className="text-xs text-gray-500">Low Stock</p>
-                <p className="text-xl font-bold">{stats.lowStock}</p>
+                <p className="text-lg font-bold">{stats.lowStock}</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => { setActiveTab('out-of-stock'); setCurrentPage(1); }}>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
-                <Box className="w-5 h-5 text-red-600" />
+          <CardContent className="p-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Box className="w-4 h-4 text-red-600" />
               </div>
               <div>
                 <p className="text-xs text-gray-500">Out of Stock</p>
-                <p className="text-xl font-bold">{stats.outOfStock}</p>
+                <p className="text-lg font-bold">{stats.outOfStock}</p>
               </div>
             </div>
           </CardContent>
@@ -378,8 +395,8 @@ export default function ProductsPage() {
 
       {/* Low Stock Alert Banner */}
       {stats.lowStock > 0 && activeTab === 'all' && (
-        <Card className="mb-6 border-yellow-200 bg-yellow-50">
-          <CardContent className="p-4">
+        <Card className="mb-4 border-yellow-200 bg-yellow-50">
+          <CardContent className="p-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <AlertTriangle className="w-5 h-5 text-yellow-600" />
@@ -399,7 +416,7 @@ export default function ProductsPage() {
       )}
 
       {/* Tabs + Search + Filters */}
-      <Card className="mb-6">
+      <Card className="mb-4">
         <CardContent className="p-0">
           {/* Tabs */}
           <div className="flex border-b overflow-x-auto">
@@ -407,7 +424,7 @@ export default function ProductsPage() {
               <button
                 key={tab}
                 onClick={() => { setActiveTab(tab); setCurrentPage(1); }}
-                className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+                className={`px-3 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
                   activeTab === tab
                     ? 'border-primary-600 text-primary-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -523,21 +540,21 @@ export default function ProductsPage() {
               <table className="w-full">
                 <thead className="bg-gray-50 border-y">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Price</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Stock</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Price</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Stock</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {products.map((product) => (
                     <tr key={product.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4">
+                      <td className="px-4 py-2.5">
                         <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden shrink-0">
+                          <div className="w-9 h-9 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden shrink-0">
                             {product.image ? (
                               <img
                                 src={getImageUrl(product.image)}
@@ -567,11 +584,11 @@ export default function ProductsPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 font-mono text-sm text-gray-600">{product.sku}</td>
-                      <td className="px-6 py-4">
+                      <td className="px-4 py-2.5 font-mono text-sm text-gray-600">{product.sku}</td>
+                      <td className="px-4 py-2.5">
                         <Badge variant="default">{product.category?.name || '-'}</Badge>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-4 py-2.5">
                         <div>
                           <p className="font-medium">{formatCurrency(product.discount_price || product.price)}</p>
                           {product.discount_price && product.discount_price < product.price && (
@@ -579,11 +596,11 @@ export default function ProductsPage() {
                           )}
                         </div>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-4 py-2.5">
                         {getStockBadge(product)}
                         <span className="text-sm text-gray-600 ml-2">({product.stock_qty})</span>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-4 py-2.5">
                         <div className="flex items-center gap-1.5">
                           <Badge variant={product.is_active ? 'success' : 'danger'}>
                             {product.is_active ? 'Active' : 'Inactive'}
@@ -595,7 +612,7 @@ export default function ProductsPage() {
                           )}
                         </div>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-4 py-2.5">
                         <div className="flex items-center justify-end gap-1">
                           <Button
                             variant="ghost"
@@ -647,7 +664,7 @@ export default function ProductsPage() {
           {products.map((product) => (
             <Card key={product.id} className="group hover:shadow-lg transition-all duration-200 overflow-hidden">
               {/* Product Image Area */}
-              <div className="relative h-48 bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
+              <div className="relative h-32 bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
                 {product.image ? (
                   <img
                     src={getImageUrl(product.image)}

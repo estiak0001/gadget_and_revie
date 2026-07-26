@@ -110,6 +110,7 @@ export const adminService = {
 
   // Products
   getProducts: (params?: ListParams) => api.get<PaginatedResponse<Product>>('/admin/products', { params }),
+  getProductStats: () => api.get<ApiResponse<{ total: number; active: number; inactive: number; draft: number; low_stock: number; out_of_stock: number }>>('/admin/products/stats'),
   getProduct: (id: number) => api.get<ApiResponse<Product>>(`/admin/products/${id}`),
   createProduct: (data: FormData | Record<string, unknown>) => {
     if (data instanceof FormData) {
