@@ -20,6 +20,7 @@ import {
   TrendingDown,
   Box,
   RefreshCw,
+  History,
 } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import {
@@ -36,6 +37,7 @@ import {
   Pagination,
   ConfirmModal,
   ErrorState,
+  HistoryModal,
 } from '@/components/ui';
 import { Product, ProductCategory, PaginatedResponse } from '@/types';
 import { formatCurrency, getErrorMessage } from '@/lib/utils';
@@ -75,6 +77,7 @@ export default function ProductsPage() {
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [historyProduct, setHistoryProduct] = useState<Product | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'active' | 'inactive' | 'draft' | 'low-stock' | 'out-of-stock'>('all');
   const [togglingFeaturedId, setTogglingFeaturedId] = useState<number | null>(null);
@@ -618,6 +621,9 @@ export default function ProductsPage() {
                           <Button variant="ghost" size="sm" onClick={() => openViewModal(product)} title="View">
                             <Eye className="w-4 h-4" />
                           </Button>
+                          <Button variant="ghost" size="sm" onClick={() => setHistoryProduct(product)} title="View History">
+                            <History className="w-4 h-4 text-gray-400" />
+                          </Button>
                           <Link href={`/products/${product.id}/edit`}>
                             <Button variant="ghost" size="sm" title="Edit">
                               <Edit2 className="w-4 h-4" />
@@ -677,6 +683,13 @@ export default function ProductsPage() {
                     className="p-2 bg-white rounded-full shadow-lg hover:bg-gray-100 transition-colors"
                   >
                     <Eye className="w-4 h-4 text-gray-700" />
+                  </button>
+                  <button
+                    onClick={() => setHistoryProduct(product)}
+                    title="View History"
+                    className="p-2 bg-white rounded-full shadow-lg hover:bg-gray-100 transition-colors"
+                  >
+                    <History className="w-4 h-4 text-gray-700" />
                   </button>
                   <Link href={`/products/${product.id}/edit`}>
                     <button className="p-2 bg-white rounded-full shadow-lg hover:bg-gray-100 transition-colors">
@@ -920,6 +933,19 @@ export default function ProductsPage() {
         variant="danger"
         isLoading={isDeleting}
       />
+
+      {historyProduct && (
+        <HistoryModal
+          isOpen={!!historyProduct}
+          onClose={() => setHistoryProduct(null)}
+          resourceType="Product"
+          resourceId={historyProduct.id}
+          resourceLabel={historyProduct.name}
+          createdBy={historyProduct.creator}
+          createdAt={historyProduct.created_at}
+          updatedAt={historyProduct.updated_at}
+        />
+      )}
     </AdminLayout>
   );
 }

@@ -30,6 +30,8 @@ class PermissionController extends Controller
             'audit_logs' => 'Audit Logs', 'purchases' => 'Purchases', 'suppliers' => 'Purchases',
             'accounts' => 'Accounts & Finance', 'ledger' => 'Accounts & Finance',
             'roles' => 'Roles & Permissions',
+            'service_intakes' => 'Service Intakes', 'payments' => 'Payments',
+            'investors' => 'Investors', 'notifications' => 'Notifications',
         ];
         $verbs = ['manage', 'view', 'create', 'edit', 'delete', 'process', 'respond', 'approve', 'export'];
         $parts = explode('_', $name);

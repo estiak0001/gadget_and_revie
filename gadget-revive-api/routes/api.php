@@ -371,7 +371,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         });
 
         // Service Intakes (device received → receipt → convert to order)
-        Route::middleware(['permission:view_orders,manage_orders,process_orders'])->prefix('service-intakes')->group(function () {
+        Route::middleware(['permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes'])->prefix('service-intakes')->group(function () {
             Route::get('/', [ServiceIntakeController::class, 'index']);
             Route::post('/', [ServiceIntakeController::class, 'store']);
             Route::get('/{id}', [ServiceIntakeController::class, 'show']);
@@ -482,13 +482,13 @@ Route::middleware(['auth:sanctum'])->group(function () {
         });
 
         // Payments Management
-        Route::middleware(['permission:view_orders,manage_orders,process_orders'])->prefix('payments')->group(function () {
+        Route::middleware(['permission:view_orders,manage_orders,process_orders,view_payments,manage_payments'])->prefix('payments')->group(function () {
             Route::get('/', [AdminController::class, 'payments']);
             Route::put('/{id}', [AdminController::class, 'paymentUpdate']);
         });
 
         // Payment Notices (Admin)
-        Route::middleware(['permission:view_orders,manage_orders,process_orders'])->prefix('payment-notices')->group(function () {
+        Route::middleware(['permission:view_orders,manage_orders,process_orders,view_payments,manage_payments'])->prefix('payment-notices')->group(function () {
             Route::get('/', [AdminController::class, 'paymentNotices']);
             Route::put('/{id}', [AdminController::class, 'paymentNoticeUpdate']);
         });
@@ -557,7 +557,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         });
 
         // Admin Notifications
-        Route::prefix('notifications')->group(function () {
+        Route::middleware(['permission:view_notifications'])->prefix('notifications')->group(function () {
             Route::get('/', [AdminController::class, 'adminNotifications']);
             Route::put('/{id}/read', [AdminController::class, 'adminNotificationMarkRead']);
             Route::put('/read-all', [AdminController::class, 'adminNotificationMarkAllRead']);
@@ -623,14 +623,14 @@ Route::middleware(['auth:sanctum'])->group(function () {
         });
 
         // Investors & Investments
-        Route::middleware(['permission:manage_accounts,view_ledger'])->prefix('investors')->group(function () {
+        Route::middleware(['permission:manage_accounts,view_ledger,view_investors,manage_investors'])->prefix('investors')->group(function () {
             Route::get('/', [InvestmentController::class, 'investorIndex']);
             Route::post('/', [InvestmentController::class, 'investorStore']);
             Route::put('/{id}', [InvestmentController::class, 'investorUpdate']);
             Route::delete('/{id}', [InvestmentController::class, 'investorDestroy']);
             Route::post('/{id}/return', [InvestmentController::class, 'processReturn']);
         });
-        Route::middleware(['permission:manage_accounts,view_ledger'])->prefix('investments')->group(function () {
+        Route::middleware(['permission:manage_accounts,view_ledger,view_investors,manage_investors'])->prefix('investments')->group(function () {
             Route::get('/', [InvestmentController::class, 'index']);
             Route::post('/', [InvestmentController::class, 'store']);
         });

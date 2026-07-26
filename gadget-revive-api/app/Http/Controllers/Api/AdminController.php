@@ -792,6 +792,7 @@ class AdminController extends BaseController
                 'total'             => $total,
                 'admin_notes'       => $request->admin_notes,
                 'customer_notes'    => $request->customer_notes,
+                'created_by'        => $admin->id,
             ]);
 
             // Set status timestamps
@@ -864,7 +865,7 @@ class AdminController extends BaseController
      */
     public function orders(Request $request): JsonResponse
     {
-        $query = Order::with(['customer', 'vendorProfile', 'items']);
+        $query = Order::with(['customer', 'vendorProfile', 'items', 'creator:id,name']);
 
         // Filter by status
         if ($request->has('status')) {
@@ -1029,7 +1030,7 @@ class AdminController extends BaseController
      */
     public function payments(Request $request): JsonResponse
     {
-        $query = Order::with(['customer', 'vendorProfile', 'items']);
+        $query = Order::with(['customer', 'vendorProfile', 'items', 'creator:id,name']);
 
         // Filter by payment status
         if ($request->has('payment_status')) {
@@ -1654,6 +1655,7 @@ class AdminController extends BaseController
             'area',
             'tickets',
             'serviceIntake.items',
+            'creator:id,name',
         ])->findOrFail($id);
 
         return $this->success(new OrderResource($order));
@@ -2388,7 +2390,7 @@ class AdminController extends BaseController
      */
     public function adminServices(Request $request): JsonResponse
     {
-        $query = Service::with(['category', 'vendorProfile']);
+        $query = Service::with(['category', 'vendorProfile', 'creator:id,name']);
 
         // Filter by category
         if ($request->has('category_id')) {
@@ -2485,6 +2487,7 @@ class AdminController extends BaseController
         $data['is_active'] = $request->boolean('is_active', true);
         $data['is_featured'] = $request->boolean('is_featured', false);
         $data['sort_order'] = $request->sort_order ?? 0;
+        $data['created_by'] = $admin->id;
 
         if ($request->hasFile('image')) {
             $data['image'] = $request->file('image')->store('services', 'public');
@@ -2695,7 +2698,7 @@ class AdminController extends BaseController
 
     public function adminProducts(Request $request): JsonResponse
     {
-        $query = Product::with(['category', 'vendorProfile', 'brand']);
+        $query = Product::with(['category', 'vendorProfile', 'brand', 'creator:id,name']);
 
         // Filter by category
         if ($request->has('category_id')) {
@@ -2783,6 +2786,7 @@ class AdminController extends BaseController
             'inventoryLogs',
             'attributeValues.attribute',
             'attributeValues.attributeValue',
+            'creator:id,name',
         ])->findOrFail($id);
 
         return $this->success(new ProductResource($product));
@@ -2860,6 +2864,7 @@ class AdminController extends BaseController
         $data['sort_order'] = $request->sort_order ?? 0;
         $data['low_stock_threshold'] = $request->low_stock_threshold ?? 5;
         $data['unit'] = $request->unit ?? 'piece';
+        $data['created_by'] = $admin->id;
 
         $product = Product::create($data);
 

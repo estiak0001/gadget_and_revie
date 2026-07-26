@@ -3,12 +3,12 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  ArrowLeft, Package, Truck, FileText, Download, XCircle, Pencil, CheckCircle2, Wallet, ArrowUpCircle,
+  ArrowLeft, Package, Truck, FileText, Download, XCircle, Pencil, CheckCircle2, Wallet, ArrowUpCircle, History,
 } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import {
   Card, CardContent, CardHeader, CardTitle,
-  Button, Badge, LoadingSpinner, Modal, ConfirmModal, ErrorState,
+  Button, Badge, LoadingSpinner, Modal, ConfirmModal, ErrorState, HistoryModal,
 } from '@/components/ui';
 import { PurchaseOrder, PurchaseOrderStatus } from '@/types';
 import { formatCurrency, formatDate, formatDateTime, getErrorMessage } from '@/lib/utils';
@@ -49,6 +49,7 @@ export default function PurchaseOrderDetailPage() {
   const [isPaying, setIsPaying] = useState(false);
 
   const [isSyncingLedger, setIsSyncingLedger] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   const fetchPo = async () => {
     setIsLoading(true);
@@ -243,7 +244,12 @@ export default function PurchaseOrderDetailPage() {
               <h1 className="page-title">Purchase Order {po.po_number}</h1>
               <p className="page-description">Created on {formatDateTime(po.created_at)}</p>
             </div>
-            <Badge variant={STATUS_CONFIG[po.status].variant}>{STATUS_CONFIG[po.status].label}</Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant={STATUS_CONFIG[po.status].variant}>{STATUS_CONFIG[po.status].label}</Badge>
+              <Button variant="ghost" size="sm" onClick={() => setIsHistoryOpen(true)} title="View History">
+                <History className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
         )}
       </div>
@@ -575,6 +581,19 @@ export default function PurchaseOrderDetailPage() {
         variant="danger"
         isLoading={isDeleting}
       />
+
+      {po && (
+        <HistoryModal
+          isOpen={isHistoryOpen}
+          onClose={() => setIsHistoryOpen(false)}
+          resourceType="PurchaseOrder"
+          resourceId={po.id}
+          resourceLabel={`PO #${po.po_number}`}
+          createdBy={po.creator}
+          createdAt={po.created_at}
+          updatedAt={po.updated_at}
+        />
+      )}
     </AdminLayout>
   );
 }

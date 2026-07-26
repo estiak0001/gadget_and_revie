@@ -29,6 +29,7 @@ class Service extends Model
         'is_active',
         'is_featured',
         'sort_order',
+        'created_by',
     ];
 
     protected $casts = [
@@ -60,6 +61,11 @@ class Service extends Model
     public function category()
     {
         return $this->belongsTo(ServiceCategory::class, 'category_id');
+    }
+
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'created_by');
     }
 
     public function cartItems()

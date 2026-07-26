@@ -36,6 +36,7 @@ class Product extends Model
         'is_draft',
         'is_featured',
         'sort_order',
+        'created_by',
     ];
 
     protected $casts = [
@@ -78,6 +79,11 @@ class Product extends Model
     public function brand()
     {
         return $this->belongsTo(ProductBrand::class, 'brand_id');
+    }
+
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'created_by');
     }
 
     public function cartItems()

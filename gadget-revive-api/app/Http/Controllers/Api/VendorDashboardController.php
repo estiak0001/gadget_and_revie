@@ -357,6 +357,7 @@ class VendorDashboardController extends BaseController
             'images' => !empty($images) ? $images : null,
             'is_active' => $request->is_active ?? true,
             'is_featured' => $request->is_featured ?? false,
+            'created_by' => $user->id,
         ]);
 
         AuditLog::log($user, 'create_service', 'Service', $service->id, null, $service->toArray(), 'Service created');
@@ -556,6 +557,7 @@ class VendorDashboardController extends BaseController
             'warranty' => $request->warranty,
             'is_active' => $request->is_active ?? true,
             'is_featured' => $request->is_featured ?? false,
+            'created_by' => $user->id,
         ]);
 
         // Log initial inventory

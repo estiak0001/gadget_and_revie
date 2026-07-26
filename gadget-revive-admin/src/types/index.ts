@@ -150,6 +150,8 @@ export interface Service {
   sort_order?: number;
   vendor?: VendorProfile;
   category?: ServiceCategory;
+  created_by?: number;
+  creator?: { id: number; name: string };
   created_at: string;
   updated_at?: string;
 }
@@ -181,6 +183,8 @@ export interface Product {
   is_draft?: boolean;
   is_featured: boolean;
   sort_order?: number;
+  created_by?: number;
+  creator?: { id: number; name: string };
   created_at: string;
   updated_at?: string;
   vendor?: VendorProfile;
@@ -292,6 +296,8 @@ export interface Order {
   accepted_at?: string | null;
   completed_at?: string | null;
   cancelled_at?: string | null;
+  created_by?: number;
+  creator?: { id: number; name: string };
   created_at: string;
   updated_at: string;
   customer?: User;

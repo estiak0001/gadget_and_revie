@@ -38,6 +38,8 @@ class OrderResource extends JsonResource
             'area' => new AreaResource($this->whenLoaded('area')),
             'customer' => new UserResource($this->whenLoaded('customer')),
             'vendor' => new VendorProfileResource($this->whenLoaded('vendorProfile')),
+            'created_by' => $this->created_by,
+            'creator' => $this->whenLoaded('creator', fn () => $this->creator ? ['id' => $this->creator->id, 'name' => $this->creator->name] : null),
             'items' => OrderItemResource::collection($this->whenLoaded('items')),
             'payment_notices' => PaymentNoticeResource::collection($this->whenLoaded('paymentNotices')),
             'review' => new ReviewResource($this->whenLoaded('review')),

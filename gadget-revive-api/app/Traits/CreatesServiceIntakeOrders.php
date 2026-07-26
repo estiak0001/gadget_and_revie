@@ -65,6 +65,7 @@ trait CreatesServiceIntakeOrders
             'district_id'       => $attrs['district_id'] ?? null,
             'area_id'           => $attrs['area_id'] ?? null,
             'customer_notes'    => $attrs['customer_notes'] ?? null,
+            'created_by'        => $attrs['created_by'] ?? null,
         ]);
 
         // Placeholder line item — replaced with the confirmed price later.

@@ -43,6 +43,8 @@ class ProductResource extends JsonResource
             'sort_order' => $this->sort_order,
             'category' => new ProductCategoryResource($this->whenLoaded('category')),
             'vendor' => new VendorProfileResource($this->whenLoaded('vendorProfile')),
+            'created_by' => $this->created_by,
+            'creator' => $this->whenLoaded('creator', fn () => $this->creator ? ['id' => $this->creator->id, 'name' => $this->creator->name] : null),
             'attribute_values' => $this->whenLoaded('attributeValues', function () {
                 return $this->attributeValues->map(function ($pav) {
                     return [

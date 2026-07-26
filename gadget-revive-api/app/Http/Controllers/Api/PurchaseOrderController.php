@@ -21,7 +21,7 @@ class PurchaseOrderController extends BaseController
 
     public function index(Request $request): JsonResponse
     {
-        $query = PurchaseOrder::query()->with(['supplier', 'items']);
+        $query = PurchaseOrder::query()->with(['supplier', 'items', 'creator:id,name']);
 
         if ($request->filled('status')) {
             $query->where('status', $request->status);

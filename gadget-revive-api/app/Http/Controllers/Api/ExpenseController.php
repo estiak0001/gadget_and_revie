@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Models\AuditLog;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use App\Models\JournalEntry;
@@ -93,7 +94,7 @@ class ExpenseController extends BaseController
         // Reversed expenses are soft-deleted, so they're excluded from every normal query
         // (this list, reports, sums) by Eloquent's default scope. The only way to see them
         // is this explicit opt-in — a separate view, not a toggle on the main list.
-        $expenses = Expense::with(['category:id,name,slug', 'reverser:id,name'])
+        $expenses = Expense::with(['category:id,name,slug', 'reverser:id,name', 'creator:id,name'])
             ->when($request->boolean('reversed'), fn($q) => $q->onlyTrashed()->where('is_reversed', true))
             ->when($request->expense_category_id, fn($q) => $q->where('expense_category_id', $request->expense_category_id))
             ->when($request->start_date, fn($q) => $q->where('expense_date', '>=', $request->start_date))
@@ -124,6 +125,8 @@ class ExpenseController extends BaseController
 
         $expense = Expense::create($data);
         $expense->postJournalEntry($request->user());
+
+        AuditLog::log($request->user(), 'create_expense', 'Expense', $expense->id, null, $expense->toArray(), 'Expense recorded');
 
         return $this->created(
             $expense->load('category:id,name,slug'),
@@ -162,7 +165,10 @@ class ExpenseController extends BaseController
             'reference'           => 'nullable|string|max:100',
         ]);
 
+        $oldData = $expense->toArray();
         $expense->update($data);
+
+        AuditLog::log($request->user(), 'update_expense', 'Expense', $expense->id, $oldData, $expense->fresh()->toArray(), 'Expense updated');
 
         return $this->success(
             $expense->fresh()->load('category:id,name,slug'),
@@ -173,6 +179,7 @@ class ExpenseController extends BaseController
     public function destroy(Request $request, int $id): JsonResponse
     {
         $expense = Expense::findOrFail($id);
+        $oldData = $expense->toArray();
         $wasLedgerSynced = $expense->isLedgerSynced();
 
         // Deleting an expense always reverses its journal entry — there's no "delete but
@@ -194,6 +201,11 @@ class ExpenseController extends BaseController
             'reversed_by' => $request->user()->id,
         ]);
         $expense->delete();
+
+        // Not fresh(): Expense is soft-deleted, and fresh() re-queries without withTrashed(),
+        // which would return null right after delete(). The in-memory model already reflects
+        // is_reversed/reversed_at/reversed_by (from update() above) and deleted_at (from delete()).
+        AuditLog::log($request->user(), 'reverse_expense', 'Expense', $expense->id, $oldData, $expense->toArray(), 'Expense reversed');
 
         return $this->success([
             'was_ledger_synced' => $wasLedgerSynced,

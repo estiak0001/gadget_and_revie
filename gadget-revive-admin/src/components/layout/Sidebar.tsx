@@ -100,13 +100,13 @@ const navigation: NavSection[] = [
         title: 'Service Intakes',
         href: '/service-intakes',
         icon: <ClipboardCheck className="w-5 h-5" />,
-        permissions: ['view_orders', 'manage_orders', 'process_orders'],
+        permissions: ['view_orders', 'manage_orders', 'process_orders', 'view_service_intakes', 'manage_service_intakes'],
       },
       {
         title: 'Payments',
         href: '/payments',
         icon: <CreditCard className="w-5 h-5" />,
-        permissions: ['view_orders', 'manage_orders', 'process_orders'],
+        permissions: ['view_orders', 'manage_orders', 'process_orders', 'view_payments', 'manage_payments'],
       },
       {
         title: 'Reviews',
@@ -138,7 +138,7 @@ const navigation: NavSection[] = [
         title: 'Investors',
         href: '/investors',
         icon: <TrendingUp className="w-5 h-5" />,
-        permissions: ['manage_accounts', 'view_ledger'],
+        permissions: ['manage_accounts', 'view_ledger', 'view_investors', 'manage_investors'],
       },
       {
         title: 'Expenses',
@@ -203,6 +203,7 @@ const navigation: NavSection[] = [
       {
         title: 'Vendor Portal',
         icon: <Building className="w-5 h-5" />,
+        permissions: ['view_vendors', 'manage_vendors', 'approve_vendors'],
         children: [
           { title: 'Dashboard', href: '/vendor/dashboard' },
           { title: 'Orders', href: '/vendor/orders' },
@@ -225,6 +226,7 @@ const navigation: NavSection[] = [
         title: 'Notifications',
         href: '/notifications',
         icon: <Bell className="w-5 h-5" />,
+        permissions: ['view_notifications'],
       },
     ],
   },
@@ -300,9 +302,9 @@ const hasMenuAccess = (perms: string[] | undefined, role: string | undefined, us
 /**
  * Used by AdminLayout's route guard — finds the nav item that owns `pathname` (its own href, one
  * of its children's hrefs, or a sub-page beneath either) and checks menu access for it. Paths that
- * don't match any known nav item (Dashboard, Notifications, /login, dynamic sub-pages not yet
- * added to the sidebar, etc.) default to allowed — this check is a UX convenience only; the real
- * boundary is the API's `permission:` middleware.
+ * don't match any known nav item (Dashboard, /login, dynamic sub-pages not yet added to the
+ * sidebar, etc.) default to allowed — this check is a UX convenience only; the real boundary is
+ * the API's `permission:` middleware.
  */
 export function canAccessPath(pathname: string, role: string | undefined, userPermissions: string[] | undefined): boolean {
   const matchesHref = (href: string) => pathname === href || pathname.startsWith(href + '/');

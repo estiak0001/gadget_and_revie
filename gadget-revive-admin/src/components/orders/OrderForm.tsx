@@ -147,7 +147,9 @@ function ItemSearchModal({ type, onSelect, onClose }: ItemSearchModalProps) {
 
   useEffect(() => {
     if (type !== 'product') return;
-    adminService.getProductCategoriesTree().then((res) => {
+    // Admin endpoint, not the public storefront tree — an instant product needs to be filed
+    // under any existing category, including ones currently hidden from the storefront.
+    adminService.getAdminProductCategories({ parent_only: true }).then((res) => {
       const data = (res.data as { data?: unknown })?.data ?? res.data;
       setCategories(Array.isArray(data) ? data as ProductCategory[] : []);
     }).catch(() => setCategories([]));

@@ -23,6 +23,7 @@ import {
     Plus,
     Undo2,
     DollarSign,
+    History,
 } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import {
@@ -38,6 +39,7 @@ import {
     Textarea,
     ErrorState,
     Modal,
+    HistoryModal,
 } from '@/components/ui';
 import { Order, OrderItem, ExpenseCategory } from '@/types';
 import { formatCurrency, formatDate, formatDateTime, getStatusColor, getErrorMessage } from '@/lib/utils';
@@ -81,6 +83,7 @@ export default function OrderDetailPage() {
     const [previewingInvoice, setPreviewingInvoice] = useState(false);
     const [sendingInvoice, setSendingInvoice] = useState(false);
     const [isSyncingLedger, setIsSyncingLedger] = useState(false);
+    const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
     const [isRecordPaymentOpen, setIsRecordPaymentOpen] = useState(false);
     const [recordPaymentAmount, setRecordPaymentAmount] = useState('');
@@ -423,6 +426,9 @@ export default function OrderDetailPage() {
                             }>
                                 Payment: {(order.payment_status || 'N/A').replace('_', ' ')}
                             </Badge>
+                            <Button variant="ghost" size="sm" onClick={() => setIsHistoryOpen(true)} title="View History">
+                                <History className="w-4 h-4" />
+                            </Button>
                             {order.can_be_edited && (
                                 <Link href={`/orders/${order.id}/edit`}>
                                     <Button variant="outline" size="sm">Edit Order</Button>
@@ -1101,6 +1107,19 @@ export default function OrderDetailPage() {
                     </div>
                 )}
             </Modal>
+
+            {order && (
+                <HistoryModal
+                    isOpen={isHistoryOpen}
+                    onClose={() => setIsHistoryOpen(false)}
+                    resourceType="Order"
+                    resourceId={order.id}
+                    resourceLabel={`Order #${order.order_number}`}
+                    createdBy={order.creator}
+                    createdAt={order.created_at}
+                    updatedAt={order.updated_at}
+                />
+            )}
         </AdminLayout>
     );
 }

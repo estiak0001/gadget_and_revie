@@ -149,6 +149,7 @@ class OrderController extends BaseController
                 'district_id' => $request->district_id,
                 'area_id' => $request->area_id,
                 'customer_notes' => $request->customer_notes,
+                'created_by' => $user->id,
             ]);
 
             // Create order items

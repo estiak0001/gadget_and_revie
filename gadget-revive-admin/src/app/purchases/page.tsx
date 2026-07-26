@@ -1,12 +1,12 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { Plus, Eye, Pencil, XCircle, Package, RefreshCw, Filter } from 'lucide-react';
+import { Plus, Eye, Pencil, XCircle, Package, RefreshCw, Filter, History } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import {
   Card, CardContent, CardHeader, CardTitle,
   Button, Input, Select, SearchableSelect, ConfirmModal, Badge,
-  LoadingSpinner, Pagination, EmptyState, ErrorState,
+  LoadingSpinner, Pagination, EmptyState, ErrorState, HistoryModal,
 } from '@/components/ui';
 import { PurchaseOrder, PurchaseOrderStatus, PaginatedResponse, Supplier } from '@/types';
 import { formatCurrency, formatDate, getErrorMessage } from '@/lib/utils';
@@ -61,6 +61,7 @@ export default function PurchasesPage() {
 
   // Cancel confirm
   const [cancelTarget, setCancelTarget] = useState<PurchaseOrder | null>(null);
+  const [historyPO, setHistoryPO] = useState<PurchaseOrder | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
 
   const fetchSuppliers = useCallback(async () => {
@@ -272,6 +273,9 @@ export default function PurchasesPage() {
                                   <Eye className="w-4 h-4" />
                                 </Button>
                               </Link>
+                              <Button variant="ghost" size="sm" title="View History" onClick={() => setHistoryPO(po)}>
+                                <History className="w-4 h-4 text-gray-500" />
+                              </Button>
                               {po.status === 'draft' && (
                                 <Link href={`/purchases/${po.id}/edit`}>
                                   <Button variant="ghost" size="sm" title="Edit">
@@ -322,6 +326,19 @@ export default function PurchasesPage() {
         variant="danger"
         isLoading={isCancelling}
       />
+
+      {historyPO && (
+        <HistoryModal
+          isOpen={!!historyPO}
+          onClose={() => setHistoryPO(null)}
+          resourceType="PurchaseOrder"
+          resourceId={historyPO.id}
+          resourceLabel={`PO #${historyPO.po_number}`}
+          createdBy={historyPO.creator}
+          createdAt={historyPO.created_at}
+          updatedAt={historyPO.updated_at}
+        />
+      )}
     </AdminLayout>
   );
 }

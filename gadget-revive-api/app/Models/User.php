@@ -141,9 +141,15 @@ class User extends Authenticatable
     }
 
     // Helpers
+    // "Admin-tier" — every call site uses this to mean "should this account get admin-panel-level
+    // access/visibility," which staff and super_admin need just as much as the base 'admin' tier
+    // does (see routes/api.php's role:admin,staff,super_admin middleware groups, which already
+    // treat all three as equivalent). A literal role==='admin' check silently locked staff and
+    // super_admin accounts out of invoice downloads, receipt downloads, vendor dashboard admin
+    // views, and admin_notes/vendor_notes visibility.
     public function isAdmin(): bool
     {
-        return $this->role === 'admin';
+        return in_array($this->role, ['admin', 'staff', 'super_admin'], true);
     }
 
     public function isVendor(): bool

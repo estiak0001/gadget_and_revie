@@ -1,12 +1,12 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { Plus, Pencil, Trash2, Search, RefreshCw, Filter, ArrowUpCircle, Undo2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, RefreshCw, Filter, ArrowUpCircle, Undo2, History } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import {
   Card, CardContent, CardHeader, CardTitle,
   Button, Input, Select, Modal, Badge,
-  LoadingSpinner, Pagination, EmptyState, ErrorState,
+  LoadingSpinner, Pagination, EmptyState, ErrorState, HistoryModal,
 } from '@/components/ui';
 import { Expense, ExpenseCategory, PaginatedResponse } from '@/types';
 import { formatCurrency, formatDate, getErrorMessage } from '@/lib/utils';
@@ -43,6 +43,7 @@ export default function ExpensesPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
+  const [historyExpense, setHistoryExpense] = useState<Expense | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
@@ -351,11 +352,17 @@ export default function ExpensesPage() {
                                     {expense.reverser?.name ? ` by ${expense.reverser.name}` : ''}
                                   </span>
                                 )}
+                                <Button variant="ghost" size="sm" onClick={() => setHistoryExpense(expense)} title="View History">
+                                  <History className="w-3.5 h-3.5 text-gray-400" />
+                                </Button>
                               </div>
                             </td>
                           ) : (
                             <td className="py-3 text-right">
                               <div className="flex justify-end gap-1">
+                                <Button variant="ghost" size="sm" onClick={() => setHistoryExpense(expense)} leftIcon={<History className="w-3.5 h-3.5" />} title="View History">
+                                  History
+                                </Button>
                                 {!expense.is_ledger_synced && (
                                   <Button
                                     variant="ghost"
@@ -509,6 +516,19 @@ export default function ExpensesPage() {
           <Button variant="danger" onClick={handleDelete} isLoading={isDeleting}>Delete</Button>
         </div>
       </Modal>
+
+      {historyExpense && (
+        <HistoryModal
+          isOpen={!!historyExpense}
+          onClose={() => setHistoryExpense(null)}
+          resourceType="Expense"
+          resourceId={historyExpense.id}
+          resourceLabel={historyExpense.title}
+          createdBy={historyExpense.creator}
+          createdAt={historyExpense.created_at}
+          updatedAt={historyExpense.updated_at}
+        />
+      )}
     </AdminLayout>
   );
 }

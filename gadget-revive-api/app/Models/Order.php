@@ -39,6 +39,7 @@ class Order extends Model
         'accepted_at',
         'completed_at',
         'cancelled_at',
+        'created_by',
     ];
 
     // Scope to find guest orders by session
@@ -104,6 +105,11 @@ class Order extends Model
     public function vendorProfile()
     {
         return $this->belongsTo(VendorProfile::class);
+    }
+
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'created_by');
     }
 
     public function division()

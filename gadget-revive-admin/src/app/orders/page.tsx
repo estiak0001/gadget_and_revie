@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Search, Eye, ShoppingCart, Clock, CheckCircle, XCircle, Truck, Package, Download, FileText, Mail, Plus, Wallet, Undo2 } from 'lucide-react';
+import { Search, Eye, ShoppingCart, Clock, CheckCircle, XCircle, Truck, Package, Download, FileText, Mail, Plus, Wallet, Undo2, History } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import {
   Card,
@@ -18,6 +18,7 @@ import {
   Pagination,
   EmptyState,
   ErrorState,
+  HistoryModal,
 } from '@/components/ui';
 import { Order, PaginatedResponse } from '@/types';
 import { formatCurrency, formatDateTime, getErrorMessage, downloadBlob } from '@/lib/utils';
@@ -55,6 +56,7 @@ export default function OrdersPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [sendingInvoice, setSendingInvoice] = useState<number | null>(null);
   const [downloadingInvoice, setDownloadingInvoice] = useState<number | null>(null);
+  const [historyOrder, setHistoryOrder] = useState<Order | null>(null);
 
   const [isRecordingPayment, setIsRecordingPayment] = useState(false);
   const [recordPaymentAmount, setRecordPaymentAmount] = useState('');
@@ -451,6 +453,9 @@ export default function OrdersPage() {
                           <Button variant="ghost" size="sm" onClick={() => openViewModal(order)} title="View & Manage Order">
                             <Eye className="w-4 h-4" />
                           </Button>
+                          <Button variant="ghost" size="sm" onClick={() => setHistoryOrder(order)} title="View History">
+                            <History className="w-4 h-4 text-gray-500" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"
@@ -693,6 +698,19 @@ export default function OrdersPage() {
           </div>
         )}
       </Modal>
+
+      {historyOrder && (
+        <HistoryModal
+          isOpen={!!historyOrder}
+          onClose={() => setHistoryOrder(null)}
+          resourceType="Order"
+          resourceId={historyOrder.id}
+          resourceLabel={`Order #${historyOrder.order_number}`}
+          createdBy={historyOrder.creator}
+          createdAt={historyOrder.created_at}
+          updatedAt={historyOrder.updated_at}
+        />
+      )}
     </AdminLayout>
   );
 }

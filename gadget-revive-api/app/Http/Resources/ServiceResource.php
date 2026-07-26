@@ -32,6 +32,8 @@ class ServiceResource extends JsonResource
             'sort_order' => $this->sort_order,
             'category' => new ServiceCategoryResource($this->whenLoaded('category')),
             'vendor' => new VendorProfileResource($this->whenLoaded('vendorProfile')),
+            'created_by' => $this->created_by,
+            'creator' => $this->whenLoaded('creator', fn () => $this->creator ? ['id' => $this->creator->id, 'name' => $this->creator->name] : null),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];
