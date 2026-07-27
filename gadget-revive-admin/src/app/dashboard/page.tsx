@@ -80,6 +80,7 @@ const QUICK_ACTIONS: QuickAction[] = [
   { title: 'Create Order', href: '/orders/create', icon: <Plus className="w-3.5 h-3.5" />, primary: true },
   { title: 'Add Product', href: '/products', icon: <Plus className="w-3.5 h-3.5" /> },
   { title: 'Add Expense', href: '/expenses', icon: <Plus className="w-3.5 h-3.5" /> },
+  { title: 'Cash Book', href: '/accounts/cash-book', icon: <Wallet className="w-3.5 h-3.5" /> },
   { title: 'Reports', href: '/reports/sales', icon: <BarChart3 className="w-3.5 h-3.5" /> },
   { title: 'Accounts', href: '/accounts', icon: <BookOpen className="w-3.5 h-3.5" /> },
   { title: 'Services', href: '/services', icon: <Wrench className="w-3.5 h-3.5" /> },
