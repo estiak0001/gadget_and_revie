@@ -26,6 +26,7 @@ class Product extends Model
         'stock_qty',
         'low_stock_threshold',
         'always_in_stock',
+        'average_cost',
         'unit',
         'image',
         'gallery',
@@ -46,6 +47,7 @@ class Product extends Model
         'stock_qty' => 'integer',
         'low_stock_threshold' => 'integer',
         'always_in_stock' => 'boolean',
+        'average_cost' => 'decimal:2',
         'gallery' => 'array',
         'specifications' => 'array',
         'is_active' => 'boolean',
@@ -186,5 +188,24 @@ class Product extends Model
     public function incrementStock(int $quantity): void
     {
         $this->increment('stock_qty', $quantity);
+    }
+
+    /**
+     * Recompute the weighted-average cost as new stock arrives from a Purchase Order. Must be
+     * called with the quantity/cost of the *incoming* batch, before incrementStock() runs — the
+     * math needs stock_qty as it stood immediately before this receipt.
+     */
+    public function recordPurchaseReceipt(int $qty, float $unitCost): void
+    {
+        // Guard against negative stock (possible on always_in_stock items sold past zero) so it
+        // can't distort the average — treat "nothing on hand" as the floor for this calculation.
+        $currentQty = max(0, $this->stock_qty);
+        $currentValue = $currentQty * (float) ($this->average_cost ?? 0);
+        $newQty = $currentQty + $qty;
+
+        $this->average_cost = $newQty > 0
+            ? round(($currentValue + $qty * $unitCost) / $newQty, 2)
+            : $unitCost;
+        $this->save();
     }
 }

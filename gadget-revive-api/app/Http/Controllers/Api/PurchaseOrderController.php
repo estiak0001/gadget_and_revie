@@ -206,6 +206,9 @@ class PurchaseOrderController extends BaseController
                     $request->user()
                 )->update(['purchase_order_id' => $po->id]);
 
+                // Must run before incrementStock() — the weighted-average math needs stock_qty
+                // as it stood immediately before this receipt.
+                $item->product->recordPurchaseReceipt($qtyToAdd, (float) $item->unit_cost);
                 $item->product->incrementStock($qtyToAdd);
                 $item->increment('received_qty', $qtyToAdd);
 

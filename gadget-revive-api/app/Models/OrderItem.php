@@ -58,9 +58,20 @@ class OrderItem extends Model
         return $this->hasMany(Expense::class, 'order_item_id');
     }
 
+    /**
+     * Everything spent fulfilling this line item: the product's own acquisition cost (weighted
+     * average cost from Purchase Order receipts, times quantity sold) plus any manually-recorded
+     * costs (outsourced repair, parts bought for a service, etc.). Zero for a product that's
+     * never been received via a costed Purchase Order (average_cost unset) and for service/custom
+     * items with no manual costs — matches how those already showed 0 before this existed.
+     */
     public function getTotalCostAttribute(): float
     {
-        return (float) $this->costs()->sum('amount');
+        $productCost = $this->item_type === 'product' && $this->product
+            ? $this->quantity * (float) ($this->product->average_cost ?? 0)
+            : 0;
+
+        return round($productCost + (float) $this->costs()->sum('amount'), 2);
     }
 
     /** Revenue for this line item minus everything spent fulfilling it. */

@@ -4,7 +4,7 @@ import {
   Order, Ticket, CMSPage, Banner, FAQ, BranchLocation, Setting, AuditLog, Review,
   DashboardStats, PaginatedResponse, ApiResponse, ServiceIntake,
   Expense, ExpenseCategory, ExpenseReport, Supplier, PurchaseOrder,
-  ChartOfAccount, JournalEntry, TrialBalance, IncomeStatement, BalanceSheet, AccountLedger, CashPosition,
+  ChartOfAccount, JournalEntry, TrialBalance, IncomeStatement, BalanceSheet, AccountLedger, CashPosition, CashBook,
   PendingSyncSummary, Investor, Investment,
 } from '@/types';
 
@@ -440,6 +440,7 @@ export const adminService = {
   getIncomeStatement: (from?: string, to?: string) => api.get<ApiResponse<IncomeStatement>>('/admin/accounting/income-statement', { params: { from, to } }),
   getBalanceSheet: (asOf?: string) => api.get<ApiResponse<BalanceSheet>>('/admin/accounting/balance-sheet', { params: { as_of: asOf } }),
   getCashPosition: (from?: string, to?: string) => api.get<ApiResponse<CashPosition>>('/admin/accounting/cash-position', { params: { from, to } }),
+  getCashBook: (from?: string, to?: string) => api.get<ApiResponse<CashBook>>('/admin/accounting/cash-book', { params: { from, to } }),
   getAccountLedger: (accountId: number, from?: string, to?: string) =>
     api.get<ApiResponse<AccountLedger>>(`/admin/accounting/ledger/${accountId}`, { params: { from, to } }),
 

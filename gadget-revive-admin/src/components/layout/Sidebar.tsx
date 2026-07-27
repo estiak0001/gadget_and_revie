@@ -178,6 +178,7 @@ const navigation: NavSection[] = [
           { title: 'Income Statement', href: '/accounts/income-statement' },
           { title: 'Balance Sheet', href: '/accounts/balance-sheet' },
           { title: 'Cash Position', href: '/accounts/cash-position' },
+          { title: 'Cash Book', href: '/accounts/cash-book' },
         ],
       },
     ],

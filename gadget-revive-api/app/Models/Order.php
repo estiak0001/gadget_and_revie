@@ -363,6 +363,23 @@ class Order extends Model
                 $lines[] = ['account_code' => '2020', 'credit' => $this->tax];
             }
             $entries[] = JournalEntry::post(now()->toDateString(), 'Order', $this->id, "Order #{$this->order_number} sale recognized", $lines, $user);
+
+            // Cost of Goods Sold, recognized at the same moment as the revenue it matches —
+            // same reference ('Order', $this->id) as every other entry here, so refund/cancel's
+            // JournalEntry::reverseAllFor() reverses this alongside the revenue automatically.
+            // Skipped entirely if 0 (product never received via a costed Purchase Order, e.g. an
+            // instant-created or always_in_stock item with no average_cost set) — matches the
+            // skip-if-zero pattern already used by PurchaseOrder::postReceiptJournalEntry().
+            $this->loadMissing('items.product');
+            $cogs = round($this->items
+                ->where('item_type', 'product')
+                ->sum(fn ($item) => $item->product ? $item->quantity * (float) ($item->product->average_cost ?? 0) : 0), 2);
+            if ($cogs > 0) {
+                $entries[] = JournalEntry::post(now()->toDateString(), 'Order', $this->id, "Order #{$this->order_number} cost of goods sold", [
+                    ['account_code' => '5000', 'debit' => $cogs],
+                    ['account_code' => '1020', 'credit' => $cogs],
+                ], $user);
+            }
         }
 
         $entries[] = JournalEntry::post(now()->toDateString(), 'Order', $this->id, "Payment received for order #{$this->order_number}", [

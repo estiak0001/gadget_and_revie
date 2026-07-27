@@ -304,6 +304,85 @@ class AccountingController extends BaseController
         return $this->success(['account' => $account, 'lines' => $rows]);
     }
 
+    /**
+     * GET /admin/accounting/cash-book?from=&to= — classic day-book style report: every cash
+     * receipt and payment through the Cash account (1000) in the period, plus the opening/closing
+     * balance either side of it. Payments are split into a "Salary" column (traced back to an
+     * Expense tagged with the "Staff Salary" category) vs a general "Cash Payment" column, mirroring
+     * how manual cash books are laid out on paper.
+     */
+    public function cashBook(Request $request): JsonResponse
+    {
+        $from = $request->get('from', now()->toDateString());
+        $to = $request->get('to', $from);
+
+        $cash = ChartOfAccount::where('code', '1000')->first();
+        if (!$cash) {
+            return $this->error('Cash account (1000) not found', 500);
+        }
+
+        $dayBeforeFrom = \Carbon\Carbon::parse($from)->subDay()->toDateString();
+        $openingBalance = round($cash->balanceAsOf($dayBeforeFrom), 2);
+
+        $lines = $cash->lines()
+            ->with('journalEntry')
+            ->whereHas('journalEntry', fn ($q) => $q->whereBetween('entry_date', [$from, $to]))
+            ->get()
+            ->sortBy(fn ($line) => $line->journalEntry->entry_date . '-' . $line->journalEntry->id)
+            ->values();
+
+        // Expense category lookup for lines paid out against an Expense, so Staff Salary payments
+        // can be broken into their own column like a traditional cash book.
+        $expenseIds = $lines->filter(fn ($l) => $l->journalEntry->reference_type === 'Expense')
+            ->pluck('journalEntry.reference_id')->unique()->values();
+        $expenseCategories = Expense::whereIn('id', $expenseIds)->with('category:id,name')
+            ->get()->keyBy('id')->map(fn ($e) => $e->category?->name);
+
+        $receipts = $lines->filter(fn ($l) => $l->debit > 0)->map(fn ($l) => [
+            'date' => $l->journalEntry->entry_date->toDateString(),
+            'voucher' => $l->journalEntry->entry_number,
+            'particulars' => $l->description ?? $l->journalEntry->description,
+            'cheque' => 0,
+            'cash_received' => (float) $l->debit,
+        ])->values();
+
+        $payments = $lines->filter(fn ($l) => $l->credit > 0)->map(function ($l) use ($expenseCategories) {
+            $categoryName = $l->journalEntry->reference_type === 'Expense'
+                ? ($expenseCategories[$l->journalEntry->reference_id] ?? null)
+                : null;
+            $isSalary = $categoryName && stripos($categoryName, 'salary') !== false;
+
+            return [
+                'date' => $l->journalEntry->entry_date->toDateString(),
+                'voucher' => $l->journalEntry->entry_number,
+                'particulars' => $l->description ?? $l->journalEntry->description,
+                'salary' => $isSalary ? (float) $l->credit : 0,
+                'cash_payment' => $isSalary ? 0 : (float) $l->credit,
+                'cheque' => 0,
+            ];
+        })->values();
+
+        $totalReceived = round($receipts->sum('cash_received') + $receipts->sum('cheque'), 2);
+        $totalSalary = round($payments->sum('salary'), 2);
+        $totalCashPayment = round($payments->sum('cash_payment'), 2);
+        $totalPaymentCheque = round($payments->sum('cheque'), 2);
+        $totalPaid = round($totalSalary + $totalCashPayment + $totalPaymentCheque, 2);
+
+        return $this->success([
+            'from' => $from,
+            'to' => $to,
+            'opening_balance' => $openingBalance,
+            'receipts' => $receipts,
+            'total_received' => $totalReceived,
+            'payments' => $payments,
+            'total_salary' => $totalSalary,
+            'total_cash_payment' => $totalCashPayment,
+            'total_payment_cheque' => $totalPaymentCheque,
+            'total_paid' => $totalPaid,
+            'closing_balance' => round($openingBalance + $totalReceived - $totalPaid, 2),
+        ]);
+    }
+
     // =========================================================================
     // PENDING SYNC — records from other modules not yet reflected in the ledger.
     // Covers both new records (should be rare/never, since posting is automatic) and

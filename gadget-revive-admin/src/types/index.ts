@@ -171,6 +171,7 @@ export interface Product {
   stock_qty: number;
   low_stock_threshold: number;
   always_in_stock?: boolean;
+  average_cost?: number | null;
   unit?: string;
   brand?: string; // Deprecated text field
   brand_name?: string;
@@ -831,6 +832,37 @@ export interface CashPosition {
   cash_in: number;
   cash_out: number;
   net_change: number;
+  closing_balance: number;
+}
+
+export interface CashBookReceipt {
+  date: string;
+  voucher: string;
+  particulars: string;
+  cheque: number;
+  cash_received: number;
+}
+
+export interface CashBookPayment {
+  date: string;
+  voucher: string;
+  particulars: string;
+  salary: number;
+  cash_payment: number;
+  cheque: number;
+}
+
+export interface CashBook {
+  from: string;
+  to: string;
+  opening_balance: number;
+  receipts: CashBookReceipt[];
+  total_received: number;
+  payments: CashBookPayment[];
+  total_salary: number;
+  total_cash_payment: number;
+  total_payment_cheque: number;
+  total_paid: number;
   closing_balance: number;
 }
 

@@ -651,6 +651,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::get('/income-statement', [AccountingController::class, 'incomeStatement']);
             Route::get('/balance-sheet', [AccountingController::class, 'balanceSheet']);
             Route::get('/cash-position', [AccountingController::class, 'cashPosition']);
+            Route::get('/cash-book', [AccountingController::class, 'cashBook']);
             Route::get('/ledger/{accountId}', [AccountingController::class, 'accountLedger']);
 
             Route::get('/pending', [AccountingController::class, 'pendingSummary']);

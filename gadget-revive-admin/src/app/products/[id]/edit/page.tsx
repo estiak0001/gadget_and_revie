@@ -35,6 +35,7 @@ export default function EditProductPage() {
     stock_qty: '',
     low_stock_threshold: '5',
     always_in_stock: false,
+    average_cost: '',
     unit: 'piece',
     brand_id: '',
     model: '',
@@ -133,6 +134,7 @@ export default function EditProductPage() {
         stock_qty: data.stock_qty?.toString() || '',
         low_stock_threshold: data.low_stock_threshold?.toString() || '5',
         always_in_stock: data.always_in_stock ?? false,
+        average_cost: data.average_cost != null ? data.average_cost.toString() : '',
         unit: data.unit || 'piece',
         brand_id: data.brand_id?.toString() || '',
         model: data.model || '',
@@ -1152,6 +1154,20 @@ export default function EditProductPage() {
                     onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
                     placeholder="piece / kg / meter"
                   />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Average Cost (৳)</label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={formData.average_cost}
+                    onChange={(e) => setFormData({ ...formData, average_cost: e.target.value })}
+                    min={0}
+                    placeholder="0.00"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    What this item costs you per unit — used to calculate profit margin and Cost of Goods Sold. Automatically recalculated when a Purchase Order for this product is received.
+                  </p>
                 </div>
                 <label className="flex items-center gap-3 cursor-pointer">
                   <div className="relative">

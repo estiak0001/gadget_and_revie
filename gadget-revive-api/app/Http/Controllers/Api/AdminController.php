@@ -2861,6 +2861,7 @@ class AdminController extends BaseController
             'stock_qty' => 'required|integer|min:0',
             'low_stock_threshold' => 'nullable|integer|min:0',
             'always_in_stock' => 'nullable',
+            'average_cost' => 'nullable|numeric|min:0',
             'unit' => 'nullable|string|max:50',
             'image' => 'nullable|image|max:4096',
             'gallery' => 'nullable|array',
@@ -2881,7 +2882,7 @@ class AdminController extends BaseController
         $data = $request->only([
             'vendor_profile_id', 'category_id', 'brand_id', 'sku', 'name', 'name_bn',
             'description', 'short_description', 'price', 'discount_price',
-            'stock_qty', 'low_stock_threshold', 'unit', 'brand', 'model',
+            'stock_qty', 'low_stock_threshold', 'average_cost', 'unit', 'brand', 'model',
             'warranty', 'is_active', 'is_featured', 'sort_order',
         ]);
         // New products default to "always in stock" — most items here are effectively
@@ -2955,6 +2956,7 @@ class AdminController extends BaseController
             'stock_qty' => 'sometimes|integer|min:0',
             'low_stock_threshold' => 'nullable|integer|min:0',
             'always_in_stock' => 'nullable',
+            'average_cost' => 'nullable|numeric|min:0',
             'unit' => 'nullable|string|max:50',
             'image' => 'nullable|image|max:4096',
             'gallery' => 'nullable|array',
@@ -2977,7 +2979,7 @@ class AdminController extends BaseController
         $data = $request->only([
             'vendor_profile_id', 'category_id', 'brand_id', 'sku', 'name', 'name_bn',
             'description', 'short_description', 'price', 'discount_price',
-            'stock_qty', 'low_stock_threshold', 'unit', 'brand', 'model',
+            'stock_qty', 'low_stock_threshold', 'average_cost', 'unit', 'brand', 'model',
             'warranty', 'is_active', 'is_featured', 'sort_order',
         ]);
 

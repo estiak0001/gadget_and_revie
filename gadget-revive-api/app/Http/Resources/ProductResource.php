@@ -26,6 +26,7 @@ class ProductResource extends JsonResource
             'stock_qty' => $this->stock_qty,
             'low_stock_threshold' => $this->low_stock_threshold,
             'always_in_stock' => $this->always_in_stock,
+            'average_cost' => $this->average_cost !== null ? (float) $this->average_cost : null,
             'is_in_stock' => $this->isInStock(),
             'is_low_stock' => $this->isLowStock(),
             'unit' => $this->unit,
