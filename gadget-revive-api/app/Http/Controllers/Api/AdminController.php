@@ -1112,6 +1112,9 @@ class AdminController extends BaseController
         // previously handled inconsistently: 'paid' recognized revenue, 'verified' silently didn't,
         // leaving verified orders with paid_amount=0 and no journal entries at all.
         if (in_array($request->status, ['paid', 'verified'], true) && !in_array($oldStatus, ['paid', 'verified'], true)) {
+            if ($order->outstanding_receivable <= 0) {
+                return $this->error('This order has nothing outstanding to mark as paid — the recorded payment amount may need correcting instead.', 422);
+            }
             if ($updateData) {
                 $order->update($updateData);
             }
@@ -2072,6 +2075,44 @@ class AdminController extends BaseController
         AuditLog::log($admin, 'record_order_payment', 'Order', $order->id, null, ['amount' => $data['amount']], "Payment of ৳{$data['amount']} recorded for order #{$order->order_number}");
 
         return $this->success(new OrderResource($order->fresh(['customer', 'vendorProfile'])), 'Payment recorded successfully');
+    }
+
+    /**
+     * Correct a mis-recorded payment amount for an order (e.g. staff typed ৳12,000 for a ৳6,000
+     * cash payment) — distinct from amending the order's items/total, which corrects what was
+     * CHARGED, not what was PAID. Super_admin only, same trust boundary as order amendment.
+     */
+    public function orderCorrectPayment(Request $request, int $id): JsonResponse
+    {
+        $order = Order::with(['customer', 'vendorProfile'])->findOrFail($id);
+        $admin = $request->user();
+
+        if (!$admin->hasRole('super_admin')) {
+            return $this->error('Only a super admin can correct a recorded payment amount.', 403);
+        }
+        if (!$order->requiresSuperAdminToAmend()) {
+            return $this->error('This order has no recorded payment that can be corrected.', 422);
+        }
+
+        $data = $request->validate([
+            'corrected_paid_amount' => 'required|numeric|min:0',
+            'reason' => 'required|string|max:500',
+        ]);
+
+        $oldPaidAmount = (float) $order->paid_amount;
+
+        try {
+            $order->correctPaidAmount((float) $data['corrected_paid_amount'], $admin, $data['reason']);
+        } catch (\InvalidArgumentException $e) {
+            return $this->error($e->getMessage(), 422);
+        }
+
+        AuditLog::log($admin, 'correct_payment_amount', 'Order', $order->id,
+            ['paid_amount' => $oldPaidAmount],
+            ['paid_amount' => $order->paid_amount, 'reason' => $data['reason']],
+            "Payment amount corrected for order #{$order->order_number}: {$data['reason']}");
+
+        return $this->success(new OrderResource($order->fresh(['customer', 'vendorProfile'])), 'Payment amount corrected');
     }
 
     /**

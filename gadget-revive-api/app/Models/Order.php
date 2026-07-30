@@ -423,9 +423,61 @@ class Order extends Model
      * `canBeEdited()`: cancelled/refunded are excluded because the sale's already been fully
      * undone there — there's nothing current left to correct. The caller is responsible for
      * checking the role.
+     *
+     * Also gates `correctPaidAmount()` below — same trust boundary applies to fixing a
+     * mis-recorded payment amount as to amending items/pricing.
      */
     public function requiresSuperAdminToAmend(): bool
     {
         return !in_array($this->order_status, ['cancelled', 'refunded'], true) && $this->hasRevenueBeenRecognized();
+    }
+
+    /**
+     * Correct the recorded `paid_amount` for this order — for when staff mis-entered how much was
+     * actually received (e.g. typed ৳12,000 for a ৳6,000 cash payment). Distinct from amending the
+     * order's items/total: this fixes what was PAID, not what was CHARGED.
+     *
+     * Reverses every currently-live entry touching Cash (1000) for this order — which is exactly
+     * the payment/correction entries, since sale-recognition and COGS never touch that account —
+     * then posts one fresh entry for the corrected amount. Same "reverse fully, post fresh" shape
+     * as `recognizeRevenueAndCogs()`'s use in the order-amendment flow, so a correction reads the
+     * same way in the ledger regardless of which of the two things was wrong. This also means any
+     * number of prior partial payments get consolidated into one clean, correct entry.
+     *
+     * @return JournalEntry[] the reversal entries plus the new correction entry (empty array only
+     *                        possible if there was nothing to reverse and nothing new to post)
+     */
+    public function correctPaidAmount(float $newPaidAmount, ?User $user, string $reason): array
+    {
+        $newPaidAmount = round($newPaidAmount, 2);
+        if ($newPaidAmount === round((float) $this->paid_amount, 2)) {
+            throw new \InvalidArgumentException('Corrected amount matches the current recorded amount — nothing to change');
+        }
+
+        $entries = JournalEntry::reverseForAccounts('Order', $this->id, ['1000'],
+            "Payment amount correction for order #{$this->order_number}: {$reason}", $user);
+
+        if ($newPaidAmount > 0) {
+            $entries[] = JournalEntry::post(now()->toDateString(), 'Order', $this->id,
+                "Payment amount correction for order #{$this->order_number}: {$reason}", [
+                    ['account_code' => '1000', 'debit' => $newPaidAmount],
+                    ['account_code' => '1010', 'credit' => $newPaidAmount],
+                ], $user);
+        }
+
+        // 'verified' is only ever set together with paid_amount == total (recorded by
+        // AdminController::paymentUpdate, which always pays the full outstanding balance right
+        // before setting it) — so only keep 'verified' sticky if the corrected amount still fully
+        // covers the total; otherwise this order is now genuinely partial and must say so.
+        $newStatus = match (true) {
+            $this->payment_status === 'verified' && $newPaidAmount >= (float) $this->total => 'verified',
+            $newPaidAmount >= (float) $this->total => 'paid',
+            $newPaidAmount > 0 => 'partially_paid',
+            default => $this->payment_status,
+        };
+
+        $this->update(['paid_amount' => $newPaidAmount, 'payment_status' => $newStatus]);
+
+        return $entries;
     }
 }

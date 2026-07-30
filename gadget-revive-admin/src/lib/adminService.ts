@@ -62,6 +62,8 @@ export const adminService = {
     api.post<ApiResponse<Order>>(`/admin/orders/${id}/refund`, data),
   recordOrderPayment: (id: number, amount: number) =>
     api.post<ApiResponse<Order>>(`/admin/orders/${id}/record-payment`, { amount }),
+  correctOrderPayment: (id: number, data: { corrected_paid_amount: number; reason: string }) =>
+    api.post<ApiResponse<Order>>(`/admin/orders/${id}/correct-payment`, data),
   exportOrders: (params?: ListParams) =>
     api.get('/admin/orders/export', { params, responseType: 'blob' }),
 

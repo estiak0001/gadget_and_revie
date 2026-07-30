@@ -24,6 +24,7 @@ import {
     Undo2,
     DollarSign,
     History,
+    Edit3,
 } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import {
@@ -92,6 +93,13 @@ export default function OrderDetailPage() {
     const [isRecordPaymentOpen, setIsRecordPaymentOpen] = useState(false);
     const [recordPaymentAmount, setRecordPaymentAmount] = useState('');
     const [isRecordingPayment, setIsRecordingPayment] = useState(false);
+
+    // Correct Payment Amount — fixes what was mis-recorded as PAID (e.g. staff typed the wrong
+    // cash amount), as opposed to amending the order which fixes what was CHARGED.
+    const [isCorrectPaymentOpen, setIsCorrectPaymentOpen] = useState(false);
+    const [correctedPaidAmount, setCorrectedPaidAmount] = useState('');
+    const [correctPaymentReason, setCorrectPaymentReason] = useState('');
+    const [isCorrectingPayment, setIsCorrectingPayment] = useState(false);
 
     const [isReturnOpen, setIsReturnOpen] = useState(false);
     const [returnAmount, setReturnAmount] = useState('');
@@ -203,6 +211,41 @@ export default function OrderDetailPage() {
             toast.error(getErrorMessage(err));
         } finally {
             setIsRecordingPayment(false);
+        }
+    };
+
+    const openCorrectPayment = () => {
+        if (!order) return;
+        setCorrectedPaidAmount(String(order.paid_amount ?? 0));
+        setCorrectPaymentReason('');
+        setIsCorrectPaymentOpen(true);
+    };
+
+    const handleCorrectPayment = async () => {
+        if (!order) return;
+        const amount = parseFloat(correctedPaidAmount);
+        if (isNaN(amount) || amount < 0) {
+            toast.error('Enter a valid amount');
+            return;
+        }
+        if (!correctPaymentReason.trim()) {
+            toast.error('Enter a reason for this correction');
+            return;
+        }
+
+        setIsCorrectingPayment(true);
+        try {
+            await adminService.correctOrderPayment(order.id, {
+                corrected_paid_amount: amount,
+                reason: correctPaymentReason.trim(),
+            });
+            toast.success('Payment amount corrected.');
+            setIsCorrectPaymentOpen(false);
+            fetchOrder();
+        } catch (err) {
+            toast.error(getErrorMessage(err));
+        } finally {
+            setIsCorrectingPayment(false);
         }
     };
 
@@ -1034,6 +1077,12 @@ export default function OrderDetailPage() {
                                             Record Payment
                                         </Button>
                                     )}
+                                    {isSuperAdmin && order.requires_super_admin_to_amend && (
+                                        <Button onClick={openCorrectPayment} variant="outline" className="w-full justify-start border-indigo-300 text-indigo-700 hover:bg-indigo-50">
+                                            <Edit3 className="w-4 h-4 mr-2" />
+                                            Correct Payment Amount
+                                        </Button>
+                                    )}
                                     {order.payment_status === 'paid' && order.is_payment_ledger_synced === false && (
                                         <Button
                                             onClick={handleSyncLedger}
@@ -1176,6 +1225,42 @@ export default function OrderDetailPage() {
                     <div className="flex justify-end gap-2 pt-2">
                         <Button variant="ghost" onClick={() => setIsRecordPaymentOpen(false)}>Cancel</Button>
                         <Button onClick={handleRecordPayment} isLoading={isRecordingPayment}>Confirm Payment</Button>
+                    </div>
+                </div>
+            </Modal>
+
+            {/* Correct Payment Amount Modal */}
+            <Modal isOpen={isCorrectPaymentOpen} onClose={() => setIsCorrectPaymentOpen(false)} title="Correct Payment Amount" size="sm">
+                <div className="space-y-4">
+                    <p className="text-sm text-gray-600">
+                        Fixes what was recorded as <em>received</em> (e.g. staff typed the wrong cash amount) — not the order&apos;s total. This reverses the recorded payment entries and posts a fresh one for the correct amount.
+                    </p>
+                    <p className="text-sm text-gray-600">
+                        Currently recorded as paid: <span className="font-semibold text-gray-900">{formatCurrency(order?.paid_amount ?? 0)}</span>
+                    </p>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Correct amount actually received</label>
+                        <input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={correctedPaidAmount}
+                            onChange={(e) => setCorrectedPaidAmount(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Reason</label>
+                        <Textarea
+                            value={correctPaymentReason}
+                            onChange={(e) => setCorrectPaymentReason(e.target.value)}
+                            placeholder="e.g. Staff recorded ৳12,000 by mistake — customer actually paid ৳6,000 cash"
+                            rows={2}
+                        />
+                    </div>
+                    <div className="flex justify-end gap-2 pt-2">
+                        <Button variant="ghost" onClick={() => setIsCorrectPaymentOpen(false)}>Cancel</Button>
+                        <Button onClick={handleCorrectPayment} isLoading={isCorrectingPayment}>Confirm Correction</Button>
                     </div>
                 </div>
             </Modal>

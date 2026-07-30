@@ -361,6 +361,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::put('/{id}/status', [AdminController::class, 'orderUpdateStatus']);
             Route::post('/{id}/refund', [AdminController::class, 'orderRefund']);
             Route::post('/{id}/record-payment', [AdminController::class, 'orderRecordPayment']);
+            Route::post('/{id}/correct-payment', [AdminController::class, 'orderCorrectPayment']);
         });
 
         // Admin Invoice Management
