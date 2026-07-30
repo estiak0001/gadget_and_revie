@@ -327,104 +327,112 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('/dashboard', [AdminController::class, 'dashboard']);
         Route::get('/dashboard/trends', [AdminController::class, 'dashboardWithTrends']);
 
-        // User Management — fine-grained permission on top of the coarse admin-tier gate above
+        // User Management — fine-grained permission on top of the coarse admin-tier gate above.
+        // manage_users stays as a full-module master key (unchanged); each mutation additionally
+        // gets its own specific permission so a role can be granted just one of these.
         Route::prefix('users')->group(function () {
             Route::get('/', [AdminController::class, 'users']);
             Route::get('/{id}', [AdminController::class, 'userShow']);
 
-            Route::middleware(['permission:manage_users'])->group(function () {
-                Route::post('/', [AdminController::class, 'userStore']);
-                Route::put('/{id}', [AdminController::class, 'userUpdate']);
-                Route::delete('/{id}', [AdminController::class, 'userDelete']);
-                Route::put('/{id}/status', [AdminController::class, 'userUpdateStatus']);
-                Route::put('/{id}/reset-password', [AdminController::class, 'userResetPassword']);
-            });
+            Route::post('/', [AdminController::class, 'userStore'])->middleware('permission:manage_users,create_users');
+            Route::put('/{id}', [AdminController::class, 'userUpdate'])->middleware('permission:manage_users,edit_users');
+            Route::delete('/{id}', [AdminController::class, 'userDelete'])->middleware('permission:manage_users,delete_users');
+            Route::put('/{id}/status', [AdminController::class, 'userUpdateStatus'])->middleware('permission:manage_users,update_user_status');
+            Route::put('/{id}/reset-password', [AdminController::class, 'userResetPassword'])->middleware('permission:manage_users,reset_user_password');
             Route::delete('/{id}/force', [AdminController::class, 'userForceDelete'])->middleware('role:super_admin');
         });
 
-        // Vendor Management
-        Route::middleware(['permission:view_vendors,manage_vendors,approve_vendors'])->prefix('vendors')->group(function () {
-            Route::get('/', [AdminController::class, 'vendors']);
-            Route::get('/{id}', [AdminController::class, 'vendorShow']);
-            Route::post('/{id}/approve', [AdminController::class, 'vendorApprove']);
-            Route::post('/{id}/reject', [AdminController::class, 'vendorReject']);
-            Route::post('/{id}/suspend', [AdminController::class, 'vendorSuspend']);
+        // Vendor Management — old 3-way OR kept valid everywhere (zero regression); reject/suspend
+        // additionally get their own specific permission.
+        Route::prefix('vendors')->group(function () {
+            Route::get('/', [AdminController::class, 'vendors'])->middleware('permission:view_vendors,manage_vendors,approve_vendors');
+            Route::get('/{id}', [AdminController::class, 'vendorShow'])->middleware('permission:view_vendors,manage_vendors,approve_vendors');
+            Route::post('/{id}/approve', [AdminController::class, 'vendorApprove'])->middleware('permission:view_vendors,manage_vendors,approve_vendors');
+            Route::post('/{id}/reject', [AdminController::class, 'vendorReject'])->middleware('permission:view_vendors,manage_vendors,approve_vendors,reject_vendors');
+            Route::post('/{id}/suspend', [AdminController::class, 'vendorSuspend'])->middleware('permission:view_vendors,manage_vendors,approve_vendors,suspend_vendors');
         });
 
-        // Order Management (Enhanced)
-        Route::middleware(['permission:view_orders,manage_orders,process_orders'])->prefix('orders')->group(function () {
-            Route::get('/', [AdminController::class, 'orders']);
-            Route::post('/', [AdminController::class, 'orderCreate']);
-            Route::get('/export', [AdminController::class, 'orderExport']);
-            Route::get('/{id}', [AdminController::class, 'orderShow']);
-            Route::put('/{id}', [AdminController::class, 'orderUpdate']);
-            Route::put('/{id}/status', [AdminController::class, 'orderUpdateStatus']);
-            Route::post('/{id}/refund', [AdminController::class, 'orderRefund']);
-            Route::post('/{id}/record-payment', [AdminController::class, 'orderRecordPayment']);
-            Route::post('/{id}/correct-payment', [AdminController::class, 'orderCorrectPayment']);
+        // Order Management (Enhanced) — old 3-way OR kept valid everywhere; refund and
+        // correct-payment additionally get their own specific permission (correct-payment's
+        // in-method super_admin check also now accepts this permission, see AdminController).
+        Route::prefix('orders')->group(function () {
+            Route::get('/', [AdminController::class, 'orders'])->middleware('permission:view_orders,manage_orders,process_orders');
+            Route::post('/', [AdminController::class, 'orderCreate'])->middleware('permission:view_orders,manage_orders,process_orders');
+            Route::get('/export', [AdminController::class, 'orderExport'])->middleware('permission:view_orders,manage_orders,process_orders');
+            Route::get('/{id}', [AdminController::class, 'orderShow'])->middleware('permission:view_orders,manage_orders,process_orders');
+            Route::put('/{id}', [AdminController::class, 'orderUpdate'])->middleware('permission:view_orders,manage_orders,process_orders,amend_paid_orders');
+            Route::put('/{id}/status', [AdminController::class, 'orderUpdateStatus'])->middleware('permission:view_orders,manage_orders,process_orders');
+            Route::post('/{id}/refund', [AdminController::class, 'orderRefund'])->middleware('permission:view_orders,manage_orders,process_orders,refund_orders');
+            Route::post('/{id}/record-payment', [AdminController::class, 'orderRecordPayment'])->middleware('permission:view_orders,manage_orders,process_orders');
+            Route::post('/{id}/correct-payment', [AdminController::class, 'orderCorrectPayment'])->middleware('permission:view_orders,manage_orders,process_orders,correct_payment_amounts');
         });
 
-        // Admin Invoice Management
-        Route::middleware(['permission:view_orders,manage_orders,process_orders'])->prefix('invoices')->group(function () {
-            Route::get('/{id}/download', [InvoiceController::class, 'download']);
-            Route::get('/{id}/stream', [InvoiceController::class, 'stream']);
-            Route::post('/{id}/send', [InvoiceController::class, 'sendEmail']);
-            Route::get('/custom/{id}/download', [InvoiceController::class, 'customDownload']);
-            Route::get('/{orderId}/custom', [InvoiceController::class, 'customIndex']);
-            Route::post('/{orderId}/custom', [InvoiceController::class, 'customStore']);
+        // Admin Invoice Management — custom-invoice creation additionally gets its own permission
+        // (its in-method super_admin check also now accepts this permission, see InvoiceController).
+        Route::prefix('invoices')->group(function () {
+            Route::get('/{id}/download', [InvoiceController::class, 'download'])->middleware('permission:view_orders,manage_orders,process_orders');
+            Route::get('/{id}/stream', [InvoiceController::class, 'stream'])->middleware('permission:view_orders,manage_orders,process_orders');
+            Route::post('/{id}/send', [InvoiceController::class, 'sendEmail'])->middleware('permission:view_orders,manage_orders,process_orders');
+            Route::get('/custom/{id}/download', [InvoiceController::class, 'customDownload'])->middleware('permission:view_orders,manage_orders,process_orders');
+            Route::get('/{orderId}/custom', [InvoiceController::class, 'customIndex'])->middleware('permission:view_orders,manage_orders,process_orders');
+            Route::post('/{orderId}/custom', [InvoiceController::class, 'customStore'])->middleware('permission:view_orders,manage_orders,process_orders,create_custom_invoices');
         });
 
-        // Service Intakes (device received → receipt → convert to order)
-        Route::middleware(['permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes'])->prefix('service-intakes')->group(function () {
-            Route::get('/', [ServiceIntakeController::class, 'index']);
-            Route::post('/', [ServiceIntakeController::class, 'store']);
-            Route::get('/{id}', [ServiceIntakeController::class, 'show']);
-            Route::put('/{id}', [ServiceIntakeController::class, 'update']);
-            Route::delete('/{id}', [ServiceIntakeController::class, 'destroy']);
-            Route::put('/{id}/status', [ServiceIntakeController::class, 'updateStatus']);
-            Route::post('/{id}/convert', [ServiceIntakeController::class, 'convertToOrder']);
-            Route::post('/{id}/confirm-price', [ServiceIntakeController::class, 'confirmPrice']);
-            Route::get('/{id}/receipt/download', [ServiceIntakeController::class, 'downloadReceipt']);
-            Route::get('/{id}/receipt/stream', [ServiceIntakeController::class, 'streamReceipt']);
+        // Service Intakes (device received → receipt → convert to order) — old 5-way OR kept
+        // valid everywhere; convert and confirm-price additionally get their own permission.
+        Route::prefix('service-intakes')->group(function () {
+            Route::get('/', [ServiceIntakeController::class, 'index'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
+            Route::post('/', [ServiceIntakeController::class, 'store'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
+            Route::get('/{id}', [ServiceIntakeController::class, 'show'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
+            Route::put('/{id}', [ServiceIntakeController::class, 'update'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
+            Route::delete('/{id}', [ServiceIntakeController::class, 'destroy'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
+            Route::put('/{id}/status', [ServiceIntakeController::class, 'updateStatus'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
+            Route::post('/{id}/convert', [ServiceIntakeController::class, 'convertToOrder'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes,convert_service_intakes');
+            Route::post('/{id}/confirm-price', [ServiceIntakeController::class, 'confirmPrice'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes,confirm_service_intake_price');
+            Route::get('/{id}/receipt/download', [ServiceIntakeController::class, 'downloadReceipt'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
+            Route::get('/{id}/receipt/stream', [ServiceIntakeController::class, 'streamReceipt'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
         });
 
-        // Customer Management
-        Route::middleware(['permission:view_users,manage_users'])->prefix('customers')->group(function () {
-            Route::get('/', [AdminController::class, 'customers']);
-            Route::get('/{id}', [AdminController::class, 'customerShow']);
-            Route::put('/{id}', [AdminController::class, 'customerUpdate']);
-            Route::delete('/{id}', [AdminController::class, 'customerDelete']);
+        // Customer Management — old 2-way OR kept valid everywhere; edit/delete additionally get
+        // their own specific permission (reusing the Users module's new permission names).
+        Route::prefix('customers')->group(function () {
+            Route::get('/', [AdminController::class, 'customers'])->middleware('permission:view_users,manage_users');
+            Route::get('/{id}', [AdminController::class, 'customerShow'])->middleware('permission:view_users,manage_users');
+            Route::put('/{id}', [AdminController::class, 'customerUpdate'])->middleware('permission:view_users,manage_users,edit_users');
+            Route::delete('/{id}', [AdminController::class, 'customerDelete'])->middleware('permission:view_users,manage_users,delete_users');
         });
 
-        // Service Categories (Admin CRUD)
-        Route::middleware(['permission:manage_categories'])->prefix('service-categories')->group(function () {
-            Route::get('/', [CategoryController::class, 'adminServiceCategories']);
-            Route::post('/', [CategoryController::class, 'storeServiceCategory']);
-            Route::post('/reorder', [CategoryController::class, 'reorderServiceCategories']);
-            Route::get('/{id}', [CategoryController::class, 'adminServiceCategoryShow']);
-            Route::put('/{id}', [CategoryController::class, 'updateServiceCategory']);
-            Route::delete('/{id}', [CategoryController::class, 'deleteServiceCategory']);
+        // Service Categories (Admin CRUD) — manage_categories stays as master key; read and
+        // reorder additionally get their own specific permission.
+        Route::prefix('service-categories')->group(function () {
+            Route::get('/', [CategoryController::class, 'adminServiceCategories'])->middleware('permission:manage_categories,view_categories');
+            Route::post('/', [CategoryController::class, 'storeServiceCategory'])->middleware('permission:manage_categories');
+            Route::post('/reorder', [CategoryController::class, 'reorderServiceCategories'])->middleware('permission:manage_categories,reorder_categories');
+            Route::get('/{id}', [CategoryController::class, 'adminServiceCategoryShow'])->middleware('permission:manage_categories,view_categories');
+            Route::put('/{id}', [CategoryController::class, 'updateServiceCategory'])->middleware('permission:manage_categories');
+            Route::delete('/{id}', [CategoryController::class, 'deleteServiceCategory'])->middleware('permission:manage_categories');
         });
 
-        // Product Categories (Admin CRUD)
-        Route::middleware(['permission:manage_categories'])->prefix('product-categories')->group(function () {
-            Route::get('/', [CategoryController::class, 'adminProductCategories']);
-            Route::post('/', [CategoryController::class, 'storeProductCategory']);
-            Route::post('/reorder', [CategoryController::class, 'reorderProductCategories']);
-            Route::get('/{id}', [CategoryController::class, 'adminProductCategoryShow']);
-            Route::put('/{id}', [CategoryController::class, 'updateProductCategory']);
-            Route::delete('/{id}', [CategoryController::class, 'deleteProductCategory']);
+        // Product Categories (Admin CRUD) — same pattern as Service Categories.
+        Route::prefix('product-categories')->group(function () {
+            Route::get('/', [CategoryController::class, 'adminProductCategories'])->middleware('permission:manage_categories,view_categories');
+            Route::post('/', [CategoryController::class, 'storeProductCategory'])->middleware('permission:manage_categories');
+            Route::post('/reorder', [CategoryController::class, 'reorderProductCategories'])->middleware('permission:manage_categories,reorder_categories');
+            Route::get('/{id}', [CategoryController::class, 'adminProductCategoryShow'])->middleware('permission:manage_categories,view_categories');
+            Route::put('/{id}', [CategoryController::class, 'updateProductCategory'])->middleware('permission:manage_categories');
+            Route::delete('/{id}', [CategoryController::class, 'deleteProductCategory'])->middleware('permission:manage_categories');
         });
 
-        // Category Attributes (Admin CRUD)
-        Route::middleware(['permission:manage_categories'])->prefix('category-attributes')->group(function () {
-            Route::get('/', [CategoryAttributeController::class, 'index']);
-            Route::post('/', [CategoryAttributeController::class, 'store']);
-            Route::get('/{id}', [CategoryAttributeController::class, 'show']);
-            Route::put('/{id}', [CategoryAttributeController::class, 'update']);
-            Route::delete('/{id}', [CategoryAttributeController::class, 'destroy']);
-            Route::post('/{id}/values', [CategoryAttributeController::class, 'storeValue']);
-            Route::post('/{id}/values/sync', [CategoryAttributeController::class, 'bulkSyncValues']);
+        // Category Attributes (Admin CRUD) — read additionally gets its own specific permission;
+        // value add/sync stay under manage_categories only.
+        Route::prefix('category-attributes')->group(function () {
+            Route::get('/', [CategoryAttributeController::class, 'index'])->middleware('permission:manage_categories,view_categories');
+            Route::post('/', [CategoryAttributeController::class, 'store'])->middleware('permission:manage_categories');
+            Route::get('/{id}', [CategoryAttributeController::class, 'show'])->middleware('permission:manage_categories,view_categories');
+            Route::put('/{id}', [CategoryAttributeController::class, 'update'])->middleware('permission:manage_categories');
+            Route::delete('/{id}', [CategoryAttributeController::class, 'destroy'])->middleware('permission:manage_categories');
+            Route::post('/{id}/values', [CategoryAttributeController::class, 'storeValue'])->middleware('permission:manage_categories');
+            Route::post('/{id}/values/sync', [CategoryAttributeController::class, 'bulkSyncValues'])->middleware('permission:manage_categories');
         });
 
         Route::middleware(['permission:manage_categories'])->prefix('attribute-values')->group(function () {
@@ -432,73 +440,80 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::delete('/{id}', [CategoryAttributeController::class, 'destroyValue']);
         });
 
-        // Branch Locations (Admin CRUD)
-        Route::middleware(['permission:manage_cms,manage_banners,manage_faqs'])->prefix('branch-locations')->group(function () {
+        // Branch Locations (Admin CRUD) — old 3-way OR kept valid everywhere; additionally gets
+        // its own specific permission.
+        Route::middleware(['permission:manage_cms,manage_banners,manage_faqs,manage_branch_locations'])->prefix('branch-locations')->group(function () {
             Route::get('/', [BranchLocationController::class, 'adminIndex']);
             Route::post('/', [BranchLocationController::class, 'store']);
             Route::put('/{id}', [BranchLocationController::class, 'update']);
             Route::delete('/{id}', [BranchLocationController::class, 'destroy']);
         });
 
-        // Contact Inquiries (Admin)
-        Route::middleware(['permission:manage_cms,manage_banners,manage_faqs'])->prefix('contact-inquiries')->group(function () {
+        // Contact Inquiries (Admin) — same treatment as Branch Locations.
+        Route::middleware(['permission:manage_cms,manage_banners,manage_faqs,manage_contact_inquiries'])->prefix('contact-inquiries')->group(function () {
             Route::get('/', [ContactInquiryController::class, 'adminIndex']);
             Route::get('/{id}', [ContactInquiryController::class, 'adminShow']);
             Route::put('/{id}', [ContactInquiryController::class, 'adminUpdate']);
             Route::delete('/{id}', [ContactInquiryController::class, 'adminDelete']);
         });
 
-        // Locations (Admin CRUD)
-        Route::middleware(['permission:manage_locations'])->prefix('locations')->group(function () {
+        // Locations (Admin CRUD) — manage_locations stays as master key; split additionally by
+        // entity so a role can be granted just divisions, just districts, or just areas.
+        Route::prefix('locations')->group(function () {
             // Divisions
-            Route::post('/divisions', [LocationController::class, 'storeDivision']);
-            Route::put('/divisions/{id}', [LocationController::class, 'updateDivision']);
-            Route::delete('/divisions/{id}', [LocationController::class, 'deleteDivision']);
+            Route::post('/divisions', [LocationController::class, 'storeDivision'])->middleware('permission:manage_locations,manage_divisions');
+            Route::put('/divisions/{id}', [LocationController::class, 'updateDivision'])->middleware('permission:manage_locations,manage_divisions');
+            Route::delete('/divisions/{id}', [LocationController::class, 'deleteDivision'])->middleware('permission:manage_locations,manage_divisions');
 
             // Districts
-            Route::post('/districts', [LocationController::class, 'storeDistrict']);
-            Route::put('/districts/{id}', [LocationController::class, 'updateDistrict']);
-            Route::delete('/districts/{id}', [LocationController::class, 'deleteDistrict']);
+            Route::post('/districts', [LocationController::class, 'storeDistrict'])->middleware('permission:manage_locations,manage_districts');
+            Route::put('/districts/{id}', [LocationController::class, 'updateDistrict'])->middleware('permission:manage_locations,manage_districts');
+            Route::delete('/districts/{id}', [LocationController::class, 'deleteDistrict'])->middleware('permission:manage_locations,manage_districts');
 
             // Areas
-            Route::post('/areas', [LocationController::class, 'storeArea']);
-            Route::put('/areas/{id}', [LocationController::class, 'updateArea']);
-            Route::delete('/areas/{id}', [LocationController::class, 'deleteArea']);
+            Route::post('/areas', [LocationController::class, 'storeArea'])->middleware('permission:manage_locations,manage_areas');
+            Route::put('/areas/{id}', [LocationController::class, 'updateArea'])->middleware('permission:manage_locations,manage_areas');
+            Route::delete('/areas/{id}', [LocationController::class, 'deleteArea'])->middleware('permission:manage_locations,manage_areas');
         });
 
-        // Tickets (Enhanced)
-        Route::middleware(['permission:manage_tickets,respond_tickets'])->prefix('tickets')->group(function () {
-            Route::get('/', [AdminController::class, 'tickets']);
-            Route::get('/{id}', [TicketController::class, 'show']);
-            Route::put('/{id}', [AdminController::class, 'ticketUpdate']);
-            Route::post('/{id}/reply', [AdminController::class, 'ticketReply']);
-            Route::post('/{id}/messages', [TicketController::class, 'addMessage']);
-            Route::post('/{id}/assign', [AdminController::class, 'ticketAssign']);
-            Route::post('/{id}/close', [TicketController::class, 'close']);
-            Route::delete('/{id}', [AdminController::class, 'ticketDelete']);
+        // Tickets (Enhanced) — old 2-way OR kept valid everywhere; reply/assign/close/delete
+        // additionally get their own specific permission.
+        Route::prefix('tickets')->group(function () {
+            Route::get('/', [AdminController::class, 'tickets'])->middleware('permission:manage_tickets,respond_tickets');
+            Route::get('/{id}', [TicketController::class, 'show'])->middleware('permission:manage_tickets,respond_tickets');
+            Route::put('/{id}', [AdminController::class, 'ticketUpdate'])->middleware('permission:manage_tickets,respond_tickets');
+            Route::post('/{id}/reply', [AdminController::class, 'ticketReply'])->middleware('permission:manage_tickets,respond_tickets,reply_tickets');
+            Route::post('/{id}/messages', [TicketController::class, 'addMessage'])->middleware('permission:manage_tickets,respond_tickets,reply_tickets');
+            Route::post('/{id}/assign', [AdminController::class, 'ticketAssign'])->middleware('permission:manage_tickets,respond_tickets,assign_tickets');
+            Route::post('/{id}/close', [TicketController::class, 'close'])->middleware('permission:manage_tickets,respond_tickets,close_tickets');
+            Route::delete('/{id}', [AdminController::class, 'ticketDelete'])->middleware('permission:manage_tickets,respond_tickets,delete_tickets');
         });
 
-        // Reviews
-        Route::middleware(['permission:manage_reviews,respond_reviews'])->prefix('reviews')->group(function () {
-            Route::get('/', [AdminController::class, 'reviews']);
-            Route::put('/{id}/moderate', [AdminController::class, 'reviewModerate']);
-            Route::delete('/{id}', [AdminController::class, 'reviewDelete']);
+        // Reviews — old 2-way OR kept valid everywhere; moderate/delete additionally get their
+        // own specific permission.
+        Route::prefix('reviews')->group(function () {
+            Route::get('/', [AdminController::class, 'reviews'])->middleware('permission:manage_reviews,respond_reviews');
+            Route::put('/{id}/moderate', [AdminController::class, 'reviewModerate'])->middleware('permission:manage_reviews,respond_reviews,moderate_reviews');
+            Route::delete('/{id}', [AdminController::class, 'reviewDelete'])->middleware('permission:manage_reviews,respond_reviews,delete_reviews');
         });
 
-        // Payments Management
+        // Payments Management — already adequately granular (view_payments for read,
+        // manage_payments for the one write route), left unchanged.
         Route::middleware(['permission:view_orders,manage_orders,process_orders,view_payments,manage_payments'])->prefix('payments')->group(function () {
             Route::get('/', [AdminController::class, 'payments']);
             Route::put('/{id}', [AdminController::class, 'paymentUpdate']);
         });
 
-        // Payment Notices (Admin)
+        // Payment Notices (Admin) — same as Payments, unchanged.
         Route::middleware(['permission:view_orders,manage_orders,process_orders,view_payments,manage_payments'])->prefix('payment-notices')->group(function () {
             Route::get('/', [AdminController::class, 'paymentNotices']);
             Route::put('/{id}', [AdminController::class, 'paymentNoticeUpdate']);
         });
 
-        // CMS Pages
-        Route::middleware(['permission:manage_cms,manage_banners,manage_faqs'])->prefix('cms-pages')->group(function () {
+        // CMS Pages — old 3-way OR kept valid everywhere; additionally gets its own specific
+        // permission (manage_banners/manage_faqs were already specific enough to their own
+        // modules below, so only Pages/Branch-Locations/Contact-Inquiries needed a new name).
+        Route::middleware(['permission:manage_cms,manage_banners,manage_faqs,manage_cms_pages'])->prefix('cms-pages')->group(function () {
             Route::get('/', [AdminController::class, 'cmsPages']);
             Route::post('/', [AdminController::class, 'cmsPageStore']);
             Route::get('/{id}', [AdminController::class, 'cmsPageShow']);
@@ -506,7 +521,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::delete('/{id}', [AdminController::class, 'cmsPageDestroy']);
         });
 
-        // Banners
+        // Banners — manage_banners is already specific to this module; unchanged.
         Route::middleware(['permission:manage_cms,manage_banners,manage_faqs'])->prefix('banners')->group(function () {
             Route::get('/', [AdminController::class, 'banners']);
             Route::post('/', [AdminController::class, 'bannerStore']);
@@ -514,7 +529,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::delete('/{id}', [AdminController::class, 'bannerDestroy']);
         });
 
-        // FAQs
+        // FAQs — manage_faqs is already specific to this module; unchanged.
         Route::middleware(['permission:manage_cms,manage_banners,manage_faqs'])->prefix('faqs')->group(function () {
             Route::get('/', [AdminController::class, 'faqs']);
             Route::post('/', [AdminController::class, 'faqStore']);
@@ -522,89 +537,102 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::delete('/{id}', [AdminController::class, 'faqDestroy']);
         });
 
-        // Site Settings (Enhanced)
-        Route::middleware(['permission:manage_settings'])->prefix('settings')->group(function () {
-            Route::get('/', [AdminController::class, 'settings']);
-            Route::put('/', [AdminController::class, 'settingsUpdate']);
-            Route::post('/api-keys/regenerate', [AdminController::class, 'settingsRegenerateApiKey']);
+        // Site Settings (Enhanced) — manage_settings stays as master key; regenerating API keys
+        // additionally gets its own specific permission (materially more sensitive than editing
+        // general settings, previously gated identically).
+        Route::prefix('settings')->group(function () {
+            Route::get('/', [AdminController::class, 'settings'])->middleware('permission:manage_settings');
+            Route::put('/', [AdminController::class, 'settingsUpdate'])->middleware('permission:manage_settings');
+            Route::post('/api-keys/regenerate', [AdminController::class, 'settingsRegenerateApiKey'])->middleware('permission:manage_settings,regenerate_api_keys');
         });
 
-        // Products Management (Admin)
-        Route::middleware(['permission:manage_products,create_products,edit_products,delete_products,manage_inventory'])->prefix('products')->group(function () {
-            Route::get('/', [AdminController::class, 'adminProducts']);
-            Route::get('/stats', [AdminController::class, 'adminProductStats']);
-            Route::get('/spec-suggestions', [AdminController::class, 'adminProductSpecSuggestions']);
-            Route::post('/', [AdminController::class, 'adminProductStore']);
-            Route::get('/{id}', [AdminController::class, 'adminProductShow']);
-            Route::put('/{id}', [AdminController::class, 'adminProductUpdate']);
-            Route::delete('/{id}', [AdminController::class, 'adminProductDelete']);
-            Route::put('/{id}/toggle-status', [AdminController::class, 'adminProductToggleStatus']);
-            Route::put('/{id}/toggle-featured', [AdminController::class, 'adminProductToggleFeatured']);
+        // Products Management (Admin) — manage_products stays as a full-module master key on
+        // every route. create/edit/delete_products and manage_inventory now actually mean only
+        // their own action (previously bundled into one OR covering all 9 routes, so e.g.
+        // edit_products alone could also delete — a real gap this closes); view/toggle-status/
+        // toggle-featured are newly-added permissions where none existed before.
+        Route::prefix('products')->group(function () {
+            Route::get('/', [AdminController::class, 'adminProducts'])->middleware('permission:manage_products,view_products');
+            Route::get('/stats', [AdminController::class, 'adminProductStats'])->middleware('permission:manage_products,view_products');
+            Route::get('/spec-suggestions', [AdminController::class, 'adminProductSpecSuggestions'])->middleware('permission:manage_products,view_products');
+            Route::post('/', [AdminController::class, 'adminProductStore'])->middleware('permission:manage_products,create_products');
+            Route::get('/{id}', [AdminController::class, 'adminProductShow'])->middleware('permission:manage_products,view_products');
+            Route::put('/{id}', [AdminController::class, 'adminProductUpdate'])->middleware('permission:manage_products,edit_products,manage_inventory');
+            Route::delete('/{id}', [AdminController::class, 'adminProductDelete'])->middleware('permission:manage_products,delete_products');
+            Route::put('/{id}/toggle-status', [AdminController::class, 'adminProductToggleStatus'])->middleware('permission:manage_products,toggle_product_status');
+            Route::put('/{id}/toggle-featured', [AdminController::class, 'adminProductToggleFeatured'])->middleware('permission:manage_products,toggle_product_featured');
         });
 
-        // Product Brands Management (Admin) — grouped under "Categories" in the sidebar
-        Route::middleware(['permission:manage_categories'])->prefix('product-brands')->group(function () {
-            Route::get('/', [AdminController::class, 'adminProductBrands']);
-            Route::post('/', [AdminController::class, 'adminProductBrandStore']);
-            Route::get('/{id}', [AdminController::class, 'adminProductBrandShow']);
-            Route::put('/{id}', [AdminController::class, 'adminProductBrandUpdate']);
-            Route::delete('/{id}', [AdminController::class, 'adminProductBrandDelete']);
-            Route::put('/{id}/toggle-status', [AdminController::class, 'adminProductBrandToggleStatus']);
+        // Product Brands Management (Admin) — grouped under "Categories" in the sidebar; read
+        // additionally gets its own specific permission.
+        Route::prefix('product-brands')->group(function () {
+            Route::get('/', [AdminController::class, 'adminProductBrands'])->middleware('permission:manage_categories,view_categories');
+            Route::post('/', [AdminController::class, 'adminProductBrandStore'])->middleware('permission:manage_categories');
+            Route::get('/{id}', [AdminController::class, 'adminProductBrandShow'])->middleware('permission:manage_categories,view_categories');
+            Route::put('/{id}', [AdminController::class, 'adminProductBrandUpdate'])->middleware('permission:manage_categories');
+            Route::delete('/{id}', [AdminController::class, 'adminProductBrandDelete'])->middleware('permission:manage_categories');
+            Route::put('/{id}/toggle-status', [AdminController::class, 'adminProductBrandToggleStatus'])->middleware('permission:manage_categories');
         });
 
-        // Services Management (Admin)
-        Route::middleware(['permission:manage_services,create_services,edit_services,delete_services'])->prefix('services')->group(function () {
-            Route::get('/', [AdminController::class, 'adminServices']);
-            Route::post('/', [AdminController::class, 'adminServiceStore']);
-            Route::put('/{id}', [AdminController::class, 'adminServiceUpdate']);
-            Route::delete('/{id}', [AdminController::class, 'adminServiceDelete']);
-            Route::put('/{id}/toggle-status', [AdminController::class, 'adminServiceToggleStatus']);
+        // Services Management (Admin) — same treatment as Products.
+        Route::prefix('services')->group(function () {
+            Route::get('/', [AdminController::class, 'adminServices'])->middleware('permission:manage_services,view_services');
+            Route::post('/', [AdminController::class, 'adminServiceStore'])->middleware('permission:manage_services,create_services');
+            Route::put('/{id}', [AdminController::class, 'adminServiceUpdate'])->middleware('permission:manage_services,edit_services');
+            Route::delete('/{id}', [AdminController::class, 'adminServiceDelete'])->middleware('permission:manage_services,delete_services');
+            Route::put('/{id}/toggle-status', [AdminController::class, 'adminServiceToggleStatus'])->middleware('permission:manage_services,toggle_service_status');
         });
 
-        // Admin Notifications
-        Route::middleware(['permission:view_notifications'])->prefix('notifications')->group(function () {
-            Route::get('/', [AdminController::class, 'adminNotifications']);
-            Route::put('/{id}/read', [AdminController::class, 'adminNotificationMarkRead']);
-            Route::put('/read-all', [AdminController::class, 'adminNotificationMarkAllRead']);
-            Route::delete('/{id}', [AdminController::class, 'adminNotificationDelete']);
+        // Admin Notifications — view_notifications stays read-only (list only); mutating actions
+        // now require manage_notifications (previously view_notifications alone also granted
+        // mark-read/delete, a real gap this closes).
+        Route::prefix('notifications')->group(function () {
+            Route::get('/', [AdminController::class, 'adminNotifications'])->middleware('permission:view_notifications,manage_notifications');
+            Route::put('/{id}/read', [AdminController::class, 'adminNotificationMarkRead'])->middleware('permission:manage_notifications');
+            Route::put('/read-all', [AdminController::class, 'adminNotificationMarkAllRead'])->middleware('permission:manage_notifications');
+            Route::delete('/{id}', [AdminController::class, 'adminNotificationDelete'])->middleware('permission:manage_notifications');
         });
 
-        // Reports
-        Route::middleware(['permission:view_reports,export_reports'])->prefix('reports')->group(function () {
-            Route::get('/sales', [ReportController::class, 'salesReport']);
-            Route::get('/vendors', [ReportController::class, 'vendorReport']);
-            Route::get('/customers', [ReportController::class, 'customerReport']);
-            Route::get('/catalog', [ReportController::class, 'catalogReport']);
-            Route::get('/reviews', [ReportController::class, 'reviewReport']);
-            Route::get('/tickets', [ReportController::class, 'ticketReport']);
+        // Reports — old 2-way OR kept valid everywhere on every route; each report view
+        // additionally gets its own specific permission so e.g. sales figures can be shared
+        // without also exposing customer/vendor reports.
+        Route::prefix('reports')->group(function () {
+            Route::get('/sales', [ReportController::class, 'salesReport'])->middleware('permission:view_reports,export_reports,view_sales_reports');
+            Route::get('/vendors', [ReportController::class, 'vendorReport'])->middleware('permission:view_reports,export_reports,view_vendor_reports');
+            Route::get('/customers', [ReportController::class, 'customerReport'])->middleware('permission:view_reports,export_reports,view_customer_reports');
+            Route::get('/catalog', [ReportController::class, 'catalogReport'])->middleware('permission:view_reports,export_reports,view_catalog_reports');
+            Route::get('/reviews', [ReportController::class, 'reviewReport'])->middleware('permission:view_reports,export_reports,view_review_reports');
+            Route::get('/tickets', [ReportController::class, 'ticketReport'])->middleware('permission:view_reports,export_reports,view_ticket_reports');
 
             // Exports
-            Route::get('/export/sales/csv', [ReportController::class, 'exportSalesCSV']);
-            Route::get('/export/sales/pdf', [ReportController::class, 'exportSalesPDF']);
-            Route::get('/export/vendors/csv', [ReportController::class, 'exportVendorsCSV']);
-            Route::get('/export/customers/csv', [ReportController::class, 'exportCustomersCSV']);
+            Route::get('/export/sales/csv', [ReportController::class, 'exportSalesCSV'])->middleware('permission:view_reports,export_reports');
+            Route::get('/export/sales/pdf', [ReportController::class, 'exportSalesPDF'])->middleware('permission:view_reports,export_reports');
+            Route::get('/export/vendors/csv', [ReportController::class, 'exportVendorsCSV'])->middleware('permission:view_reports,export_reports');
+            Route::get('/export/customers/csv', [ReportController::class, 'exportCustomersCSV'])->middleware('permission:view_reports,export_reports');
         });
 
-        // Expense Categories
-        Route::middleware(['permission:manage_accounts,view_ledger'])->prefix('expense-categories')->group(function () {
-            Route::get('/', [ExpenseController::class, 'categoryIndex']);
-            Route::post('/', [ExpenseController::class, 'categoryStore']);
-            Route::get('/{id}', [ExpenseController::class, 'categoryShow']);
-            Route::put('/{id}', [ExpenseController::class, 'categoryUpdate']);
-            Route::delete('/{id}', [ExpenseController::class, 'categoryDestroy']);
+        // Expense Categories — old 2-way OR kept valid everywhere; each action additionally gets
+        // its own specific permission (previously view_ledger — nominally read-only — also
+        // granted create/edit/delete of expenses, a real gap this closes).
+        Route::prefix('expense-categories')->group(function () {
+            Route::get('/', [ExpenseController::class, 'categoryIndex'])->middleware('permission:manage_accounts,view_ledger,view_expenses');
+            Route::post('/', [ExpenseController::class, 'categoryStore'])->middleware('permission:manage_accounts,create_expenses');
+            Route::get('/{id}', [ExpenseController::class, 'categoryShow'])->middleware('permission:manage_accounts,view_ledger,view_expenses');
+            Route::put('/{id}', [ExpenseController::class, 'categoryUpdate'])->middleware('permission:manage_accounts,edit_expenses');
+            Route::delete('/{id}', [ExpenseController::class, 'categoryDestroy'])->middleware('permission:manage_accounts,delete_expenses');
         });
 
-        // Expenses
-        Route::middleware(['permission:manage_accounts,view_ledger'])->prefix('expenses')->group(function () {
-            Route::get('/report', [ExpenseController::class, 'report']);
-            Route::get('/', [ExpenseController::class, 'index']);
-            Route::post('/', [ExpenseController::class, 'store']);
-            Route::get('/{id}', [ExpenseController::class, 'show']);
-            Route::put('/{id}', [ExpenseController::class, 'update']);
-            Route::delete('/{id}', [ExpenseController::class, 'destroy']);
+        // Expenses — same treatment as Expense Categories.
+        Route::prefix('expenses')->group(function () {
+            Route::get('/report', [ExpenseController::class, 'report'])->middleware('permission:manage_accounts,view_ledger,view_expenses');
+            Route::get('/', [ExpenseController::class, 'index'])->middleware('permission:manage_accounts,view_ledger,view_expenses');
+            Route::post('/', [ExpenseController::class, 'store'])->middleware('permission:manage_accounts,create_expenses');
+            Route::get('/{id}', [ExpenseController::class, 'show'])->middleware('permission:manage_accounts,view_ledger,view_expenses');
+            Route::put('/{id}', [ExpenseController::class, 'update'])->middleware('permission:manage_accounts,edit_expenses');
+            Route::delete('/{id}', [ExpenseController::class, 'destroy'])->middleware('permission:manage_accounts,delete_expenses');
         });
 
-        // Suppliers
+        // Suppliers — already its own dedicated permission (manage_suppliers); unchanged.
         Route::middleware(['permission:manage_purchases,view_purchases,manage_suppliers'])->prefix('suppliers')->group(function () {
             Route::get('/', [SupplierController::class, 'index']);
             Route::post('/', [SupplierController::class, 'store']);
@@ -613,95 +641,104 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::delete('/{id}', [SupplierController::class, 'destroy']);
         });
 
-        // Purchase Orders
-        Route::middleware(['permission:manage_purchases,view_purchases,manage_suppliers'])->prefix('purchases')->group(function () {
-            Route::get('/', [PurchaseOrderController::class, 'index']);
-            Route::post('/', [PurchaseOrderController::class, 'store']);
-            Route::get('/{id}', [PurchaseOrderController::class, 'show']);
-            Route::put('/{id}', [PurchaseOrderController::class, 'update']);
-            Route::delete('/{id}', [PurchaseOrderController::class, 'destroy']);
-            Route::post('/{id}/mark-ordered', [PurchaseOrderController::class, 'markOrdered']);
-            Route::post('/{id}/receive', [PurchaseOrderController::class, 'receive']);
-            Route::post('/{id}/pay', [PurchaseOrderController::class, 'pay']);
-            Route::post('/{id}/cancel', [PurchaseOrderController::class, 'cancel']);
-            Route::get('/{id}/download', [PurchaseOrderController::class, 'downloadPdf']);
+        // Purchase Orders — old 3-way OR kept valid everywhere; each workflow-state action
+        // (mark-ordered/receive/pay/cancel) additionally gets its own specific permission — `pay`
+        // in particular releases money to a supplier and previously needed nothing more than
+        // view_purchases, a real gap this closes.
+        Route::prefix('purchases')->group(function () {
+            Route::get('/', [PurchaseOrderController::class, 'index'])->middleware('permission:manage_purchases,view_purchases,manage_suppliers');
+            Route::post('/', [PurchaseOrderController::class, 'store'])->middleware('permission:manage_purchases,view_purchases,manage_suppliers');
+            Route::get('/{id}', [PurchaseOrderController::class, 'show'])->middleware('permission:manage_purchases,view_purchases,manage_suppliers');
+            Route::put('/{id}', [PurchaseOrderController::class, 'update'])->middleware('permission:manage_purchases,view_purchases,manage_suppliers');
+            Route::delete('/{id}', [PurchaseOrderController::class, 'destroy'])->middleware('permission:manage_purchases,view_purchases,manage_suppliers');
+            Route::post('/{id}/mark-ordered', [PurchaseOrderController::class, 'markOrdered'])->middleware('permission:manage_purchases,view_purchases,manage_suppliers,mark_purchase_orders');
+            Route::post('/{id}/receive', [PurchaseOrderController::class, 'receive'])->middleware('permission:manage_purchases,view_purchases,manage_suppliers,receive_purchase_orders');
+            Route::post('/{id}/pay', [PurchaseOrderController::class, 'pay'])->middleware('permission:manage_purchases,pay_purchase_orders');
+            Route::post('/{id}/cancel', [PurchaseOrderController::class, 'cancel'])->middleware('permission:manage_purchases,view_purchases,manage_suppliers,cancel_purchase_orders');
+            Route::get('/{id}/download', [PurchaseOrderController::class, 'downloadPdf'])->middleware('permission:manage_purchases,view_purchases,manage_suppliers');
         });
 
-        // Investors & Investments
-        Route::middleware(['permission:manage_accounts,view_ledger,view_investors,manage_investors'])->prefix('investors')->group(function () {
-            Route::get('/', [InvestmentController::class, 'investorIndex']);
-            Route::post('/', [InvestmentController::class, 'investorStore']);
-            Route::put('/{id}', [InvestmentController::class, 'investorUpdate']);
-            Route::delete('/{id}', [InvestmentController::class, 'investorDestroy']);
-            Route::post('/{id}/return', [InvestmentController::class, 'processReturn']);
+        // Investors & Investments — old 4-way OR kept valid everywhere; processing a return
+        // (paying an investor back) additionally gets its own specific permission — previously
+        // needed nothing more than view_ledger, a real gap this closes.
+        Route::prefix('investors')->group(function () {
+            Route::get('/', [InvestmentController::class, 'investorIndex'])->middleware('permission:manage_accounts,view_ledger,view_investors,manage_investors');
+            Route::post('/', [InvestmentController::class, 'investorStore'])->middleware('permission:manage_accounts,view_ledger,view_investors,manage_investors');
+            Route::put('/{id}', [InvestmentController::class, 'investorUpdate'])->middleware('permission:manage_accounts,view_ledger,view_investors,manage_investors');
+            Route::delete('/{id}', [InvestmentController::class, 'investorDestroy'])->middleware('permission:manage_accounts,view_ledger,view_investors,manage_investors');
+            Route::post('/{id}/return', [InvestmentController::class, 'processReturn'])->middleware('permission:manage_accounts,manage_investors,process_investor_returns');
         });
         Route::middleware(['permission:manage_accounts,view_ledger,view_investors,manage_investors'])->prefix('investments')->group(function () {
             Route::get('/', [InvestmentController::class, 'index']);
             Route::post('/', [InvestmentController::class, 'store']);
         });
 
-        // Accounting
-        Route::middleware(['permission:manage_accounts,view_ledger'])->prefix('accounting')->group(function () {
-            Route::get('/accounts', [AccountingController::class, 'accountsIndex']);
-            Route::post('/accounts', [AccountingController::class, 'accountStore']);
-            Route::put('/accounts/{id}', [AccountingController::class, 'accountUpdate']);
-            Route::delete('/accounts/{id}', [AccountingController::class, 'accountDestroy']);
+        // Accounting — old 2-way OR kept valid everywhere; split additionally into reading
+        // financial statements, managing the chart of accounts, posting journal entries, and
+        // processing pending items into the ledger — previously all 20 routes (including posting
+        // journal entries and deleting chart-of-accounts rows) shared just these same 2
+        // permissions as reading a trial balance, a real gap this closes.
+        Route::prefix('accounting')->group(function () {
+            Route::get('/accounts', [AccountingController::class, 'accountsIndex'])->middleware('permission:manage_accounts,view_ledger,view_financial_statements');
+            Route::post('/accounts', [AccountingController::class, 'accountStore'])->middleware('permission:manage_accounts,manage_chart_of_accounts');
+            Route::put('/accounts/{id}', [AccountingController::class, 'accountUpdate'])->middleware('permission:manage_accounts,manage_chart_of_accounts');
+            Route::delete('/accounts/{id}', [AccountingController::class, 'accountDestroy'])->middleware('permission:manage_accounts,manage_chart_of_accounts');
 
-            Route::get('/journal', [AccountingController::class, 'journalIndex']);
-            Route::post('/journal', [AccountingController::class, 'journalStore']);
-            Route::get('/journal/{id}', [AccountingController::class, 'journalShow']);
+            Route::get('/journal', [AccountingController::class, 'journalIndex'])->middleware('permission:manage_accounts,view_ledger,view_financial_statements');
+            Route::post('/journal', [AccountingController::class, 'journalStore'])->middleware('permission:manage_accounts,post_journal_entries');
+            Route::get('/journal/{id}', [AccountingController::class, 'journalShow'])->middleware('permission:manage_accounts,view_ledger,view_financial_statements');
 
-            Route::get('/trial-balance', [AccountingController::class, 'trialBalance']);
-            Route::get('/income-statement', [AccountingController::class, 'incomeStatement']);
-            Route::get('/balance-sheet', [AccountingController::class, 'balanceSheet']);
-            Route::get('/cash-position', [AccountingController::class, 'cashPosition']);
-            Route::get('/cash-book', [AccountingController::class, 'cashBook']);
-            Route::get('/ledger/{accountId}', [AccountingController::class, 'accountLedger']);
+            Route::get('/trial-balance', [AccountingController::class, 'trialBalance'])->middleware('permission:manage_accounts,view_ledger,view_financial_statements');
+            Route::get('/income-statement', [AccountingController::class, 'incomeStatement'])->middleware('permission:manage_accounts,view_ledger,view_financial_statements');
+            Route::get('/balance-sheet', [AccountingController::class, 'balanceSheet'])->middleware('permission:manage_accounts,view_ledger,view_financial_statements');
+            Route::get('/cash-position', [AccountingController::class, 'cashPosition'])->middleware('permission:manage_accounts,view_ledger,view_financial_statements');
+            Route::get('/cash-book', [AccountingController::class, 'cashBook'])->middleware('permission:manage_accounts,view_ledger,view_financial_statements');
+            Route::get('/ledger/{accountId}', [AccountingController::class, 'accountLedger'])->middleware('permission:manage_accounts,view_ledger,view_financial_statements');
 
-            Route::get('/pending', [AccountingController::class, 'pendingSummary']);
-            Route::get('/pending/expenses', [AccountingController::class, 'pendingExpenses']);
-            Route::get('/pending/orders', [AccountingController::class, 'pendingOrders']);
-            Route::get('/pending/purchase-orders', [AccountingController::class, 'pendingPurchaseOrders']);
-            Route::post('/process/expense/{id}', [AccountingController::class, 'processExpense']);
-            Route::post('/process/order/{id}', [AccountingController::class, 'processOrder']);
-            Route::post('/process/purchase-order/{id}', [AccountingController::class, 'processPurchaseOrder']);
+            Route::get('/pending', [AccountingController::class, 'pendingSummary'])->middleware('permission:manage_accounts,view_ledger,view_financial_statements');
+            Route::get('/pending/expenses', [AccountingController::class, 'pendingExpenses'])->middleware('permission:manage_accounts,view_ledger,view_financial_statements');
+            Route::get('/pending/orders', [AccountingController::class, 'pendingOrders'])->middleware('permission:manage_accounts,view_ledger,view_financial_statements');
+            Route::get('/pending/purchase-orders', [AccountingController::class, 'pendingPurchaseOrders'])->middleware('permission:manage_accounts,view_ledger,view_financial_statements');
+            Route::post('/process/expense/{id}', [AccountingController::class, 'processExpense'])->middleware('permission:manage_accounts,process_pending_ledger_items');
+            Route::post('/process/order/{id}', [AccountingController::class, 'processOrder'])->middleware('permission:manage_accounts,process_pending_ledger_items');
+            Route::post('/process/purchase-order/{id}', [AccountingController::class, 'processPurchaseOrder'])->middleware('permission:manage_accounts,process_pending_ledger_items');
         });
 
         // Audit Logs
         Route::get('/audit-logs', [AdminController::class, 'auditLogs'])->middleware('permission:view_audit_logs');
 
-        // RBAC - Roles Management (viewing is open to any admin-tier role; changes require manage_roles)
+        // RBAC - Roles Management (viewing is open to any admin-tier role). manage_roles stays as
+        // master key; split additionally into managing role *definitions* (create/edit/delete a
+        // role) vs *exercising* roles on users (assign/remove/sync) — previously one bucket for
+        // both categories.
         Route::prefix('roles')->group(function () {
             Route::get('/', [RoleController::class, 'index']);
             Route::get('/{id}', [RoleController::class, 'show']);
             Route::get('/{id}/users', [RoleController::class, 'getUsersByRole']);
 
-            Route::middleware(['permission:manage_roles'])->group(function () {
-                Route::post('/', [RoleController::class, 'store']);
-                Route::put('/{id}', [RoleController::class, 'update']);
-                Route::delete('/{id}', [RoleController::class, 'destroy']);
-                Route::post('/assign', [RoleController::class, 'assignToUser']);
-                Route::post('/remove', [RoleController::class, 'removeFromUser']);
-                Route::post('/sync-user', [RoleController::class, 'syncUserRoles']);
-            });
+            Route::post('/', [RoleController::class, 'store'])->middleware('permission:manage_roles,manage_role_definitions');
+            Route::put('/{id}', [RoleController::class, 'update'])->middleware('permission:manage_roles,manage_role_definitions');
+            Route::delete('/{id}', [RoleController::class, 'destroy'])->middleware('permission:manage_roles,manage_role_definitions');
+            Route::post('/assign', [RoleController::class, 'assignToUser'])->middleware('permission:manage_roles,assign_roles');
+            Route::post('/remove', [RoleController::class, 'removeFromUser'])->middleware('permission:manage_roles,assign_roles');
+            Route::post('/sync-user', [RoleController::class, 'syncUserRoles'])->middleware('permission:manage_roles,assign_roles');
         });
 
-        // RBAC - Permissions Management
+        // RBAC - Permissions Management — same split as Roles above (defining permissions vs
+        // assigning them to roles).
         Route::prefix('permissions')->group(function () {
             Route::get('/', [PermissionController::class, 'index']);
             Route::get('/modules', [PermissionController::class, 'getModules']);
             Route::get('/role/{roleId}', [PermissionController::class, 'getByRole']);
             Route::get('/{id}', [PermissionController::class, 'show']);
 
-            Route::middleware(['permission:manage_roles'])->group(function () {
-                Route::post('/', [PermissionController::class, 'store']);
-                Route::put('/{id}', [PermissionController::class, 'update']);
-                Route::delete('/{id}', [PermissionController::class, 'destroy']);
-                Route::post('/assign', [PermissionController::class, 'assignToRole']);
-                Route::post('/remove', [PermissionController::class, 'removeFromRole']);
-                Route::post('/sync-role', [PermissionController::class, 'syncRolePermissions']);
-                Route::post('/bulk-create', [PermissionController::class, 'bulkCreate']);
-            });
+            Route::post('/', [PermissionController::class, 'store'])->middleware('permission:manage_roles,manage_role_definitions');
+            Route::put('/{id}', [PermissionController::class, 'update'])->middleware('permission:manage_roles,manage_role_definitions');
+            Route::delete('/{id}', [PermissionController::class, 'destroy'])->middleware('permission:manage_roles,manage_role_definitions');
+            Route::post('/assign', [PermissionController::class, 'assignToRole'])->middleware('permission:manage_roles,assign_roles');
+            Route::post('/remove', [PermissionController::class, 'removeFromRole'])->middleware('permission:manage_roles,assign_roles');
+            Route::post('/sync-role', [PermissionController::class, 'syncRolePermissions'])->middleware('permission:manage_roles,assign_roles');
+            Route::post('/bulk-create', [PermissionController::class, 'bulkCreate'])->middleware('permission:manage_roles,manage_role_definitions');
         });
     });
 

@@ -158,11 +158,14 @@ class InvoiceController extends BaseController
         return $this->success($invoices);
     }
 
-    /** POST /admin/invoices/{orderId}/custom — create a new custom invoice. Super_admin only. */
+    /**
+     * POST /admin/invoices/{orderId}/custom — create a new custom invoice. Super_admin (or anyone
+     * specifically granted create_custom_invoices).
+     */
     public function customStore(Request $request, int $orderId): JsonResponse
     {
         $admin = $request->user();
-        if (!$admin->hasRole('super_admin')) {
+        if (!$admin->hasRole('super_admin') && !$admin->can('create_custom_invoices')) {
             return $this->error('Only a super admin can create a custom invoice.', 403);
         }
 

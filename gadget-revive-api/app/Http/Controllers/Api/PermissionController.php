@@ -22,18 +22,39 @@ class PermissionController extends Controller
     private function resolveModule(string $name): string
     {
         static $map = [
-            'users' => 'Users', 'vendors' => 'Vendors', 'categories' => 'Categories',
-            'locations' => 'Locations', 'services' => 'Services', 'products' => 'Products',
-            'inventory' => 'Products', 'orders' => 'Orders', 'reviews' => 'Reviews',
-            'tickets' => 'Tickets', 'cms' => 'Content (CMS)', 'banners' => 'Content (CMS)',
-            'faqs' => 'Content (CMS)', 'settings' => 'Settings', 'reports' => 'Reports',
-            'audit_logs' => 'Audit Logs', 'purchases' => 'Purchases', 'suppliers' => 'Purchases',
+            'users' => 'Users', 'user_status' => 'Users', 'user_password' => 'Users',
+            'vendors' => 'Vendors', 'categories' => 'Categories',
+            'locations' => 'Locations', 'divisions' => 'Locations', 'districts' => 'Locations', 'areas' => 'Locations',
+            'services' => 'Services', 'service_status' => 'Services',
+            'products' => 'Products', 'product_status' => 'Products', 'product_featured' => 'Products',
+            'inventory' => 'Products', 'orders' => 'Orders', 'payment_amounts' => 'Orders', 'custom_invoices' => 'Orders',
+            'paid_orders' => 'Orders',
+            'reviews' => 'Reviews',
+            'tickets' => 'Tickets', 'cms' => 'Content (CMS)', 'cms_pages' => 'Content (CMS)',
+            'banners' => 'Content (CMS)', 'faqs' => 'Content (CMS)',
+            'branch_locations' => 'Content (CMS)', 'contact_inquiries' => 'Content (CMS)',
+            'settings' => 'Settings', 'api_keys' => 'Settings',
+            'reports' => 'Reports', 'sales_reports' => 'Reports', 'vendor_reports' => 'Reports',
+            'customer_reports' => 'Reports', 'catalog_reports' => 'Reports', 'review_reports' => 'Reports',
+            'ticket_reports' => 'Reports',
+            'audit_logs' => 'Audit Logs', 'purchases' => 'Purchases', 'purchase_orders' => 'Purchases',
+            'suppliers' => 'Purchases',
             'accounts' => 'Accounts & Finance', 'ledger' => 'Accounts & Finance',
-            'roles' => 'Roles & Permissions',
-            'service_intakes' => 'Service Intakes', 'payments' => 'Payments',
-            'investors' => 'Investors', 'notifications' => 'Notifications',
+            'financial_statements' => 'Accounts & Finance', 'chart_of_accounts' => 'Accounts & Finance',
+            'journal_entries' => 'Accounts & Finance', 'pending_ledger_items' => 'Accounts & Finance',
+            'expenses' => 'Expenses',
+            'roles' => 'Roles & Permissions', 'role_definitions' => 'Roles & Permissions',
+            'service_intakes' => 'Service Intakes', 'service_intake_price' => 'Service Intakes',
+            'payments' => 'Payments',
+            'investors' => 'Investors', 'investor_returns' => 'Investors',
+            'notifications' => 'Notifications',
         ];
-        $verbs = ['manage', 'view', 'create', 'edit', 'delete', 'process', 'respond', 'approve', 'export'];
+        $verbs = [
+            'manage', 'view', 'create', 'edit', 'delete', 'process', 'respond', 'approve', 'export',
+            'update', 'reset', 'reject', 'suspend', 'refund', 'correct', 'convert', 'confirm', 'reorder',
+            'reply', 'assign', 'close', 'moderate', 'regenerate', 'toggle', 'mark', 'receive', 'pay',
+            'cancel', 'post', 'amend',
+        ];
         $parts = explode('_', $name);
         if (in_array($parts[0], $verbs, true)) {
             array_shift($parts);

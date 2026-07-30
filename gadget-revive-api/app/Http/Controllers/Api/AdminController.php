@@ -1688,11 +1688,12 @@ class AdminController extends BaseController
         $admin = $request->user();
 
         // Items/pricing are normally locked once revenue has been recognized (a payment was
-        // recorded) — but a super_admin can still amend a paid order, including one that's already
-        // `completed` (wrong quantity, wrong product, a price correction found after the fact).
-        // Mutually exclusive with $normalItemEdit below: one requires revenue not yet recognized,
-        // the other requires it recognized.
-        $superAdminAmend = $order->requiresSuperAdminToAmend() && $admin->hasRole('super_admin');
+        // recorded) — but a super_admin (or anyone specifically granted amend_paid_orders) can
+        // still amend a paid order, including one that's already `completed` (wrong quantity,
+        // wrong product, a price correction found after the fact). Mutually exclusive with
+        // $normalItemEdit below: one requires revenue not yet recognized, the other requires it
+        // recognized.
+        $superAdminAmend = $order->requiresSuperAdminToAmend() && ($admin->hasRole('super_admin') || $admin->can('amend_paid_orders'));
 
         if (!$order->canBeEdited() && !$superAdminAmend) {
             return $this->error('This order can no longer be edited because it is ' . str_replace('_', ' ', $order->order_status) . '.', 422);
@@ -2080,14 +2081,15 @@ class AdminController extends BaseController
     /**
      * Correct a mis-recorded payment amount for an order (e.g. staff typed ৳12,000 for a ৳6,000
      * cash payment) — distinct from amending the order's items/total, which corrects what was
-     * CHARGED, not what was PAID. Super_admin only, same trust boundary as order amendment.
+     * CHARGED, not what was PAID. Super_admin (or anyone specifically granted
+     * correct_payment_amounts), same trust boundary as order amendment.
      */
     public function orderCorrectPayment(Request $request, int $id): JsonResponse
     {
         $order = Order::with(['customer', 'vendorProfile'])->findOrFail($id);
         $admin = $request->user();
 
-        if (!$admin->hasRole('super_admin')) {
+        if (!$admin->hasRole('super_admin') && !$admin->can('correct_payment_amounts')) {
             return $this->error('Only a super admin can correct a recorded payment amount.', 403);
         }
         if (!$order->requiresSuperAdminToAmend()) {
