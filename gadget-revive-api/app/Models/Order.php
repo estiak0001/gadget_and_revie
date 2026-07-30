@@ -416,12 +416,16 @@ class Order extends Model
     }
 
     /**
-     * True once the order is paid (revenue recognized) but not yet completed/cancelled/refunded —
-     * items/pricing are normally locked at this point (see `canEditItemsAndPricing()`), but a
-     * super_admin can still amend the order; the caller is responsible for checking the role.
+     * True once the order is paid (revenue recognized) and not cancelled/refunded — items/pricing
+     * are normally locked at this point (see `canEditItemsAndPricing()`), but a super_admin can
+     * still amend the order, including one that's already `completed` (a billing/quantity mistake
+     * discovered after fulfillment is exactly the case this exists for). Deliberately broader than
+     * `canBeEdited()`: cancelled/refunded are excluded because the sale's already been fully
+     * undone there — there's nothing current left to correct. The caller is responsible for
+     * checking the role.
      */
     public function requiresSuperAdminToAmend(): bool
     {
-        return $this->canBeEdited() && $this->hasRevenueBeenRecognized();
+        return !in_array($this->order_status, ['cancelled', 'refunded'], true) && $this->hasRevenueBeenRecognized();
     }
 }

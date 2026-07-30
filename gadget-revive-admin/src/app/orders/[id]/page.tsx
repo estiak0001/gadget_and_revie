@@ -44,6 +44,7 @@ import {
 import { Order, OrderItem, ExpenseCategory } from '@/types';
 import { formatCurrency, formatDate, formatDateTime, getStatusColor, getErrorMessage } from '@/lib/utils';
 import adminService from '@/lib/adminService';
+import { useAuthStore } from '@/store/auth';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
 
@@ -72,6 +73,9 @@ export default function OrderDetailPage() {
     const params = useParams();
     const router = useRouter();
     const orderId = Number(params.id);
+
+    const currentUser = useAuthStore((s) => s.user);
+    const isSuperAdmin = currentUser?.role === 'super_admin';
 
     const [order, setOrder] = useState<Order | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -429,7 +433,7 @@ export default function OrderDetailPage() {
                             <Button variant="ghost" size="sm" onClick={() => setIsHistoryOpen(true)} title="View History">
                                 <History className="w-4 h-4" />
                             </Button>
-                            {order.can_be_edited && (
+                            {(order.can_be_edited || (order.requires_super_admin_to_amend && isSuperAdmin)) && (
                                 <Link href={`/orders/${order.id}/edit`}>
                                     <Button variant="outline" size="sm">Edit Order</Button>
                                 </Link>

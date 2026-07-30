@@ -725,7 +725,7 @@ export default function OrderForm({ orderId }: OrderFormProps) {
     );
   }
 
-  if (isEditMode && !canEdit) {
+  if (isEditMode && !canEdit && !canSuperAdminAmend) {
     return (
       <AdminLayout>
         <div className="space-y-6">

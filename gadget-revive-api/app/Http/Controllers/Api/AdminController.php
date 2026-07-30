@@ -1682,8 +1682,16 @@ class AdminController extends BaseController
     public function orderUpdate(Request $request, int $id): JsonResponse
     {
         $order = Order::with('items')->findOrFail($id);
+        $admin = $request->user();
 
-        if (!$order->canBeEdited()) {
+        // Items/pricing are normally locked once revenue has been recognized (a payment was
+        // recorded) — but a super_admin can still amend a paid order, including one that's already
+        // `completed` (wrong quantity, wrong product, a price correction found after the fact).
+        // Mutually exclusive with $normalItemEdit below: one requires revenue not yet recognized,
+        // the other requires it recognized.
+        $superAdminAmend = $order->requiresSuperAdminToAmend() && $admin->hasRole('super_admin');
+
+        if (!$order->canBeEdited() && !$superAdminAmend) {
             return $this->error('This order can no longer be edited because it is ' . str_replace('_', ' ', $order->order_status) . '.', 422);
         }
 
@@ -1692,14 +1700,7 @@ class AdminController extends BaseController
         $oldSnapshot = $order->toArray();
         $oldSnapshot['items'] = $order->items->toArray();
 
-        $admin = $request->user();
         $normalItemEdit = $order->canEditItemsAndPricing();
-
-        // Items/pricing are normally locked once revenue has been recognized (a payment was
-        // recorded) — but a super_admin can still amend a paid order (wrong quantity, wrong
-        // product, a price correction). Mutually exclusive with $normalItemEdit: one requires
-        // revenue not yet recognized, the other requires it recognized.
-        $superAdminAmend = $order->requiresSuperAdminToAmend() && $admin->hasRole('super_admin');
         $editItemsAndPricing = $normalItemEdit || $superAdminAmend;
 
         $rules = [
