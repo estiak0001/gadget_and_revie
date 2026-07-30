@@ -406,6 +406,11 @@ export default function OrderForm({ orderId }: OrderFormProps) {
   const canEditItemsAndPricing = baseCanEditItemsAndPricing || (canSuperAdminAmend && superAdminUnlocked);
   const canEdit = isEditMode ? (loadedOrder?.can_be_edited ?? true) : true;
 
+  // Optional, submitted alongside the item/pricing amendment above (same unlock, same Save click)
+  // rather than as a separate action — fixes what was RECORDED as paid, not what was charged.
+  const [correctedPaidAmount, setCorrectedPaidAmount] = useState('');
+  const [paymentCorrectionReason, setPaymentCorrectionReason] = useState('');
+
   // ── Load existing order (edit mode) ─────────────────────────────────────
 
   useEffect(() => {
@@ -419,6 +424,7 @@ export default function OrderForm({ orderId }: OrderFormProps) {
         if (cancelled || !order) return;
 
         setLoadedOrder(order);
+        setCorrectedPaidAmount(order.paid_amount != null ? String(order.paid_amount) : '');
         setCustomerInfo({
           customer_name: order.customer_name ?? '',
           customer_phone: order.customer_phone ?? '',
@@ -643,6 +649,21 @@ export default function OrderForm({ orderId }: OrderFormProps) {
       return;
     }
 
+    const paymentAmountChanged = canSuperAdminAmend && superAdminUnlocked
+      && correctedPaidAmount !== ''
+      && parseFloat(correctedPaidAmount) !== Number(loadedOrder?.paid_amount ?? 0);
+
+    if (paymentAmountChanged) {
+      if (isNaN(parseFloat(correctedPaidAmount)) || parseFloat(correctedPaidAmount) < 0) {
+        toast.error('Enter a valid corrected payment amount');
+        return;
+      }
+      if (!paymentCorrectionReason.trim()) {
+        toast.error('Enter a reason for the payment amount correction');
+        return;
+      }
+    }
+
     setIsSaving(true);
     try {
       if (isEditMode) {
@@ -669,7 +690,22 @@ export default function OrderForm({ orderId }: OrderFormProps) {
         }
 
         await adminService.updateOrder(orderId!, payload);
-        toast.success('Order updated successfully');
+
+        if (paymentAmountChanged) {
+          try {
+            await adminService.correctOrderPayment(orderId!, {
+              corrected_paid_amount: parseFloat(correctedPaidAmount),
+              reason: paymentCorrectionReason.trim(),
+            });
+            toast.success('Order updated and payment amount corrected.');
+          } catch (err) {
+            toast.error(`Order updated, but the payment correction failed: ${getErrorMessage(err)}`);
+            router.push(`/orders/${orderId}`);
+            return;
+          }
+        } else {
+          toast.success('Order updated successfully');
+        }
         router.push(`/orders/${orderId}`);
         return;
       }
@@ -799,6 +835,40 @@ export default function OrderForm({ orderId }: OrderFormProps) {
               accounting entries for the new total. If the new total is less than what&apos;s already
               been paid, a refund will be owed to the customer.
             </span>
+          </div>
+        )}
+
+        {isEditMode && canSuperAdminAmend && superAdminUnlocked && (
+          <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 space-y-2">
+            <p className="text-sm font-medium text-indigo-900">Correct Payment Amount (optional)</p>
+            <p className="text-xs text-indigo-700">
+              Only fill this in if what was actually <em>recorded as paid</em> was also wrong (e.g.
+              staff typed the wrong cash amount) — separate from the item/pricing change above. Leave
+              the amount unchanged to skip this.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Correct amount actually received</label>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={correctedPaidAmount}
+                  onChange={(e) => setCorrectedPaidAmount(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Reason (required if changed)</label>
+                <input
+                  type="text"
+                  value={paymentCorrectionReason}
+                  onChange={(e) => setPaymentCorrectionReason(e.target.value)}
+                  placeholder="e.g. Staff recorded the wrong cash amount"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+            </div>
           </div>
         )}
 
