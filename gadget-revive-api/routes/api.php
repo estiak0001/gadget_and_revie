@@ -368,6 +368,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::get('/{id}/download', [InvoiceController::class, 'download']);
             Route::get('/{id}/stream', [InvoiceController::class, 'stream']);
             Route::post('/{id}/send', [InvoiceController::class, 'sendEmail']);
+            Route::get('/custom/{id}/download', [InvoiceController::class, 'customDownload']);
+            Route::get('/{orderId}/custom', [InvoiceController::class, 'customIndex']);
+            Route::post('/{orderId}/custom', [InvoiceController::class, 'customStore']);
         });
 
         // Service Intakes (device received → receipt → convert to order)

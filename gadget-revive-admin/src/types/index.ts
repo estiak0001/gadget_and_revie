@@ -316,6 +316,37 @@ export interface Order {
   } | null;
 }
 
+export interface CustomInvoiceItem {
+  item_name: string;
+  item_sku?: string | null;
+  notes?: string | null;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+}
+
+export interface CustomInvoice {
+  id: number;
+  order_id: number;
+  invoice_number: string;
+  invoice_date: string;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  customer_email?: string | null;
+  customer_address?: string | null;
+  items: CustomInvoiceItem[];
+  subtotal: number;
+  discount: number;
+  shipping: number;
+  tax: number;
+  total: number;
+  notes?: string | null;
+  created_by?: number | null;
+  creator?: { id: number; name: string };
+  created_at: string;
+  updated_at: string;
+}
+
 export interface OrderItem {
   id: number;
   order_id: number;

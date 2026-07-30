@@ -5,7 +5,7 @@ import {
   DashboardStats, PaginatedResponse, ApiResponse, ServiceIntake,
   Expense, ExpenseCategory, ExpenseReport, Supplier, PurchaseOrder,
   ChartOfAccount, JournalEntry, TrialBalance, IncomeStatement, BalanceSheet, AccountLedger, CashPosition, CashBook,
-  PendingSyncSummary, Investor, Investment,
+  PendingSyncSummary, Investor, Investment, CustomInvoice,
 } from '@/types';
 
 // Query params type
@@ -72,6 +72,14 @@ export const adminService = {
     `${api.defaults.baseURL}/admin/invoices/${orderId}/stream`,
   sendInvoiceEmail: (orderId: number, email?: string) =>
     api.post(`/admin/invoices/${orderId}/send`, email ? { email } : {}),
+
+  // Custom Invoices (Admin) — document-only, doesn't touch the real order/stock/ledger
+  getCustomInvoices: (orderId: number) =>
+    api.get<ApiResponse<CustomInvoice[]>>(`/admin/invoices/${orderId}/custom`),
+  createCustomInvoice: (orderId: number, data: Record<string, unknown>) =>
+    api.post<ApiResponse<CustomInvoice>>(`/admin/invoices/${orderId}/custom`, data),
+  downloadCustomInvoice: (id: number) =>
+    api.get(`/admin/invoices/custom/${id}/download`, { responseType: 'blob' }),
 
   // Service Intakes (device received → receipt → convert to order)
   getServiceIntakes: (params?: ListParams) =>

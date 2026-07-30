@@ -41,7 +41,7 @@ import {
     Modal,
     HistoryModal,
 } from '@/components/ui';
-import { Order, OrderItem, ExpenseCategory } from '@/types';
+import { Order, OrderItem, ExpenseCategory, CustomInvoice } from '@/types';
 import { formatCurrency, formatDate, formatDateTime, getStatusColor, getErrorMessage } from '@/lib/utils';
 import adminService from '@/lib/adminService';
 import { useAuthStore } from '@/store/auth';
@@ -107,6 +107,27 @@ export default function OrderDetailPage() {
     const [isSavingCost, setIsSavingCost] = useState(false);
     const [reversingCostId, setReversingCostId] = useState<number | null>(null);
 
+    // Custom Invoice — a document-only alternate invoice for a customer (e.g. for their own
+    // reimbursement paperwork). Never touches the real order/stock/ledger; every one created is
+    // persisted so there's a record of what was issued, when, and by whom.
+    const [customInvoices, setCustomInvoices] = useState<CustomInvoice[]>([]);
+    const [isCustomInvoiceOpen, setIsCustomInvoiceOpen] = useState(false);
+    const [customInvoiceForm, setCustomInvoiceForm] = useState({
+        invoice_number: '',
+        invoice_date: '',
+        customer_name: '',
+        customer_phone: '',
+        customer_email: '',
+        customer_address: '',
+        items: [] as { item_name: string; item_sku: string; notes: string; quantity: string; unit_price: string }[],
+        discount: '',
+        shipping: '',
+        tax: '',
+        notes: '',
+    });
+    const [isSavingCustomInvoice, setIsSavingCustomInvoice] = useState(false);
+    const [downloadingCustomInvoiceId, setDownloadingCustomInvoiceId] = useState<number | null>(null);
+
     const fetchOrder = async () => {
         setIsLoading(true);
         setError(false);
@@ -124,8 +145,20 @@ export default function OrderDetailPage() {
         }
     };
 
+    const fetchCustomInvoices = async () => {
+        try {
+            const response = await adminService.getCustomInvoices(orderId);
+            setCustomInvoices(response.data?.data || []);
+        } catch (err) {
+            console.error('Error fetching custom invoices:', err);
+        }
+    };
+
     useEffect(() => {
-        if (orderId) fetchOrder();
+        if (orderId) {
+            fetchOrder();
+            fetchCustomInvoices();
+        }
     }, [orderId]);
 
     const handleSyncLedger = async () => {
@@ -308,25 +341,135 @@ export default function OrderDetailPage() {
         }
     };
 
+    const triggerPdfDownload = (data: BlobPart, filename: string) => {
+        const blob = new Blob([data], { type: 'application/pdf' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+    };
+
     const handleDownloadInvoice = async () => {
         if (!order) return;
         setDownloadingInvoice(true);
         try {
             const response = await adminService.downloadInvoice(order.id);
-            const blob = new Blob([response.data as BlobPart], { type: 'application/pdf' });
-            const url = window.URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `Invoice-${order.order_number}.pdf`;
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            window.URL.revokeObjectURL(url);
+            triggerPdfDownload(response.data as BlobPart, `Invoice-${order.order_number}.pdf`);
             toast.success('Invoice downloaded!');
         } catch (err) {
             toast.error(getErrorMessage(err));
         } finally {
             setDownloadingInvoice(false);
+        }
+    };
+
+    const openCustomInvoiceModal = () => {
+        if (!order) return;
+        setCustomInvoiceForm({
+            invoice_number: '',
+            invoice_date: new Date().toISOString().split('T')[0],
+            customer_name: order.customer_name ?? order.customer?.name ?? '',
+            customer_phone: order.customer_phone ?? '',
+            customer_email: order.customer_email ?? order.customer?.email ?? '',
+            customer_address: order.customer_address ?? '',
+            items: (order.items ?? []).map((item) => ({
+                item_name: item.item_name,
+                item_sku: item.item_sku ?? '',
+                notes: item.notes ?? '',
+                quantity: String(item.quantity),
+                unit_price: String(item.unit_price),
+            })),
+            discount: order.discount ? String(order.discount) : '',
+            shipping: order.shipping ? String(order.shipping) : '',
+            tax: order.tax ? String(order.tax) : '',
+            notes: '',
+        });
+        setIsCustomInvoiceOpen(true);
+    };
+
+    const addCustomInvoiceItem = () => {
+        setCustomInvoiceForm((f) => ({
+            ...f,
+            items: [...f.items, { item_name: '', item_sku: '', notes: '', quantity: '1', unit_price: '' }],
+        }));
+    };
+
+    const removeCustomInvoiceItem = (index: number) => {
+        setCustomInvoiceForm((f) => ({ ...f, items: f.items.filter((_, i) => i !== index) }));
+    };
+
+    const updateCustomInvoiceItem = (index: number, field: 'item_name' | 'item_sku' | 'notes' | 'quantity' | 'unit_price', value: string) => {
+        setCustomInvoiceForm((f) => ({
+            ...f,
+            items: f.items.map((item, i) => (i === index ? { ...item, [field]: value } : item)),
+        }));
+    };
+
+    const customInvoiceSubtotal = customInvoiceForm.items.reduce(
+        (sum, item) => sum + (parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0),
+        0
+    );
+    const customInvoiceTotal = customInvoiceSubtotal
+        - (parseFloat(customInvoiceForm.discount) || 0)
+        + (parseFloat(customInvoiceForm.shipping) || 0)
+        + (parseFloat(customInvoiceForm.tax) || 0);
+
+    const handleCreateCustomInvoice = async () => {
+        if (!order) return;
+        if (customInvoiceForm.items.length === 0 || customInvoiceForm.items.some((i) => !i.item_name.trim() || !i.quantity || !i.unit_price)) {
+            toast.error('Every item needs a name, quantity, and unit price.');
+            return;
+        }
+
+        setIsSavingCustomInvoice(true);
+        try {
+            const response = await adminService.createCustomInvoice(order.id, {
+                invoice_number: customInvoiceForm.invoice_number.trim() || undefined,
+                invoice_date: customInvoiceForm.invoice_date || undefined,
+                customer_name: customInvoiceForm.customer_name.trim() || undefined,
+                customer_phone: customInvoiceForm.customer_phone.trim() || undefined,
+                customer_email: customInvoiceForm.customer_email.trim() || undefined,
+                customer_address: customInvoiceForm.customer_address.trim() || undefined,
+                items: customInvoiceForm.items.map((item) => ({
+                    item_name: item.item_name.trim(),
+                    item_sku: item.item_sku.trim() || undefined,
+                    notes: item.notes.trim() || undefined,
+                    quantity: Number(item.quantity),
+                    unit_price: Number(item.unit_price),
+                })),
+                discount: customInvoiceForm.discount ? Number(customInvoiceForm.discount) : undefined,
+                shipping: customInvoiceForm.shipping ? Number(customInvoiceForm.shipping) : undefined,
+                tax: customInvoiceForm.tax ? Number(customInvoiceForm.tax) : undefined,
+                notes: customInvoiceForm.notes.trim() || undefined,
+            });
+            const created = response.data?.data;
+            if (created) {
+                const pdf = await adminService.downloadCustomInvoice(created.id);
+                triggerPdfDownload(pdf.data as BlobPart, `Custom-Invoice-${created.invoice_number}.pdf`);
+            }
+            toast.success('Custom invoice created and downloaded.');
+            setIsCustomInvoiceOpen(false);
+            fetchCustomInvoices();
+        } catch (err) {
+            toast.error(getErrorMessage(err));
+        } finally {
+            setIsSavingCustomInvoice(false);
+        }
+    };
+
+    const handleDownloadCustomInvoice = async (invoice: CustomInvoice) => {
+        setDownloadingCustomInvoiceId(invoice.id);
+        try {
+            const response = await adminService.downloadCustomInvoice(invoice.id);
+            triggerPdfDownload(response.data as BlobPart, `Custom-Invoice-${invoice.invoice_number}.pdf`);
+        } catch (err) {
+            toast.error(getErrorMessage(err));
+        } finally {
+            setDownloadingCustomInvoiceId(null);
         }
     };
 
@@ -953,6 +1096,58 @@ export default function OrderDetailPage() {
                                 </div>
                             </CardContent>
                         </Card>
+
+                        {/* Custom Invoice Card — visually distinct from the genuine Invoice card
+                            above so the two are never confused at a glance */}
+                        <Card className="border-indigo-200 bg-gradient-to-br from-indigo-50 to-violet-50">
+                            <CardHeader>
+                                <CardTitle className="text-sm flex items-center gap-2 text-indigo-800">
+                                    <FileText className="w-4 h-4 text-indigo-500" />
+                                    Custom Invoice
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <p className="text-xs text-indigo-700 mb-3">
+                                    A document-only invoice with amounts/details you choose — doesn&apos;t change this order&apos;s real total, stock, or accounting.
+                                </p>
+                                {isSuperAdmin && (
+                                    <Button
+                                        onClick={openCustomInvoiceModal}
+                                        className="w-full bg-indigo-500 hover:bg-indigo-600 text-white justify-start mb-3"
+                                    >
+                                        <FileText className="w-4 h-4 mr-2" />
+                                        Create Custom Invoice
+                                    </Button>
+                                )}
+                                {customInvoices.length > 0 && (
+                                    <div className="space-y-2">
+                                        <p className="text-xs font-semibold text-indigo-800 uppercase tracking-wide">History</p>
+                                        {customInvoices.map((inv) => (
+                                            <div key={inv.id} className="flex items-center justify-between gap-2 bg-white/70 border border-indigo-100 rounded-lg px-3 py-2 text-xs">
+                                                <div className="min-w-0">
+                                                    <p className="font-semibold text-gray-900 truncate">{inv.invoice_number}</p>
+                                                    <p className="text-gray-500">
+                                                        {formatDate(inv.invoice_date)} &middot; {formatCurrency(inv.total)}
+                                                        {inv.creator?.name ? ` · by ${inv.creator.name}` : ''}
+                                                    </p>
+                                                </div>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => handleDownloadCustomInvoice(inv)}
+                                                    isLoading={downloadingCustomInvoiceId === inv.id}
+                                                >
+                                                    <FileText className="w-3.5 h-3.5" />
+                                                </Button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                {customInvoices.length === 0 && !isSuperAdmin && (
+                                    <p className="text-xs text-gray-400">No custom invoices have been issued for this order.</p>
+                                )}
+                            </CardContent>
+                        </Card>
                     </div>
                 </div>
             ) : null}
@@ -1124,6 +1319,178 @@ export default function OrderDetailPage() {
                         </div>
                     </div>
                 )}
+            </Modal>
+
+            {/* Create Custom Invoice Modal */}
+            <Modal isOpen={isCustomInvoiceOpen} onClose={() => setIsCustomInvoiceOpen(false)} title="Create Custom Invoice" size="lg">
+                <div className="space-y-4">
+                    <p className="text-sm text-gray-600">
+                        Pre-filled from this order &mdash; change anything below. This does not affect the order&apos;s real total, stock, or accounting.
+                    </p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Invoice Number</label>
+                            <input
+                                type="text"
+                                placeholder={order ? `${order.order_number}-A${customInvoices.length + 1}` : ''}
+                                value={customInvoiceForm.invoice_number}
+                                onChange={(e) => setCustomInvoiceForm((f) => ({ ...f, invoice_number: e.target.value }))}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Invoice Date</label>
+                            <input
+                                type="date"
+                                value={customInvoiceForm.invoice_date}
+                                onChange={(e) => setCustomInvoiceForm((f) => ({ ...f, invoice_date: e.target.value }))}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Customer Name</label>
+                            <input
+                                type="text"
+                                value={customInvoiceForm.customer_name}
+                                onChange={(e) => setCustomInvoiceForm((f) => ({ ...f, customer_name: e.target.value }))}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Phone</label>
+                            <input
+                                type="text"
+                                value={customInvoiceForm.customer_phone}
+                                onChange={(e) => setCustomInvoiceForm((f) => ({ ...f, customer_phone: e.target.value }))}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Email</label>
+                            <input
+                                type="email"
+                                value={customInvoiceForm.customer_email}
+                                onChange={(e) => setCustomInvoiceForm((f) => ({ ...f, customer_email: e.target.value }))}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Address</label>
+                            <input
+                                type="text"
+                                value={customInvoiceForm.customer_address}
+                                onChange={(e) => setCustomInvoiceForm((f) => ({ ...f, customer_address: e.target.value }))}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                            />
+                        </div>
+                    </div>
+
+                    <div>
+                        <div className="flex items-center justify-between mb-2">
+                            <label className="block text-xs font-medium text-gray-700">Items</label>
+                            <Button type="button" variant="ghost" size="sm" onClick={addCustomInvoiceItem} leftIcon={<Plus className="w-3.5 h-3.5" />}>
+                                Add Item
+                            </Button>
+                        </div>
+                        <div className="space-y-2">
+                            {customInvoiceForm.items.map((item, index) => (
+                                <div key={index} className="grid grid-cols-12 gap-2 items-center bg-gray-50 border border-gray-200 rounded-lg p-2">
+                                    <input
+                                        type="text"
+                                        placeholder="Item name"
+                                        value={item.item_name}
+                                        onChange={(e) => updateCustomInvoiceItem(index, 'item_name', e.target.value)}
+                                        className="col-span-5 px-2 py-1.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                    />
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        placeholder="Qty"
+                                        value={item.quantity}
+                                        onChange={(e) => updateCustomInvoiceItem(index, 'quantity', e.target.value)}
+                                        className="col-span-2 px-2 py-1.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                    />
+                                    <input
+                                        type="number"
+                                        min={0}
+                                        step="0.01"
+                                        placeholder="Unit price"
+                                        value={item.unit_price}
+                                        onChange={(e) => updateCustomInvoiceItem(index, 'unit_price', e.target.value)}
+                                        className="col-span-3 px-2 py-1.5 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                    />
+                                    <div className="col-span-1 text-xs text-gray-600 text-right">
+                                        {formatCurrency((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0))}
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => removeCustomInvoiceItem(index)}
+                                        className="col-span-1 text-red-500 hover:text-red-700 flex justify-center"
+                                    >
+                                        <XCircle className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            ))}
+                            {customInvoiceForm.items.length === 0 && (
+                                <p className="text-xs text-gray-400 text-center py-3">No items yet — add at least one.</p>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3">
+                        <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Discount</label>
+                            <input
+                                type="number" min={0} step="0.01"
+                                value={customInvoiceForm.discount}
+                                onChange={(e) => setCustomInvoiceForm((f) => ({ ...f, discount: e.target.value }))}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Shipping</label>
+                            <input
+                                type="number" min={0} step="0.01"
+                                value={customInvoiceForm.shipping}
+                                onChange={(e) => setCustomInvoiceForm((f) => ({ ...f, shipping: e.target.value }))}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Tax</label>
+                            <input
+                                type="number" min={0} step="0.01"
+                                value={customInvoiceForm.tax}
+                                onChange={(e) => setCustomInvoiceForm((f) => ({ ...f, tax: e.target.value }))}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                            />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Notes</label>
+                        <Textarea
+                            value={customInvoiceForm.notes}
+                            onChange={(e) => setCustomInvoiceForm((f) => ({ ...f, notes: e.target.value }))}
+                            rows={2}
+                        />
+                    </div>
+
+                    <div className="flex items-center justify-between border-t pt-3">
+                        <div className="text-sm text-gray-600">
+                            Subtotal: {formatCurrency(customInvoiceSubtotal)}
+                        </div>
+                        <div className="text-base font-bold text-gray-900">
+                            Total: {formatCurrency(customInvoiceTotal)}
+                        </div>
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-2">
+                        <Button variant="ghost" onClick={() => setIsCustomInvoiceOpen(false)}>Cancel</Button>
+                        <Button onClick={handleCreateCustomInvoice} isLoading={isSavingCustomInvoice}>Create &amp; Download</Button>
+                    </div>
+                </div>
             </Modal>
 
             {order && (
