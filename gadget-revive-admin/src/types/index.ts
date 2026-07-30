@@ -295,6 +295,7 @@ export interface Order {
   can_be_reviewed?: boolean;
   can_be_edited?: boolean;
   can_edit_items_and_pricing?: boolean;
+  requires_super_admin_to_amend?: boolean;
   accepted_at?: string | null;
   completed_at?: string | null;
   cancelled_at?: string | null;

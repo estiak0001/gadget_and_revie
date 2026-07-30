@@ -51,6 +51,7 @@ class OrderResource extends JsonResource
             ] : null),
             'can_be_edited' => $this->canBeEdited(),
             'can_edit_items_and_pricing' => $this->canEditItemsAndPricing(),
+            'requires_super_admin_to_amend' => $this->requiresSuperAdminToAmend(),
             'can_be_cancelled' => $this->canBeCancelled(),
             'can_be_reviewed' => $this->canBeReviewed(),
             'receipt_available' => $this->receiptAvailable(),

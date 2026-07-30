@@ -355,31 +355,7 @@ class Order extends Model
         $entries = [];
 
         if (!$this->hasRevenueBeenRecognized()) {
-            $lines = [
-                ['account_code' => '1010', 'debit' => $this->total],
-                ['account_code' => '4000', 'credit' => $this->subtotal + $this->shipping - $this->discount],
-            ];
-            if ($this->tax > 0) {
-                $lines[] = ['account_code' => '2020', 'credit' => $this->tax];
-            }
-            $entries[] = JournalEntry::post(now()->toDateString(), 'Order', $this->id, "Order #{$this->order_number} sale recognized", $lines, $user);
-
-            // Cost of Goods Sold, recognized at the same moment as the revenue it matches —
-            // same reference ('Order', $this->id) as every other entry here, so refund/cancel's
-            // JournalEntry::reverseAllFor() reverses this alongside the revenue automatically.
-            // Skipped entirely if 0 (product never received via a costed Purchase Order, e.g. an
-            // instant-created or always_in_stock item with no average_cost set) — matches the
-            // skip-if-zero pattern already used by PurchaseOrder::postReceiptJournalEntry().
-            $this->loadMissing('items.product');
-            $cogs = round($this->items
-                ->where('item_type', 'product')
-                ->sum(fn ($item) => $item->product ? $item->quantity * (float) ($item->product->average_cost ?? 0) : 0), 2);
-            if ($cogs > 0) {
-                $entries[] = JournalEntry::post(now()->toDateString(), 'Order', $this->id, "Order #{$this->order_number} cost of goods sold", [
-                    ['account_code' => '5000', 'debit' => $cogs],
-                    ['account_code' => '1020', 'credit' => $cogs],
-                ], $user);
-            }
+            $entries = array_merge($entries, $this->recognizeRevenueAndCogs($user));
         }
 
         $entries[] = JournalEntry::post(now()->toDateString(), 'Order', $this->id, "Payment received for order #{$this->order_number}", [
@@ -394,5 +370,58 @@ class Order extends Model
         ]);
 
         return $entries;
+    }
+
+    /**
+     * Post the sale-recognition (Dr Accounts Receivable / Cr Sales Revenue + Tax Payable) and
+     * matching Cost of Goods Sold entries for this order's *current* items/totals. Pure posting —
+     * deliberately has no `hasRevenueBeenRecognized()` guard, unlike its only guarded call site in
+     * `recordPayment()`: that check stays true forever once revenue has ever been posted for this
+     * order (it looks for the original entry's continued existence, which reversing doesn't
+     * change), so it can never be reused here to guard a re-recognition after an admin amendment.
+     *
+     * @return JournalEntry[] the entries posted by this call (one or two)
+     */
+    public function recognizeRevenueAndCogs(?User $user = null): array
+    {
+        $entries = [];
+
+        $lines = [
+            ['account_code' => '1010', 'debit' => $this->total],
+            ['account_code' => '4000', 'credit' => $this->subtotal + $this->shipping - $this->discount],
+        ];
+        if ($this->tax > 0) {
+            $lines[] = ['account_code' => '2020', 'credit' => $this->tax];
+        }
+        $entries[] = JournalEntry::post(now()->toDateString(), 'Order', $this->id, "Order #{$this->order_number} sale recognized", $lines, $user);
+
+        // Cost of Goods Sold, recognized at the same moment as the revenue it matches —
+        // same reference ('Order', $this->id) as every other entry here, so refund/cancel's
+        // JournalEntry::reverseAllFor() reverses this alongside the revenue automatically.
+        // Skipped entirely if 0 (product never received via a costed Purchase Order, e.g. an
+        // instant-created or always_in_stock item with no average_cost set) — matches the
+        // skip-if-zero pattern already used by PurchaseOrder::postReceiptJournalEntry().
+        $this->loadMissing('items.product');
+        $cogs = round($this->items
+            ->where('item_type', 'product')
+            ->sum(fn ($item) => $item->product ? $item->quantity * (float) ($item->product->average_cost ?? 0) : 0), 2);
+        if ($cogs > 0) {
+            $entries[] = JournalEntry::post(now()->toDateString(), 'Order', $this->id, "Order #{$this->order_number} cost of goods sold", [
+                ['account_code' => '5000', 'debit' => $cogs],
+                ['account_code' => '1020', 'credit' => $cogs],
+            ], $user);
+        }
+
+        return $entries;
+    }
+
+    /**
+     * True once the order is paid (revenue recognized) but not yet completed/cancelled/refunded —
+     * items/pricing are normally locked at this point (see `canEditItemsAndPricing()`), but a
+     * super_admin can still amend the order; the caller is responsible for checking the role.
+     */
+    public function requiresSuperAdminToAmend(): bool
+    {
+        return $this->canBeEdited() && $this->hasRevenueBeenRecognized();
     }
 }

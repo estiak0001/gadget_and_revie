@@ -161,4 +161,30 @@ class JournalEntry extends Model
 
         return $reversals;
     }
+
+    /**
+     * Same as reverseAllFor(), but scoped to only the entries that touch at least one of the
+     * given account codes — e.g. reversing just the revenue/COGS recognition on an order amendment
+     * without touching the cash-received entries, which must survive untouched since that money
+     * was actually collected and isn't undone by the items/amount changing.
+     */
+    public static function reverseForAccounts(string $referenceType, int $referenceId, array $accountCodes, string $description, ?User $user = null): array
+    {
+        $originals = self::where('reference_type', $referenceType)
+            ->where('reference_id', $referenceId)
+            ->where('is_reversal', false)
+            ->whereHas('lines.account', fn ($q) => $q->whereIn('code', $accountCodes))
+            ->get();
+
+        $reversals = [];
+        foreach ($originals as $original) {
+            $alreadyReversed = self::where('reversed_entry_id', $original->id)->exists();
+            if ($alreadyReversed) {
+                continue;
+            }
+            $reversals[] = $original->reverse(now()->toDateString(), $description, $user);
+        }
+
+        return $reversals;
+    }
 }

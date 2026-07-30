@@ -4,7 +4,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, Plus, Trash2, Search, Package, Wrench, FileText, User, MapPin, CreditCard, Save,
-  UserPlus, CheckCircle2, X, Sparkles, Lock,
+  UserPlus, CheckCircle2, X, Sparkles, Lock, ShieldAlert,
 } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import {
@@ -14,6 +14,7 @@ import {
 import { Product, Service, User as UserType, ProductCategory, Order, OrderItem } from '@/types';
 import { formatCurrency, getErrorMessage } from '@/lib/utils';
 import adminService from '@/lib/adminService';
+import { useAuthStore } from '@/store/auth';
 import toast from 'react-hot-toast';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -392,9 +393,17 @@ export default function OrderForm({ orderId }: OrderFormProps) {
     customer_address: '',
   });
 
-  // Whether items/pricing may still be changed — false once any payment has been recorded
-  // (the AR/revenue journal entries are already posted against the current total in that case).
-  const canEditItemsAndPricing = isEditMode ? (loadedOrder?.can_edit_items_and_pricing ?? true) : true;
+  const currentUser = useAuthStore((s) => s.user);
+  const isSuperAdmin = currentUser?.role === 'super_admin';
+
+  // Once a payment has been recorded, items/pricing are normally locked (the AR/revenue journal
+  // entries are already posted against the current total). A super_admin can still choose to
+  // unlock and amend a paid order — the backend re-posts revenue/COGS at the new total and
+  // restocks/re-decrements inventory accordingly.
+  const [superAdminUnlocked, setSuperAdminUnlocked] = useState(false);
+  const baseCanEditItemsAndPricing = isEditMode ? (loadedOrder?.can_edit_items_and_pricing ?? true) : true;
+  const canSuperAdminAmend = isEditMode && !!loadedOrder?.requires_super_admin_to_amend && isSuperAdmin;
+  const canEditItemsAndPricing = baseCanEditItemsAndPricing || (canSuperAdminAmend && superAdminUnlocked);
   const canEdit = isEditMode ? (loadedOrder?.can_be_edited ?? true) : true;
 
   // ── Load existing order (edit mode) ─────────────────────────────────────
@@ -762,11 +771,34 @@ export default function OrderForm({ orderId }: OrderFormProps) {
           </div>
         </div>
 
-        {isEditMode && !canEditItemsAndPricing && (
+        {isEditMode && !canEditItemsAndPricing && !canSuperAdminAmend && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 flex items-center gap-2">
             <Lock className="w-4 h-4 flex-shrink-0" />
             Items and pricing are locked because a payment has already been recorded against this order.
             You can still update customer details, payment method, and notes.
+          </div>
+        )}
+
+        {isEditMode && canSuperAdminAmend && !superAdminUnlocked && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 flex flex-col sm:flex-row sm:items-center gap-2 sm:justify-between">
+            <div className="flex items-center gap-2">
+              <Lock className="w-4 h-4 flex-shrink-0" />
+              Items and pricing are locked because a payment has already been recorded against this order.
+            </div>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setSuperAdminUnlocked(true)} leftIcon={<ShieldAlert className="w-4 h-4" />}>
+              Unlock amendment (Super Admin)
+            </Button>
+          </div>
+        )}
+
+        {isEditMode && canSuperAdminAmend && superAdminUnlocked && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 flex items-start gap-2">
+            <ShieldAlert className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <span>
+              This order has already been paid. Saving will restock/re-decrement inventory and re-post
+              accounting entries for the new total. If the new total is less than what&apos;s already
+              been paid, a refund will be owed to the customer.
+            </span>
           </div>
         )}
 

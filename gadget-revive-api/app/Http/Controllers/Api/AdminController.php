@@ -1687,7 +1687,20 @@ class AdminController extends BaseController
             return $this->error('This order can no longer be edited because it is ' . str_replace('_', ' ', $order->order_status) . '.', 422);
         }
 
-        $editItemsAndPricing = $order->canEditItemsAndPricing();
+        // Captured before any mutation below, purely for the audit trail — lets the "View History"
+        // panel show a real before/after diff instead of the null old-values it used to record.
+        $oldSnapshot = $order->toArray();
+        $oldSnapshot['items'] = $order->items->toArray();
+
+        $admin = $request->user();
+        $normalItemEdit = $order->canEditItemsAndPricing();
+
+        // Items/pricing are normally locked once revenue has been recognized (a payment was
+        // recorded) — but a super_admin can still amend a paid order (wrong quantity, wrong
+        // product, a price correction). Mutually exclusive with $normalItemEdit: one requires
+        // revenue not yet recognized, the other requires it recognized.
+        $superAdminAmend = $order->requiresSuperAdminToAmend() && $admin->hasRole('super_admin');
+        $editItemsAndPricing = $normalItemEdit || $superAdminAmend;
 
         $rules = [
             'customer_name'      => 'nullable|string|max:255',
@@ -1720,7 +1733,6 @@ class AdminController extends BaseController
         }
 
         $data = $request->validate($rules);
-        $admin = $request->user();
 
         DB::beginTransaction();
         try {
@@ -1748,6 +1760,16 @@ class AdminController extends BaseController
             $order->update($updateData);
 
             if ($editItemsAndPricing) {
+                if ($superAdminAmend) {
+                    // This order was already paid — the sale/COGS recognition entries posted at
+                    // the OLD total must be undone before the new total is recognized below. Only
+                    // the entries anchored on Revenue (4000) / COGS (5000) are touched; the
+                    // cash-received entries (1000/1010) are left alone since that money was
+                    // actually collected and isn't undone by the items/amount changing.
+                    JournalEntry::reverseForAccounts('Order', $order->id, ['4000', '5000'],
+                        "Order #{$order->order_number} amended by super admin — reversing prior revenue/COGS recognition", $admin);
+                }
+
                 // The incoming item list has no stable ID to match against (the edit form only
                 // ever sends type/product/service/name/qty/price/notes) — so before the whole
                 // set gets deleted and recreated below, match old items to their replacements by
@@ -1809,9 +1831,26 @@ class AdminController extends BaseController
                         Expense::whereIn('id', $expenseIds)->update(['order_item_id' => $newItem->id]);
                     }
                 }
+
+                if ($superAdminAmend) {
+                    // $order->items was eager-loaded before this method touched anything, and
+                    // neither items()->delete() nor the bare OrderItem::create() calls above
+                    // refresh that in-memory collection — without unsetting it here,
+                    // recognizeRevenueAndCogs()'s loadMissing('items.product') would silently see
+                    // the stale (deleted) old items instead of the new ones and compute COGS wrong.
+                    $order->unsetRelation('items');
+
+                    // Mirrors the exact ternary recordPayment() uses when paid_amount changes —
+                    // here it's $order->total that changed instead, so payment_status needs the
+                    // same recompute against the (untouched) amount actually collected.
+                    $order->payment_status = $order->paid_amount >= $order->total ? 'paid' : 'partially_paid';
+                    $order->save();
+
+                    $order->recognizeRevenueAndCogs($admin);
+                }
             }
 
-            AuditLog::log($admin, 'update_order', 'Order', $order->id, null, $order->fresh()->toArray(), 'Order edited by admin');
+            AuditLog::log($admin, 'update_order', 'Order', $order->id, $oldSnapshot, $order->fresh(['items'])->toArray(), 'Order edited by admin');
 
             DB::commit();
 

@@ -718,11 +718,25 @@ export default function OrderDetailPage() {
                                             <dd className="font-medium text-green-600">{formatCurrency(Number(order.paid_amount ?? 0))}</dd>
                                         </div>
                                         <div className="flex justify-between border-t pt-2">
-                                            <dt className="text-gray-500">Outstanding</dt>
-                                            <dd className={`font-bold ${Number(order.outstanding_receivable ?? 0) > 0 ? 'text-amber-600' : 'text-green-600'}`}>
-                                                {formatCurrency(Number(order.outstanding_receivable ?? 0))}
+                                            <dt className="text-gray-500">
+                                                {Number(order.outstanding_receivable ?? 0) < 0 ? 'Refund Owed' : 'Outstanding'}
+                                            </dt>
+                                            <dd className={`font-bold ${
+                                                Number(order.outstanding_receivable ?? 0) > 0
+                                                    ? 'text-amber-600'
+                                                    : Number(order.outstanding_receivable ?? 0) < 0
+                                                        ? 'text-red-600'
+                                                        : 'text-green-600'
+                                            }`}>
+                                                {formatCurrency(Math.abs(Number(order.outstanding_receivable ?? 0)))}
                                             </dd>
                                         </div>
+                                        {Number(order.outstanding_receivable ?? 0) < 0 && (
+                                            <p className="text-xs text-red-600 bg-red-50 rounded-md px-2 py-1.5">
+                                                This order was amended to a lower total after payment — the customer has
+                                                paid more than the current total and is owed a refund.
+                                            </p>
+                                        )}
                                     </dl>
                                 </CardContent>
                             </Card>
