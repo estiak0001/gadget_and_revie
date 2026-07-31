@@ -96,6 +96,13 @@ input::placeholder, textarea::placeholder {
   animation: marquee 20s linear infinite;
 }
 
+/* Tailwind's arbitrary-property hover variant (hover:[animation-play-state:paused]) doesn't
+   compile reliably here, so this is a hand-written rule instead — lets a marquee row (e.g. the
+   Featured Services carousel) stop moving while the user's cursor is over it. */
+.marquee-pausable:hover {
+  animation-play-state: paused;
+}
+
 /* Smooth transitions for product cards */
 @keyframes shimmer {
   0% {

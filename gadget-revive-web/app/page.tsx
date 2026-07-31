@@ -97,7 +97,6 @@ export default function Home() {
 
   const [activePromo, setActivePromo] = useState(0);
   const [isVisible, setIsVisible] = useState(false);
-  const [activeProductTab, setActiveProductTab] = useState('all');
   const [wishlist, setWishlist] = useState<number[]>([]);
   const [compareList, setCompareList] = useState<number[]>([]);
   const [addingToCartId, setAddingToCartId] = useState<number | null>(null);
@@ -191,25 +190,7 @@ export default function Home() {
     return () => clearInterval(promoInterval);
   }, [promoSlides.length]);
 
-  const productTabs = useMemo(() => {
-    const seen = new Set<string>();
-    const categories = featuredProducts
-      .map(p => p.category)
-      .filter(cat => {
-        if (!cat?.slug || seen.has(cat.slug)) return false;
-        seen.add(cat.slug);
-        return true;
-      });
-    return [
-      { id: 'all', label: 'All Products', icon: CubeIcon },
-      ...categories.map(cat => ({ id: cat.slug, label: cat.name, icon: CubeIcon })),
-    ];
-  }, [featuredProducts]);
 
-  const filteredProducts = useMemo(() => {
-    if (activeProductTab === 'all') return featuredProducts;
-    return featuredProducts.filter(p => p.category?.slug === activeProductTab);
-  }, [featuredProducts, activeProductTab]);
 
   const handleAddToCart = async (product: Product) => {
     if (!isAuthenticated) {
@@ -565,92 +546,80 @@ export default function Home() {
             </Link>
           </div>
 
-          {/* Services Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-5">
-            {servicesLoading ? (
-              [...Array(12)].map((_, i) => (
-                <div key={i} className="bg-gray-50 rounded-xl border border-gray-200 shadow-sm overflow-hidden animate-pulse">
-                  <div className="w-full h-50 bg-gray-100" />
-                  <div className="p-4 space-y-2">
-                    <div className="h-3 bg-gray-100 rounded w-3/4" />
-                    <div className="h-5 bg-gray-100 rounded w-1/2" />
-                  </div>
+          {/* Services Slider — small, uniform-size cards with just the basics (no icon/image/
+              description); auto-slides through every featured service. */}
+          {servicesLoading ? (
+            <div className="flex gap-4 overflow-x-hidden">
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="flex-shrink-0 w-56 h-40 bg-gray-50 rounded-xl border border-gray-200 p-4 animate-pulse space-y-2">
+                  <div className="h-2.5 bg-gray-100 rounded w-1/3" />
+                  <div className="h-4 bg-gray-100 rounded w-3/4" />
                 </div>
-              ))
-            ) : featuredServices.length === 0 ? (
-              <div className="col-span-2 md:col-span-3 lg:col-span-6 text-center py-6 text-gray-500">
-                No featured services available.
-              </div>
-            ) : (
-              featuredServices.slice(0, 12).map((service) => {
+              ))}
+            </div>
+          ) : featuredServices.length === 0 ? (
+            <div className="text-center py-6 text-gray-500">
+              No featured services available.
+            </div>
+          ) : (
+            <div className="overflow-hidden py-2 -my-2">
+              <div className="flex gap-4 w-max animate-marquee marquee-pausable">
+                {[...featuredServices, ...featuredServices].map((service, idx) => {
                 const currentPrice = service.current_price ?? service.discount_price ?? service.base_price;
                 const originalPrice = service.discount_price ? service.base_price : null;
                 const discountPct = originalPrice
                   ? Math.round((1 - currentPrice / originalPrice) * 100)
                   : null;
+                // Some service names have "Starting Price" redundantly baked into the title
+                // text itself (a content issue, not display data) — strip it here so the
+                // card reads as "Basic Recovery" / "৳2,000" instead of repeating itself.
+                const displayName = service.name.replace(/\s*starting\s*price\s*$/i, '').trim();
 
                 return (
                   <Link
-                    key={service.id}
+                    key={`${service.id}-${idx}`}
                     href={`/services/${service.slug}`}
-                    className="group flex flex-col h-full bg-gray-50 rounded-xl border border-gray-200 shadow-sm overflow-hidden hover:shadow-md hover:border-gray-300 transition-all duration-300 hover:-translate-y-1"
+                    className="group flex-shrink-0 w-56 h-40 bg-white rounded-xl border-2 border-gray-200 shadow-sm hover:shadow-lg hover:border-indigo-400 hover:-translate-y-1 transition-all duration-300 p-4 flex flex-col"
                   >
-                    {/* Image */}
-                    <div className="relative overflow-hidden bg-gradient-to-br from-gray-100 to-gray-200 h-50 flex-shrink-0">
-                      {service.image ? (
-                        <OptimizedImage
-                          src={service.image}
-                          alt={service.name}
-                          fill
-                          className="object-cover group-hover:scale-105 transition-transform duration-300"
-                          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <WrenchScrewdriverIcon className="w-12 h-12 text-gray-400" />
-                        </div>
-                      )}
-                      {/* Discount Badge */}
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className="inline-block bg-indigo-50 text-indigo-700 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full truncate">
+                        {service.category?.name || 'Service'}
+                      </span>
                       {discountPct !== null && (
-                        <span className="absolute top-3 left-3 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-lg">
+                        <span className="flex-shrink-0 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
                           -{discountPct}%
-                        </span>
-                      )}
-                      {/* Duration Badge */}
-                      {service.duration_estimate && (
-                        <span className="absolute top-3 right-3 bg-black/70 text-white text-xs font-medium px-2 py-1 rounded-lg flex items-center gap-1">
-                          <ClockIcon className="w-3 h-3" />
-                          {service.duration_estimate}
                         </span>
                       )}
                     </div>
 
-                    {/* Info */}
-                    <div className="p-4 flex flex-col flex-1">
-                      <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">
-                        {service.category?.name || 'Service'}
-                      </p>
-                      <h3 className="text-base font-semibold text-gray-900 line-clamp-2 mb-3 leading-snug min-h-[2.75rem] group-hover:text-gray-700">
-                        {service.name}
-                      </h3>
-                      <div className="flex items-center justify-between mt-auto">
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg font-bold text-gray-900">
-                            ৳{Number(currentPrice).toLocaleString()}
+                    <h3 className="text-sm font-bold text-gray-900 line-clamp-2 leading-snug group-hover:text-indigo-700 transition-colors">
+                      {displayName}
+                    </h3>
+
+                    <div className="flex items-center justify-between mt-auto pt-2 border-t border-gray-100">
+                      {service.duration_estimate ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
+                          <ClockIcon className="w-3 h-3" />
+                          {service.duration_estimate}
+                        </span>
+                      ) : <span />}
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-base font-extrabold text-green-600">
+                          ৳{Number(currentPrice).toLocaleString()}
+                        </span>
+                        {originalPrice !== null && (
+                          <span className="text-[11px] text-gray-400 line-through">
+                            ৳{Number(originalPrice).toLocaleString()}
                           </span>
-                          {originalPrice !== null && (
-                            <span className="text-sm text-gray-400 line-through">
-                              ৳{Number(originalPrice).toLocaleString()}
-                            </span>
-                          )}
-                        </div>
+                        )}
                       </div>
                     </div>
                   </Link>
                 );
-              })
-            )}
-          </div>
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
@@ -676,28 +645,10 @@ export default function Home() {
             </Link>
           </div>
 
-          {/* Product Tabs - Compact Rounded Border Buttons */}
-          {!productsLoading && productTabs.length > 1 && (
-            <div className="flex flex-wrap gap-2 mb-5">
-              {productTabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveProductTab(tab.id)}
-                  className={`px-4 py-1.5 rounded-md border text-xs font-medium transition-all duration-300 ${activeProductTab === tab.id
-                    ? 'border-ink bg-ink text-white'
-                    : 'border-gray-300 bg-white text-gray-600 hover:border-ink hover:text-ink'
-                    }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-          )}
-
           {/* Products Grid - Compact Cards */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-5">
             {productsLoading ? (
-              [...Array(12)].map((_, i) => (
+              [...Array(30)].map((_, i) => (
                 <div key={i} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden animate-pulse">
                   <div className="w-full h-50 bg-gray-100 m-2" />
                   <div className="p-4 space-y-2">
@@ -706,12 +657,16 @@ export default function Home() {
                   </div>
                 </div>
               ))
-            ) : filteredProducts.length === 0 ? (
+            ) : featuredProducts.length === 0 ? (
               <div className="col-span-2 md:col-span-3 lg:col-span-6 text-center py-6 text-gray-500">
                 No featured products available.
               </div>
             ) : (
-              filteredProducts.slice(0, 12).map((product) => {
+              // Cap to a whole number of full rows (6 per row, up to 5 rows) so the grid never
+              // ends in a lopsided partial row.
+              featuredProducts
+                .slice(0, featuredProducts.length < 6 ? featuredProducts.length : Math.min(30, Math.floor(featuredProducts.length / 6) * 6))
+                .map((product) => {
                 const currentPrice = product.current_price ?? product.discount_price ?? product.price;
                 const originalPrice = product.discount_price ? product.price : null;
                 const discountPct = originalPrice

@@ -184,6 +184,8 @@ export interface Service {
   slug?: string;
   name: string;
   description?: string;
+  short_description?: string;
+  features?: string[];
   base_price: number;
   discount_price?: number | null;
   current_price?: number;
