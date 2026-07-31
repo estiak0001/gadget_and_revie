@@ -212,7 +212,7 @@ class ProductController extends BaseController
             ->inStock()
             ->with(['category.parent.parent.parent', 'vendorProfile', 'brand'])
             ->inRandomOrder()
-            ->limit(12)
+            ->limit(30)
             ->get();
 
         return $this->success(ProductResource::collection($products));
