@@ -74,6 +74,22 @@ const gradientStyle = (from?: string, to?: string) => ({
   background: `linear-gradient(to bottom right, ${TW_COLORS[from || ''] || '#3b82f6'}, ${TW_COLORS[to || ''] || '#4f46e5'})`,
 });
 
+// Service descriptions come out of a rich-text editor in the admin panel — strip the markup for
+// a plain-text card preview instead of showing literal tags.
+function stripHtml(html?: string): string {
+  if (!html) return '';
+  return html
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export default function Home() {
   const router = useRouter();
   const { addItem: addToCartStore } = useCartStore();
@@ -546,14 +562,16 @@ export default function Home() {
             </Link>
           </div>
 
-          {/* Services Slider — small, uniform-size cards with just the basics (no icon/image/
-              description); auto-slides through every featured service. */}
+          {/* Services Slider — small, uniform-size cards with just the basics plus a short
+              truncated description; auto-slides through every featured service. */}
           {servicesLoading ? (
             <div className="flex gap-4 overflow-x-hidden">
               {[...Array(6)].map((_, i) => (
-                <div key={i} className="flex-shrink-0 w-56 h-40 bg-gray-50 rounded-xl border border-gray-200 p-4 animate-pulse space-y-2">
+                <div key={i} className="flex-shrink-0 w-56 h-44 bg-gray-50 rounded-xl border border-gray-200 p-4 animate-pulse space-y-2">
                   <div className="h-2.5 bg-gray-100 rounded w-1/3" />
                   <div className="h-4 bg-gray-100 rounded w-3/4" />
+                  <div className="h-3 bg-gray-100 rounded w-full" />
+                  <div className="h-3 bg-gray-100 rounded w-2/3" />
                 </div>
               ))}
             </div>
@@ -574,12 +592,15 @@ export default function Home() {
                 // text itself (a content issue, not display data) — strip it here so the
                 // card reads as "Basic Recovery" / "৳2,000" instead of repeating itself.
                 const displayName = service.name.replace(/\s*starting\s*price\s*$/i, '').trim();
+                // Some services have no description filled in yet in the admin panel —
+                // fall back to a plain "..." placeholder rather than leaving a blank gap.
+                const description = stripHtml(service.short_description || service.description) || '...';
 
                 return (
                   <Link
                     key={`${service.id}-${idx}`}
                     href={`/services/${service.slug}`}
-                    className="group flex-shrink-0 w-56 h-40 bg-white rounded-xl border-2 border-gray-200 shadow-sm hover:shadow-lg hover:border-indigo-400 hover:-translate-y-1 transition-all duration-300 p-4 flex flex-col"
+                    className="group flex-shrink-0 w-56 h-44 bg-white rounded-xl border-2 border-gray-200 shadow-sm hover:shadow-lg hover:border-indigo-400 hover:-translate-y-1 transition-all duration-300 p-4 flex flex-col"
                   >
                     <div className="flex items-center justify-between gap-2 mb-2">
                       <span className="inline-block bg-indigo-50 text-indigo-700 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full truncate">
@@ -592,9 +613,13 @@ export default function Home() {
                       )}
                     </div>
 
-                    <h3 className="text-sm font-bold text-gray-900 line-clamp-2 leading-snug group-hover:text-indigo-700 transition-colors">
+                    <h3 className="text-sm font-bold text-gray-900 line-clamp-1 leading-snug group-hover:text-indigo-700 transition-colors">
                       {displayName}
                     </h3>
+
+                    <p className="text-xs text-gray-500 line-clamp-2 mt-1 leading-snug">
+                      {description}
+                    </p>
 
                     <div className="flex items-center justify-between mt-auto pt-2 border-t border-gray-100">
                       {service.duration_estimate ? (
