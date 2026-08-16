@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useEffect, useState, useCallback, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Plus, Trash2, Search, Package, FileText, Save, Sparkles } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import {
@@ -22,6 +22,9 @@ interface PurchaseLineItem {
   product_sku: string;
   quantity: number;
   unit_cost: number;
+  /** The supplier's warranty on this specific batch — independent of the product's own warranty. */
+  warranty_value?: number | null;
+  warranty_unit?: string | null;
 }
 
 function generateId() {
@@ -41,7 +44,10 @@ function flattenCategoryTree(categories: ProductCategory[], depth = 0): { value:
 }
 
 function newLineItem(): PurchaseLineItem {
-  return { id: generateId(), product_name: '', product_sku: '', quantity: 1, unit_cost: 0 };
+  return {
+    id: generateId(), product_name: '', product_sku: '', quantity: 1, unit_cost: 0,
+    warranty_value: null, warranty_unit: null,
+  };
 }
 
 // ─── Product search modal ───────────────────────────────────────────────────
@@ -124,6 +130,10 @@ function ProductSearchModal({ onSelect, onClose }: ProductSearchModalProps) {
         // remaining details (description, images, etc.) and activates them from Products.
         is_active: false,
         is_draft: true,
+        // The whole point of quick-creating here is the real stock isn't confirmed yet (often
+        // literally 0) — leaving this at the create-product default of true would make it
+        // permanently invisible to out-of-stock detection regardless of actual stock_qty.
+        always_in_stock: false,
       });
       const created = res.data?.data as Product;
       toast.success(`"${created.name}" created as a draft product and added to the purchase order.`);
@@ -260,8 +270,9 @@ function ProductSearchModal({ onSelect, onClose }: ProductSearchModalProps) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function CreatePurchaseOrderPage() {
+function CreatePurchaseOrderContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isSaving, setIsSaving] = useState(false);
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -275,6 +286,10 @@ export default function CreatePurchaseOrderPage() {
   const [shippingCost, setShippingCost] = useState('');
   const [notes, setNotes] = useState('');
 
+  // Set when arriving via "Create Purchase Order" from an order that needs stock sourced —
+  // links the two so the order shows "Awaiting stock via PO #X" once this is saved.
+  const [linkedOrderId, setLinkedOrderId] = useState<number | null>(null);
+
   useEffect(() => {
     adminService.getSuppliers({ per_page: 1000, is_active: 'true' })
       .then((res) => {
@@ -283,6 +298,53 @@ export default function CreatePurchaseOrderPage() {
         setSuppliers(Array.isArray(list) ? (list as Supplier[]) : []);
       })
       .catch(() => setSuppliers([]));
+  }, []);
+
+  // Pre-fill from an order's "Create Purchase Order" action — either a single line
+  // (?order_id=&product_id=&quantity=, from the per-item truck icon) or several at once
+  // (?order_id=&items=[{"product_id":..,"quantity":..}, ...], from the order-level bulk action).
+  useEffect(() => {
+    const orderIdParam = searchParams.get('order_id');
+    const productIdParam = searchParams.get('product_id');
+    const quantityParam = searchParams.get('quantity');
+    const itemsParam = searchParams.get('items');
+    if (orderIdParam) setLinkedOrderId(Number(orderIdParam));
+
+    const toFetch: { productId: number; quantity: number }[] = [];
+    if (itemsParam) {
+      try {
+        const parsed = JSON.parse(itemsParam) as { product_id: number; quantity: number }[];
+        parsed.forEach((p) => {
+          if (p.product_id) toFetch.push({ productId: p.product_id, quantity: Math.max(1, p.quantity || 1) });
+        });
+      } catch {
+        // Malformed param — ignore rather than crash the page.
+      }
+    } else if (productIdParam) {
+      toFetch.push({ productId: Number(productIdParam), quantity: quantityParam ? Math.max(1, parseInt(quantityParam)) : 1 });
+    }
+    if (toFetch.length === 0) return;
+
+    Promise.all(toFetch.map(({ productId }) => adminService.getProduct(productId).then((res) => res.data?.data).catch(() => null)))
+      .then((products) => {
+        setItems((prev) => {
+          const next = [...prev];
+          products.forEach((product, idx) => {
+            if (!product) return;
+            if (next.some((i) => i.product_id === product.id)) return;
+            next.push({
+              ...newLineItem(),
+              product_id: product.id,
+              product_name: product.name,
+              product_sku: product.sku,
+              unit_cost: product.current_cost ?? product.discount_price ?? product.price,
+              quantity: toFetch[idx].quantity,
+            });
+          });
+          return next;
+        });
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function addProduct(product: Product) {
@@ -309,7 +371,7 @@ export default function CreatePurchaseOrderPage() {
     setItems((prev) => prev.filter((i) => i.id !== id));
   }
 
-  function updateItem(id: string, field: 'quantity' | 'unit_cost', value: number) {
+  function updateItem(id: string, field: 'quantity' | 'unit_cost' | 'warranty_value' | 'warranty_unit', value: number | string | null) {
     setItems((prev) => prev.map((i) => (i.id === id ? { ...i, [field]: value } : i)));
   }
 
@@ -338,6 +400,7 @@ export default function CreatePurchaseOrderPage() {
     try {
       const payload = {
         supplier_id: Number(supplierId),
+        order_id: linkedOrderId,
         expected_date: expectedDate || null,
         notes: notes.trim() || null,
         tax: taxNum || null,
@@ -346,6 +409,8 @@ export default function CreatePurchaseOrderPage() {
           product_id: i.product_id,
           quantity: i.quantity,
           unit_cost: i.unit_cost,
+          warranty_value: i.warranty_value || null,
+          warranty_unit: i.warranty_unit || null,
         })),
       };
 
@@ -377,6 +442,13 @@ export default function CreatePurchaseOrderPage() {
             <p className="text-sm text-gray-500 mt-0.5">Record a new stock procurement order from a supplier</p>
           </div>
         </div>
+
+        {linkedOrderId && (
+          <div className="flex items-center gap-2 text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5">
+            <Package className="w-4 h-4 flex-shrink-0" />
+            Sourcing stock for Order #{linkedOrderId} — this PO will link back to it once saved.
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* ── Left column ── */}
@@ -419,6 +491,7 @@ export default function CreatePurchaseOrderPage() {
                           <th className="pb-2 pr-4 font-semibold text-gray-600">Product</th>
                           <th className="pb-2 pr-4 font-semibold text-gray-600 w-28">Qty</th>
                           <th className="pb-2 pr-4 font-semibold text-gray-600 w-36">Unit Cost (৳)</th>
+                          <th className="pb-2 pr-4 font-semibold text-gray-600 w-40">Warranty</th>
                           <th className="pb-2 pr-4 font-semibold text-gray-600 text-right">Line Total</th>
                           <th className="pb-2 w-10"></th>
                         </tr>
@@ -448,6 +521,29 @@ export default function CreatePurchaseOrderPage() {
                                 onChange={(e) => updateItem(item.id, 'unit_cost', parseFloat(e.target.value) || 0)}
                                 className="w-28 px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                               />
+                            </td>
+                            <td className="py-2 pr-4">
+                              <div className="flex gap-1">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={item.warranty_value ?? ''}
+                                  onChange={(e) => updateItem(item.id, 'warranty_value', e.target.value ? parseInt(e.target.value) : null)}
+                                  placeholder="—"
+                                  className="w-14 px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                />
+                                <select
+                                  value={item.warranty_unit ?? ''}
+                                  onChange={(e) => updateItem(item.id, 'warranty_unit', e.target.value || null)}
+                                  className="flex-1 px-1.5 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                >
+                                  <option value="">Unit</option>
+                                  <option value="day">Day(s)</option>
+                                  <option value="week">Week(s)</option>
+                                  <option value="month">Month(s)</option>
+                                  <option value="year">Year(s)</option>
+                                </select>
+                              </div>
                             </td>
                             <td className="py-2 pr-4 text-right font-medium">
                               {formatCurrency(item.quantity * item.unit_cost)}
@@ -561,5 +657,13 @@ export default function CreatePurchaseOrderPage() {
         <ProductSearchModal onSelect={addProduct} onClose={() => setSearchModalOpen(false)} />
       )}
     </AdminLayout>
+  );
+}
+
+export default function CreatePurchaseOrderPage() {
+  return (
+    <Suspense fallback={<AdminLayout><div className="flex items-center justify-center min-h-screen"><LoadingSpinner size="lg" text="Loading..." /></div></AdminLayout>}>
+      <CreatePurchaseOrderContent />
+    </Suspense>
   );
 }

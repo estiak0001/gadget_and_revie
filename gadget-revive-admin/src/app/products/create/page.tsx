@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Save, Plus, Trash2, RefreshCw, Tag, GripVertical, Edit2, Check, X, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Trash2, RefreshCw, Tag, GripVertical, Edit2, Check, X, ChevronRight, UploadCloud, Image as ImageIcon } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import { Card, CardContent, CardHeader, CardTitle, Button, Input, Textarea, Select, SearchableSelect, Badge, LoadingSpinner, RichTextEditor, Modal, ImageUpload } from '@/components/ui';
 import { ProductCategory, ProductBrand, CategoryAttribute } from '@/types';
-import { getErrorMessage } from '@/lib/utils';
+import { getErrorMessage, cn } from '@/lib/utils';
 import adminService from '@/lib/adminService';
 import toast from 'react-hot-toast';
 
@@ -30,10 +30,12 @@ export default function CreateProductPage() {
     stock_qty: '0',
     low_stock_threshold: '5',
     always_in_stock: true,
-    average_cost: '',
+    current_cost: '',
     unit: 'piece',
     brand_id: '',
     model: '',
+    warranty_value: '',
+    warranty_unit: '',
     warranty: '',
     is_active: true,
     is_featured: false,
@@ -45,6 +47,11 @@ export default function CreateProductPage() {
   const [imagePreview, setImagePreview] = useState('');
   const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
   const [galleryPreviews, setGalleryPreviews] = useState<string[]>([]);
+  // Drag-over state purely for the dashed-border highlight — files themselves are held as raw
+  // File objects (not uploaded yet) since both images ship together with the rest of the product
+  // form in one multipart submit, not uploaded on drop.
+  const [isDraggingMain, setIsDraggingMain] = useState(false);
+  const [isDraggingGallery, setIsDraggingGallery] = useState(false);
 
   // Specifications state
   type SpecItem = { id: string; key: string; value: string };
@@ -245,10 +252,9 @@ export default function CreateProductPage() {
     return `PROD-${Date.now()}-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
   };
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  // Pure — takes a File directly so both the <input> picker and the drop zone can share the
+  // same validation/preview logic instead of duplicating it.
+  const processImageFile = (file: File) => {
     const maxSize = 4 * 1024 * 1024; // 4MB
     if (file.size > maxSize) {
       toast.error('Image must be less than 4MB');
@@ -266,8 +272,7 @@ export default function CreateProductPage() {
     reader.readAsDataURL(file);
   };
 
-  const handleGallerySelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
+  const processGalleryFiles = (files: File[]) => {
     const maxSize = 4 * 1024 * 1024; // 4MB
 
     const validFiles = files.filter(file => {
@@ -291,6 +296,30 @@ export default function CreateProductPage() {
       };
       reader.readAsDataURL(file);
     });
+  };
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) processImageFile(file);
+    e.target.value = ''; // allow re-selecting the same file after removing it
+  };
+
+  const handleGallerySelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    processGalleryFiles(Array.from(e.target.files || []));
+    e.target.value = '';
+  };
+
+  const handleImageDrop = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    setIsDraggingMain(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) processImageFile(file);
+  };
+
+  const handleGalleryDrop = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    setIsDraggingGallery(false);
+    processGalleryFiles(Array.from(e.dataTransfer.files || []));
   };
 
   const removeGalleryImage = (index: number) => {
@@ -470,10 +499,10 @@ export default function CreateProductPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Content - Left Side (2/3) */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="lg:col-span-2 space-y-4">
             {/* Basic Information */}
-            <Card>
-              <CardHeader>
+            <Card className="bg-sky-50/60 border-sky-100">
+              <CardHeader className="border-sky-100">
                 <CardTitle>Basic Information</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -631,22 +660,16 @@ export default function CreateProductPage() {
             </Card>
 
             {/* Images */}
-            <Card>
-              <CardHeader>
+            <Card className="bg-violet-50/60 border-violet-100">
+              <CardHeader className="border-violet-100">
                 <CardTitle>Product Images</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 {/* Main Image */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Main Image</label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageSelect}
-                    className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100"
-                  />
-                  {imagePreview && (
-                    <div className="mt-3 relative inline-block">
+                  {imagePreview ? (
+                    <div className="relative inline-block">
                       <img src={imagePreview} alt="Preview" className="w-32 h-32 object-cover rounded-lg border" />
                       <button
                         type="button"
@@ -656,19 +679,44 @@ export default function CreateProductPage() {
                         ×
                       </button>
                     </div>
+                  ) : (
+                    <label
+                      onDragOver={(e) => { e.preventDefault(); setIsDraggingMain(true); }}
+                      onDragLeave={() => setIsDraggingMain(false)}
+                      onDrop={handleImageDrop}
+                      className={cn(
+                        'flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors',
+                        isDraggingMain ? 'border-primary-400 bg-primary-50' : 'border-gray-300 bg-white hover:bg-gray-50'
+                      )}
+                    >
+                      <UploadCloud className={cn('w-7 h-7 mb-1', isDraggingMain ? 'text-primary-500' : 'text-gray-400')} />
+                      <p className="text-sm text-gray-500">
+                        <span className="font-medium text-primary-600">Click to upload</span> or drag and drop
+                      </p>
+                      <p className="text-xs text-gray-400 mt-0.5">PNG, JPG up to 4MB</p>
+                      <input type="file" accept="image/*" onChange={handleImageSelect} className="hidden" />
+                    </label>
                   )}
                 </div>
 
                 {/* Gallery Images */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Gallery Images (Multiple)</label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleGallerySelect}
-                    className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100"
-                  />
+                  <label
+                    onDragOver={(e) => { e.preventDefault(); setIsDraggingGallery(true); }}
+                    onDragLeave={() => setIsDraggingGallery(false)}
+                    onDrop={handleGalleryDrop}
+                    className={cn(
+                      'flex flex-col items-center justify-center w-full h-24 border-2 border-dashed rounded-lg cursor-pointer transition-colors',
+                      isDraggingGallery ? 'border-primary-400 bg-primary-50' : 'border-gray-300 bg-white hover:bg-gray-50'
+                    )}
+                  >
+                    <ImageIcon className={cn('w-6 h-6 mb-1', isDraggingGallery ? 'text-primary-500' : 'text-gray-400')} />
+                    <p className="text-sm text-gray-500">
+                      <span className="font-medium text-primary-600">Click to upload</span> or drag and drop — multiple allowed
+                    </p>
+                    <input type="file" accept="image/*" multiple onChange={handleGallerySelect} className="hidden" />
+                  </label>
                   {galleryPreviews.length > 0 && (
                     <div className="mt-3 grid grid-cols-4 gap-3">
                       {galleryPreviews.map((preview, idx) => (
@@ -690,8 +738,8 @@ export default function CreateProductPage() {
             </Card>
 
             {/* Specifications */}
-            <Card>
-              <CardHeader>
+            <Card className="bg-teal-50/60 border-teal-100">
+              <CardHeader className="border-teal-100">
                 <CardTitle>Technical Specifications</CardTitle>
                 <p className="text-sm text-gray-500 mt-1">Drag items to reorder, click to edit</p>
               </CardHeader>
@@ -844,8 +892,8 @@ export default function CreateProductPage() {
             </Card>
 
             {/* Category Filter Attributes (dynamic, per selected category + inherited) */}
-            <Card>
-              <CardHeader>
+            <Card className="bg-rose-50/60 border-rose-100">
+              <CardHeader className="border-rose-100">
                 <CardTitle>Category Filter Attributes</CardTitle>
                 <p className="text-sm text-gray-500 mt-1">
                   Attributes defined on the selected category (and inherited from its parents).
@@ -960,10 +1008,10 @@ export default function CreateProductPage() {
           </div>
 
           {/* Sidebar - Right Side (1/3) */}
-          <div className="space-y-6">
+          <div className="space-y-4">
             {/* Pricing */}
-            <Card>
-              <CardHeader>
+            <Card className="bg-emerald-50/60 border-emerald-100">
+              <CardHeader className="border-emerald-100">
                 <CardTitle>Pricing</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1001,8 +1049,8 @@ export default function CreateProductPage() {
             </Card>
 
             {/* Inventory */}
-            <Card>
-              <CardHeader>
+            <Card className="bg-cyan-50/60 border-cyan-100">
+              <CardHeader className="border-cyan-100">
                 <CardTitle>Inventory</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1037,17 +1085,17 @@ export default function CreateProductPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Average Cost (৳)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Current Cost (৳)</label>
                   <Input
                     type="number"
                     step="0.01"
-                    value={formData.average_cost}
-                    onChange={(e) => setFormData({ ...formData, average_cost: e.target.value })}
+                    value={formData.current_cost}
+                    onChange={(e) => setFormData({ ...formData, current_cost: e.target.value })}
                     min={0}
                     placeholder="0.00"
                   />
                   <p className="text-xs text-gray-400 mt-1">
-                    What this item costs you per unit — used to calculate profit margin and Cost of Goods Sold. Automatically recalculated when a Purchase Order for this product is received.
+                    What this item costs you per unit — used to calculate profit margin and Cost of Goods Sold. Automatically overwritten with the latest price whenever a Purchase Order for this product is received — a manual edit here only holds until then.
                   </p>
                 </div>
                 <label className="flex items-center gap-3 cursor-pointer">
@@ -1070,8 +1118,8 @@ export default function CreateProductPage() {
             </Card>
 
             {/* Product Details */}
-            <Card>
-              <CardHeader>
+            <Card className="bg-slate-50/60 border-slate-200">
+              <CardHeader className="border-slate-200">
                 <CardTitle>Product Details</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1118,20 +1166,43 @@ export default function CreateProductPage() {
                     placeholder="e.g., RTX 3060, Galaxy S23"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Warranty</label>
+                <div className="bg-amber-50/70 border border-amber-100 rounded-lg p-3 space-y-2.5">
+                  <p className="text-xs font-medium text-amber-800">Warranty</p>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <Input
+                      type="number"
+                      min={0}
+                      value={formData.warranty_value}
+                      onChange={(e) => setFormData({ ...formData, warranty_value: e.target.value })}
+                      placeholder="Value, e.g. 2"
+                      className="bg-white"
+                    />
+                    <Select
+                      options={[
+                        { value: '', label: 'Select unit...' },
+                        { value: 'day', label: 'Day(s)' },
+                        { value: 'week', label: 'Week(s)' },
+                        { value: 'month', label: 'Month(s)' },
+                        { value: 'year', label: 'Year(s)' },
+                      ]}
+                      value={formData.warranty_unit}
+                      onChange={(e) => setFormData({ ...formData, warranty_unit: e.target.value })}
+                      className="bg-white"
+                    />
+                  </div>
                   <Input
                     value={formData.warranty}
                     onChange={(e) => setFormData({ ...formData, warranty: e.target.value })}
-                    placeholder="e.g., 3 years, 1 year"
+                    placeholder="Notes — exceptions or extra details, e.g. No warranty for fan/cooler"
+                    className="bg-white"
                   />
                 </div>
               </CardContent>
             </Card>
 
             {/* Status */}
-            <Card>
-              <CardHeader>
+            <Card className="bg-indigo-50/60 border-indigo-100">
+              <CardHeader className="border-indigo-100">
                 <CardTitle>Status</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">

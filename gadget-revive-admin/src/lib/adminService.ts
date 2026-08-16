@@ -5,7 +5,8 @@ import {
   DashboardStats, PaginatedResponse, ApiResponse, ServiceIntake,
   Expense, ExpenseCategory, ExpenseReport, Supplier, PurchaseOrder,
   ChartOfAccount, JournalEntry, TrialBalance, IncomeStatement, BalanceSheet, AccountLedger, CashPosition, CashBook,
-  PendingSyncSummary, Investor, Investment, CustomInvoice,
+  PendingSyncSummary, Investor, Investment, CustomInvoice, ProductSerial, PurchaseProductHistory, PurchaseSerialHistoryEntry,
+  SmsLog, SmsConnection, SmsCampaign, SmsBalance, SmsUsageStats,
 } from '@/types';
 
 // Query params type
@@ -58,6 +59,11 @@ export const adminService = {
   updateOrder: (id: number, data: Record<string, unknown>) => api.put<ApiResponse<Order>>(`/admin/orders/${id}`, data),
   updateOrderStatus: (id: number, data: { order_status: string; note?: string }) =>
     api.put(`/admin/orders/${id}/status`, data),
+  sendOrderDeliveredSms: (id: number) => api.post(`/admin/orders/${id}/send-delivered-sms`),
+  sendOrderStatusSms: (id: number) => api.post(`/admin/orders/${id}/send-status-sms`),
+  sendOrderDueSms: (id: number) => api.post(`/admin/orders/${id}/send-due-sms`),
+  previewOrderSms: (id: number, type: 'status' | 'delivered' | 'due') =>
+    api.get<ApiResponse<{ phone: string; message: string }>>(`/admin/orders/${id}/sms-preview`, { params: { type } }),
   refundOrder: (id: number, data: { reason: string; refund_amount?: number }) =>
     api.post<ApiResponse<Order>>(`/admin/orders/${id}/refund`, data),
   recordOrderPayment: (id: number, amount: number) =>
@@ -75,6 +81,18 @@ export const adminService = {
   sendInvoiceEmail: (orderId: number, email?: string) =>
     api.post(`/admin/invoices/${orderId}/send`, email ? { email } : {}),
 
+  // Money Receipt (Admin) — proof of payment for an order, separate from the Invoice
+  downloadMoneyReceipt: (orderId: number) =>
+    api.get(`/admin/invoices/${orderId}/money-receipt/download`, { responseType: 'blob' }),
+  streamMoneyReceiptUrl: (orderId: number) =>
+    `${api.defaults.baseURL}/admin/invoices/${orderId}/money-receipt/stream`,
+
+  // Delivery Chalan (Admin) — goods-delivery note, items/qty/serials, no prices
+  downloadDeliveryChalan: (orderId: number) =>
+    api.get(`/admin/invoices/${orderId}/delivery-chalan/download`, { responseType: 'blob' }),
+  streamDeliveryChalanUrl: (orderId: number) =>
+    `${api.defaults.baseURL}/admin/invoices/${orderId}/delivery-chalan/stream`,
+
   // Custom Invoices (Admin) — document-only, doesn't touch the real order/stock/ledger
   getCustomInvoices: (orderId: number) =>
     api.get<ApiResponse<CustomInvoice[]>>(`/admin/invoices/${orderId}/custom`),
@@ -82,6 +100,9 @@ export const adminService = {
     api.post<ApiResponse<CustomInvoice>>(`/admin/invoices/${orderId}/custom`, data),
   downloadCustomInvoice: (id: number) =>
     api.get(`/admin/invoices/custom/${id}/download`, { responseType: 'blob' }),
+  sendCustomInvoiceSms: (id: number) => api.post(`/admin/invoices/custom/${id}/send-sms`),
+  previewCustomInvoiceSms: (id: number) =>
+    api.get<ApiResponse<{ phone: string; message: string }>>(`/admin/invoices/custom/${id}/sms-preview`),
 
   // Service Intakes (device received → receipt → convert to order)
   getServiceIntakes: (params?: ListParams) =>
@@ -95,8 +116,22 @@ export const adminService = {
   deleteServiceIntake: (id: number) => api.delete(`/admin/service-intakes/${id}`),
   updateServiceIntakeStatus: (id: number, status: string) =>
     api.put(`/admin/service-intakes/${id}/status`, { status }),
-  convertServiceIntake: (id: number, data: { payment_method: string; payment_status?: string; order_status?: string }) =>
-    api.post(`/admin/service-intakes/${id}/convert`, data),
+  convertServiceIntake: (id: number, data: {
+    customer_id?: number | null;
+    customer_name?: string;
+    customer_phone?: string;
+    customer_email?: string;
+    customer_address?: string;
+    payment_method: string;
+    payment_status: string;
+    paid_amount?: number;
+    order_status: string;
+    tax?: number;
+    shipping?: number;
+    discount?: number;
+    admin_notes?: string;
+    items: Array<{ id: number; include: boolean; unit_price?: number | null; quantity?: number }>;
+  }) => api.post(`/admin/service-intakes/${id}/convert`, data),
   confirmServiceIntakePrice: (id: number, data: Record<string, unknown>) =>
     api.post(`/admin/service-intakes/${id}/confirm-price`, data),
   downloadServiceReceipt: (id: number) =>
@@ -145,6 +180,9 @@ export const adminService = {
   toggleProductFeatured: (id: number) => api.put(`/admin/products/${id}/toggle-featured`),
   adjustStock: (id: number, data: { type: string; quantity: number; reason?: string }) =>
     api.post(`/admin/products/${id}/stock`, data),
+  getProductSerials: (id: number) => api.get<ApiResponse<ProductSerial[]>>(`/admin/products/${id}/serials`),
+  addProductSerials: (id: number, serials: string[]) =>
+    api.post<ApiResponse<ProductSerial[]>>(`/admin/products/${id}/serials`, { serials }),
 
   // Services
   getServices: (params?: ListParams) => api.get<PaginatedResponse<Service>>('/admin/services', { params }),
@@ -274,7 +312,7 @@ export const adminService = {
   deleteFaq: (id: number) => api.delete(`/admin/faqs/${id}`),
 
   // Settings
-  getSettings: () => api.get<{ data: Setting[] }>('/admin/settings'),
+  getSettings: (params?: { group?: string }) => api.get<{ data: Setting[] }>('/admin/settings', { params }),
   updateSetting: (id: number, data: { value: string }) => api.put(`/admin/settings/${id}`, data),
   updateSettings: (data: Record<string, string>) => {
     // Transform flat key-value pairs to backend format: { settings: { key: { key, value } } }
@@ -285,6 +323,24 @@ export const adminService = {
     return api.put('/admin/settings', { settings });
   },
   regenerateApiKey: () => api.post('/admin/settings/api-keys/regenerate'),
+  // SMS — Settings > SMS builds/tests connections; OTP/order/campaign config lives on the
+  // dedicated SMS Center page instead (both hit the same /admin/sms/* routes below).
+  getSmsConnections: () => api.get<ApiResponse<SmsConnection[]>>('/admin/sms/connections'),
+  createSmsConnection: (data: Partial<SmsConnection>) => api.post<ApiResponse<SmsConnection>>('/admin/sms/connections', data),
+  updateSmsConnection: (id: number, data: Partial<SmsConnection>) => api.put<ApiResponse<SmsConnection>>(`/admin/sms/connections/${id}`, data),
+  deleteSmsConnection: (id: number) => api.delete(`/admin/sms/connections/${id}`),
+  testSmsConnection: (data: { connection_id?: number; phone: string; message?: string; name?: string; api_url?: string; method?: string; api_key?: string; sender_id?: string; phone_format?: string }) =>
+    api.post('/admin/sms/connections/test', data),
+  getSmsConnectionBalance: (id: number) => api.get<ApiResponse<SmsBalance>>(`/admin/sms/connections/${id}/balance`),
+  getSmsUsageStats: (params?: { connection_id?: number; from?: string; to?: string }) =>
+    api.get<ApiResponse<SmsUsageStats>>('/admin/sms/usage', { params }),
+  getSmsLogs: (params?: ListParams & { purpose?: string; status?: string; connection_id?: number }) =>
+    api.get<PaginatedResponse<SmsLog>>('/admin/sms/logs', { params }),
+  getSmsCampaigns: (params?: ListParams) => api.get<PaginatedResponse<SmsCampaign>>('/admin/sms/campaigns', { params }),
+  createSmsCampaign: (data: { name: string; message: string; connection_id: number; recipient_source: 'all_customers' | 'manual'; phones?: string[] }) =>
+    api.post<ApiResponse<SmsCampaign>>('/admin/sms/campaigns', data),
+  getSmsCampaignRecipientsCount: (source: 'all_customers') =>
+    api.get<ApiResponse<{ count: number }>>('/admin/sms/campaigns/recipients-count', { params: { source } }),
 
   // Notifications
   getNotifications: (params?: ListParams) => api.get('/admin/notifications', { params }),
@@ -422,17 +478,29 @@ export const adminService = {
 
   // Purchase Orders
   getPurchases: (params?: ListParams) => api.get<{ data: PaginatedResponse<PurchaseOrder> }>('/admin/purchases', { params }),
+  getPurchaseProductHistory: (productId: number) =>
+    api.get<ApiResponse<PurchaseProductHistory>>('/admin/purchases/product-history', { params: { product_id: productId } }),
+  getPurchaseSerialHistory: (serialNumber: string) =>
+    api.get<ApiResponse<PurchaseSerialHistoryEntry[]>>('/admin/purchases/serial-history', { params: { serial_number: serialNumber } }),
   getPurchase: (id: number) => api.get<ApiResponse<PurchaseOrder>>(`/admin/purchases/${id}`),
   createPurchase: (data: Record<string, unknown>) => api.post<ApiResponse<PurchaseOrder>>('/admin/purchases', data),
   updatePurchase: (id: number, data: Record<string, unknown>) => api.put<ApiResponse<PurchaseOrder>>(`/admin/purchases/${id}`, data),
   deletePurchase: (id: number) => api.delete(`/admin/purchases/${id}`),
   markPurchaseOrdered: (id: number) => api.post<ApiResponse<PurchaseOrder>>(`/admin/purchases/${id}/mark-ordered`),
-  receivePurchase: (id: number, data: { items: { id: number; received_qty: number }[] }) =>
+  receivePurchase: (id: number, data: { items: { id: number; received_qty: number; serials?: string[] }[] }) =>
     api.post<ApiResponse<PurchaseOrder>>(`/admin/purchases/${id}/receive`, data),
+  returnPurchaseItems: (id: number, data: { items: { id: number; quantity: number; serials?: string[]; reason?: string }[]; collect_refund_now?: boolean }) =>
+    api.post<ApiResponse<PurchaseOrder>>(`/admin/purchases/${id}/return`, data),
+  restockPurchaseReturn: (id: number, data: { items: { id: number; quantity: number; serials?: string[]; reason?: string }[] }) =>
+    api.post<ApiResponse<PurchaseOrder>>(`/admin/purchases/${id}/restock-return`, data),
+  correctPurchaseReceipt: (id: number, data: { items: { id: number; unit_cost?: number; received_qty?: number; reason: string }[] }) =>
+    api.post<ApiResponse<PurchaseOrder>>(`/admin/purchases/${id}/correct-receipt`, data),
   cancelPurchase: (id: number) => api.post<ApiResponse<PurchaseOrder>>(`/admin/purchases/${id}/cancel`),
   payPurchase: (id: number, amount: number) => api.post<ApiResponse<PurchaseOrder>>(`/admin/purchases/${id}/pay`, { amount }),
   downloadPurchasePdf: (id: number) =>
     api.get(`/admin/purchases/${id}/download`, { responseType: 'blob' }),
+  downloadPaymentVoucher: (id: number) =>
+    api.get(`/admin/purchases/${id}/payment-voucher/download`, { responseType: 'blob' }),
 
   // Chart of Accounts
   getAccounts: (params?: ListParams) => api.get<ApiResponse<ChartOfAccount[]>>('/admin/accounting/accounts', { params }),

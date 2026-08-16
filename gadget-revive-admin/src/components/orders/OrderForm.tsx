@@ -1,15 +1,16 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, Plus, Trash2, Search, Package, Wrench, FileText, User, MapPin, CreditCard, Save,
-  UserPlus, CheckCircle2, X, Sparkles, Lock, ShieldAlert,
+  CheckCircle2, X, Sparkles, Lock, ShieldAlert, ChevronDown, ChevronUp, Check, Pencil,
 } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import {
   Card, CardContent, CardHeader, CardTitle,
-  Button, Input, Select, SearchableSelect, Badge, LoadingSpinner,
+  Button, Input, Select, SearchableSelect, Badge, LoadingSpinner, ConfirmModal,
 } from '@/components/ui';
 import { Product, Service, User as UserType, ProductCategory, Order, OrderItem } from '@/types';
 import { formatCurrency, getErrorMessage } from '@/lib/utils';
@@ -30,7 +31,15 @@ interface OrderLineItem {
   item_sku: string;
   quantity: number;
   unit_price: number;
+  /** What this line actually cost — defaults from the product's current cost when picked,
+   * editable, and saved on the order itself so margin stays accurate to time of sale. */
+  cost_price: number;
+  /** The warranty promised to the customer for this sale — defaults from the product, editable. */
+  warranty_value: number | null;
+  warranty_unit: string | null;
   notes: string;
+  /** Which specific in-stock unit(s) of the product are being sold — optional. */
+  serials?: string[];
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -85,7 +94,11 @@ function newLineItem(type: ItemType = 'custom'): OrderLineItem {
     item_sku: '',
     quantity: 1,
     unit_price: 0,
+    cost_price: 0,
+    warranty_value: null,
+    warranty_unit: null,
     notes: '',
+    serials: [],
   };
 }
 
@@ -116,6 +129,7 @@ function ItemSearchModal({ type, onSelect, onClose }: ItemSearchModalProps) {
   const [mode, setMode] = useState<'search' | 'create'>('search');
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [quickProduct, setQuickProduct] = useState(EMPTY_QUICK_PRODUCT);
+  const [quickProductSerials, setQuickProductSerials] = useState<string[]>([]);
   const [isCreating, setIsCreating] = useState(false);
 
   const search = useCallback(async (q: string) => {
@@ -158,6 +172,7 @@ function ItemSearchModal({ type, onSelect, onClose }: ItemSearchModalProps) {
 
   const openCreateMode = () => {
     setQuickProduct({ ...EMPTY_QUICK_PRODUCT, name: query });
+    setQuickProductSerials([]);
     setMode('create');
   };
 
@@ -187,8 +202,22 @@ function ItemSearchModal({ type, onSelect, onClose }: ItemSearchModalProps) {
         // remaining details (description, images, etc.) and activates them from Products.
         is_active: false,
         is_draft: true,
+        // The whole point of quick-creating here is the real stock isn't confirmed yet (often
+        // literally 0) — leaving this at the create-product default of true would make it
+        // permanently invisible to out-of-stock detection regardless of actual stock_qty.
+        always_in_stock: false,
       });
       const created = res.data?.data as Product;
+
+      const serials = quickProductSerials.map(s => s.trim()).filter(Boolean);
+      if (serials.length > 0) {
+        try {
+          await adminService.addProductSerials(created.id, serials);
+        } catch (err) {
+          toast.error(`Product created, but recording serial numbers failed: ${getErrorMessage(err)}`);
+        }
+      }
+
       toast.success(`"${created.name}" created as a draft product and added to the order.`);
       onSelect(created);
     } catch (err) {
@@ -327,6 +356,47 @@ function ItemSearchModal({ type, onSelect, onClose }: ItemSearchModalProps) {
               onChange={e => setQuickProduct(p => ({ ...p, sku: e.target.value }))}
               placeholder="Optional — auto-generated if left blank"
             />
+            {(() => {
+              const stockQty = parseInt(quickProduct.stock_qty, 10) || 0;
+              return stockQty > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-sm font-medium text-gray-700">Serial numbers (optional)</label>
+                    <span className={`text-xs ${quickProductSerials.length > stockQty ? 'text-red-600' : 'text-gray-400'}`}>
+                      {quickProductSerials.length} of {stockQty}
+                    </span>
+                  </div>
+                  <div className="space-y-1.5">
+                    {quickProductSerials.map((value, index) => (
+                      <div key={index} className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={value}
+                          onChange={e => setQuickProductSerials(prev => prev.map((s, i) => (i === index ? e.target.value : s)))}
+                          placeholder={`Serial #${index + 1}`}
+                          className="flex-1 px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setQuickProductSerials(prev => prev.filter((_, i) => i !== index))}
+                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setQuickProductSerials(prev => [...prev, ''])}
+                      disabled={quickProductSerials.length >= stockQty}
+                      className="flex items-center gap-1 text-xs font-medium text-primary-600 hover:text-primary-700 disabled:text-gray-300 disabled:cursor-not-allowed"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add serial number
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="ghost" onClick={() => setMode('search')}>Back to Search</Button>
               <Button type="button" onClick={handleQuickCreate} isLoading={isCreating}>
@@ -336,6 +406,198 @@ function ItemSearchModal({ type, onSelect, onClose }: ItemSearchModalProps) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// Multi-select searchable dropdown for picking which in-stock serial(s) of a product are being
+// sold on a line item. SearchableSelect (used elsewhere for single-value pickers like category)
+// doesn't support multiple selection, so this is a small purpose-built sibling rather than
+// stretching that component's contract for every other call site.
+interface SerialPickerDropdownProps {
+  options: string[];
+  selected: string[];
+  max: number;
+  disabled?: boolean;
+  onToggle: (serial: string) => void;
+}
+
+function SerialPickerDropdown({ options, selected, max, disabled, onToggle }: SerialPickerDropdownProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  // Rendered in a portal (see below) so it always floats above every card on the page — the
+  // item row it lives in uses overflow:hidden for its rounded corners, which was silently
+  // clipping the popup and making it look like clicking the field did nothing.
+  const [popupRect, setPopupRect] = useState<{ top: number; left: number; width: number; openUpward: boolean } | null>(null);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+  const popupRef = React.useRef<HTMLDivElement>(null);
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
+
+  // A serial the admin already picked might be one they just typed in below (not yet part of
+  // the fetched "available in stock" list) — union the two so it still shows up, checked, in
+  // the full list rather than only appearing transiently at the moment it's added.
+  const allOptions = Array.from(new Set([...options, ...selected]));
+  const filtered = allOptions.filter((sn) => sn.toLowerCase().includes(query.toLowerCase()));
+  const trimmedQuery = query.trim();
+  const canAddNew = trimmedQuery.length > 0 && !allOptions.some((sn) => sn.toLowerCase() === trimmedQuery.toLowerCase());
+
+  const handleAddNew = () => {
+    onToggle(trimmedQuery);
+    setQuery('');
+  };
+
+  const POPUP_HEIGHT_ESTIMATE = 300;
+
+  const updatePosition = useCallback(() => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openUpward = spaceBelow < POPUP_HEIGHT_ESTIMATE && rect.top > spaceBelow;
+    setPopupRect({
+      top: openUpward ? rect.top + window.scrollY : rect.bottom + window.scrollY,
+      left: rect.left + window.scrollX,
+      width: rect.width,
+      openUpward,
+    });
+  }, []);
+
+  const toggleOpen = () => {
+    if (disabled) return;
+    if (!isOpen) updatePosition();
+    setIsOpen((v) => !v);
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    updatePosition();
+    window.addEventListener('scroll', updatePosition, true);
+    window.addEventListener('resize', updatePosition);
+    return () => {
+      window.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('resize', updatePosition);
+    };
+  }, [isOpen, updatePosition]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      // The popup is portaled to <body>, so it's not a DOM descendant of containerRef — it
+      // needs its own check, or clicking anything inside it would immediately close it.
+      if (
+        containerRef.current && !containerRef.current.contains(target) &&
+        popupRef.current && !popupRef.current.contains(target)
+      ) {
+        setIsOpen(false);
+        setQuery('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) searchInputRef.current?.focus();
+  }, [isOpen]);
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape') {
+      setIsOpen(false);
+      setQuery('');
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (canAddNew) {
+        handleAddNew();
+      } else if (filtered.length === 1) {
+        onToggle(filtered[0]);
+        setQuery('');
+      }
+    }
+  };
+
+  return (
+    <div className="relative w-full" ref={containerRef}>
+      <button
+        type="button"
+        ref={triggerRef}
+        onClick={toggleOpen}
+        disabled={disabled}
+        className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 ${
+          disabled ? 'bg-gray-50 cursor-not-allowed text-gray-400' : 'bg-white hover:border-gray-400'
+        } ${isOpen ? 'border-primary-500 ring-2 ring-primary-500' : 'border-gray-300'}`}
+      >
+        <span className={`truncate ${selected.length > 0 ? 'text-gray-900' : 'text-gray-400'}`}>
+          {selected.length > 0 ? selected.join(', ') : options.length > 0 ? 'Select serial number(s)...' : 'No recorded serials — type to add one...'}
+        </span>
+        <span className="flex items-center gap-2 flex-shrink-0 ml-2">
+          <span className="text-xs text-gray-400">{selected.length}/{max}</span>
+          <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        </span>
+      </button>
+
+      {isOpen && popupRect && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={popupRef}
+          style={{
+            position: 'absolute',
+            top: popupRect.top,
+            left: popupRect.left,
+            width: popupRect.width,
+            transform: popupRect.openUpward ? 'translateY(-100%)' : undefined,
+            marginTop: popupRect.openUpward ? -4 : 4,
+          }}
+          className="z-[100] rounded-lg border border-gray-200 bg-white shadow-xl"
+        >
+          <div className="p-2 border-b border-gray-200">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={handleSearchKeyDown}
+                placeholder="Search, or type a new serial number..."
+                className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+          </div>
+          <div className="max-h-60 overflow-y-auto p-1">
+            {canAddNew && (
+              <button
+                type="button"
+                onClick={handleAddNew}
+                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-primary-600 hover:bg-primary-50"
+              >
+                <Plus className="w-3.5 h-3.5 flex-shrink-0" />
+                <span className="truncate">Add &quot;{trimmedQuery}&quot; as new serial</span>
+                <span className="ml-auto flex-shrink-0 text-xs text-gray-400">Enter ↵</span>
+              </button>
+            )}
+            {filtered.length === 0 && !canAddNew ? (
+              <div className="px-3 py-6 text-center text-sm text-gray-500">
+                {allOptions.length === 0 ? 'No serial numbers recorded yet — type one above to add it.' : 'No matching serial numbers'}
+              </div>
+            ) : (
+              filtered.map((sn) => {
+                const checked = selected.includes(sn);
+                return (
+                  <button
+                    key={sn}
+                    type="button"
+                    onClick={() => onToggle(sn)}
+                    className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors hover:bg-gray-100 ${checked ? 'bg-primary-50 text-primary-700' : ''}`}
+                  >
+                    <span className="flex-1 text-left font-mono">{sn}</span>
+                    {checked && <Check className="w-4 h-4 text-primary-600" />}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
@@ -355,8 +617,8 @@ export default function OrderForm({ orderId }: OrderFormProps) {
   const [isLoadingOrder, setIsLoadingOrder] = useState(isEditMode);
   const [loadedOrder, setLoadedOrder] = useState<Order | null>(null);
 
-  // Customer lookup (create mode only)
-  const [customerSearch, setCustomerSearch] = useState('');
+  // Customer lookup (create mode only) — searches as the admin types into the Name/Phone
+  // fields themselves rather than a separate search box, so there's only one place to type.
   const [customerResults, setCustomerResults] = useState<UserType[]>([]);
   const [customerLoading, setCustomerLoading] = useState(false);
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
@@ -371,6 +633,16 @@ export default function OrderForm({ orderId }: OrderFormProps) {
 
   // Order line items
   const [items, setItems] = useState<OrderLineItem[]>([]);
+  // Selectable serial numbers per line item — in-stock units for that product, plus whatever
+  // is already assigned to this exact item (those read back as 'sold' from the API, not
+  // 'in_stock', so they wouldn't otherwise appear in the available list).
+  const [serialOptions, setSerialOptions] = useState<Record<string, string[]>>({});
+  // Each item row collapses to a single summary line; only one can be open for editing at a
+  // time — opening another closes whichever was open, since this is a single id, not a set.
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
+  function toggleExpand(id: string) {
+    setExpandedItemId((prev) => (prev === id ? null : id));
+  }
 
   // Order meta
   const [meta, setMeta] = useState({
@@ -395,14 +667,18 @@ export default function OrderForm({ orderId }: OrderFormProps) {
 
   const currentUser = useAuthStore((s) => s.user);
   const isSuperAdmin = currentUser?.role === 'super_admin';
+  // The backend accepts the amend_paid_orders permission as an alternative to super_admin for
+  // unlocking a paid order's items/pricing — mirror that here so a custom role granted just the
+  // permission actually gets the "Unlock amendment" control, not only literal super_admins.
+  const canAmendPaidOrders = isSuperAdmin || !!currentUser?.permissions?.includes('amend_paid_orders');
 
   // Once a payment has been recorded, items/pricing are normally locked (the AR/revenue journal
-  // entries are already posted against the current total). A super_admin can still choose to
-  // unlock and amend a paid order — the backend re-posts revenue/COGS at the new total and
-  // restocks/re-decrements inventory accordingly.
+  // entries are already posted against the current total). A super_admin (or anyone granted
+  // amend_paid_orders) can still choose to unlock and amend a paid order — the backend re-posts
+  // revenue/COGS at the new total and restocks/re-decrements inventory accordingly.
   const [superAdminUnlocked, setSuperAdminUnlocked] = useState(false);
   const baseCanEditItemsAndPricing = isEditMode ? (loadedOrder?.can_edit_items_and_pricing ?? true) : true;
-  const canSuperAdminAmend = isEditMode && !!loadedOrder?.requires_super_admin_to_amend && isSuperAdmin;
+  const canSuperAdminAmend = isEditMode && !!loadedOrder?.requires_super_admin_to_amend && canAmendPaidOrders;
   const canEditItemsAndPricing = baseCanEditItemsAndPricing || (canSuperAdminAmend && superAdminUnlocked);
   const canEdit = isEditMode ? (loadedOrder?.can_be_edited ?? true) : true;
 
@@ -410,6 +686,10 @@ export default function OrderForm({ orderId }: OrderFormProps) {
   // rather than as a separate action — fixes what was RECORDED as paid, not what was charged.
   const [correctedPaidAmount, setCorrectedPaidAmount] = useState('');
   const [paymentCorrectionReason, setPaymentCorrectionReason] = useState('');
+  // Once the admin writes their own reason, stop overwriting it with the auto-generated default
+  // (the amount itself always stays live-synced — see the effect below).
+  const [reasonManuallyEdited, setReasonManuallyEdited] = useState(false);
+  const [showSaveConfirm, setShowSaveConfirm] = useState(false);
 
   // ── Load existing order (edit mode) ─────────────────────────────────────
 
@@ -451,7 +731,11 @@ export default function OrderForm({ orderId }: OrderFormProps) {
           item_sku: item.item_sku ?? '',
           quantity: item.quantity,
           unit_price: Number(item.unit_price),
+          cost_price: Number(item.cost_price ?? 0),
+          warranty_value: item.warranty_value ?? null,
+          warranty_unit: item.warranty_unit ?? null,
           notes: item.notes ?? '',
+          serials: (item.serials ?? []).map(s => s.serial_number),
         })));
       } catch (err) {
         toast.error(getErrorMessage(err));
@@ -464,11 +748,48 @@ export default function OrderForm({ orderId }: OrderFormProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditMode, orderId]);
 
-  // ── Customer search (create mode only) ──────────────────────────────────
+  // Lazily loads the pickable serial list for any product line item that doesn't have one
+  // yet — covers both a freshly-added line and the items seeded from an existing order above.
+  useEffect(() => {
+    items.forEach((item) => {
+      if (item.item_type === 'product' && item.product_id && !(item.id in serialOptions)) {
+        adminService.getProductSerials(item.product_id)
+          .then((res) => {
+            const available = (res.data?.data || []).map((s) => s.serial_number);
+            const preselected = item.serials ?? [];
+            const merged = Array.from(new Set([...preselected, ...available]));
+            setSerialOptions((prev) => ({ ...prev, [item.id]: merged }));
+          })
+          .catch(() => setSerialOptions((prev) => ({ ...prev, [item.id]: item.serials ?? [] })));
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
+
+  function toggleSerial(itemId: string, serial: string) {
+    setItems((prev) => prev.map((i) => {
+      if (i.id !== itemId) return i;
+      const current = i.serials ?? [];
+      if (current.includes(serial)) {
+        return { ...i, serials: current.filter((s) => s !== serial) };
+      }
+      if (current.length >= i.quantity) {
+        toast.error(`Only ${i.quantity} unit(s) needed for this line — deselect one first.`);
+        return i;
+      }
+      return { ...i, serials: [...current, serial] };
+    }));
+  }
+
+  // ── Customer search (create mode only) — driven by whatever's typed into Name or Phone,
+  // instead of a separate search box. Once a result is picked, selectedCustomer is set and
+  // this stops searching until "Change" clears it again. ──────────────────────────────────
+
+  const customerQuery = customerInfo.customer_name.trim() || customerInfo.customer_phone.trim();
 
   useEffect(() => {
-    if (isEditMode) return;
-    if (!customerSearch || customerSearch.length < 2) {
+    if (isEditMode || selectedCustomer) return;
+    if (!customerQuery || customerQuery.length < 2) {
       setCustomerResults([]);
       setShowCustomerDropdown(false);
       return;
@@ -476,7 +797,7 @@ export default function OrderForm({ orderId }: OrderFormProps) {
     const timer = setTimeout(async () => {
       setCustomerLoading(true);
       try {
-        const res = await adminService.getCustomers({ search: customerSearch, per_page: 10 });
+        const res = await adminService.getCustomers({ search: customerQuery, per_page: 10 });
         const data = (res.data as { data?: unknown })?.data ?? res.data;
         setCustomerResults(Array.isArray(data) ? data : []);
         setShowCustomerDropdown(true);
@@ -487,7 +808,7 @@ export default function OrderForm({ orderId }: OrderFormProps) {
       }
     }, 350);
     return () => clearTimeout(timer);
-  }, [customerSearch, isEditMode]);
+  }, [customerQuery, isEditMode, selectedCustomer]);
 
   // Warn if the typed phone/email for a NEW customer actually already belongs to an existing
   // account, so the admin doesn't unknowingly attach this order to someone else's customer
@@ -534,7 +855,6 @@ export default function OrderForm({ orderId }: OrderFormProps) {
 
   function selectCustomer(c: UserType) {
     setSelectedCustomer(c);
-    setCustomerSearch(c.name);
     setShowCustomerDropdown(false);
     setCustomerInfo({
       customer_name: c.name,
@@ -546,8 +866,16 @@ export default function OrderForm({ orderId }: OrderFormProps) {
 
   function clearCustomer() {
     setSelectedCustomer(null);
-    setCustomerSearch('');
     setCustomerInfo({ customer_name: '', customer_phone: '', customer_email: '', customer_address: '' });
+  }
+
+  // Name and phone are both optional — nothing blocks saving. If the admin left name blank:
+  // a phone number alone means the name is genuinely unknown rather than empty, and nothing
+  // at all means this is a walk-in sale with no info to record.
+  function resolveCustomerName(): string {
+    const name = customerInfo.customer_name.trim();
+    if (name) return name;
+    return customerInfo.customer_phone.trim() ? 'Unknown' : 'Walk-in Customer';
   }
 
   // ── Line items ──────────────────────────────────────────────────────────
@@ -556,7 +884,9 @@ export default function OrderForm({ orderId }: OrderFormProps) {
   // row. Products and services are always added by searching the catalog first (see
   // openAddProduct/openAddService below) — there's no empty "product" row waiting to be filled in.
   function addCustomItem() {
-    setItems(prev => [...prev, newLineItem('custom')]);
+    const item = newLineItem('custom');
+    setItems(prev => [...prev, item]);
+    setExpandedItemId(item.id);
   }
 
   function openAddProduct() {
@@ -575,7 +905,7 @@ export default function OrderForm({ orderId }: OrderFormProps) {
     setItems(prev => prev.filter(i => i.id !== id));
   }
 
-  function updateItem(id: string, field: keyof OrderLineItem, value: string | number) {
+  function updateItem(id: string, field: keyof OrderLineItem, value: string | number | null) {
     setItems(prev => prev.map(i => i.id === id ? { ...i, [field]: value } : i));
   }
 
@@ -593,6 +923,10 @@ export default function OrderForm({ orderId }: OrderFormProps) {
             item_name: p.name,
             item_sku: p.sku ?? '',
             unit_price: p.discount_price ?? p.price,
+            cost_price: p.current_cost ?? 0,
+            warranty_value: p.warranty_value ?? null,
+            warranty_unit: p.warranty_unit ?? null,
+            serials: [],
           };
         })()
       : (() => {
@@ -608,10 +942,22 @@ export default function OrderForm({ orderId }: OrderFormProps) {
         })();
 
     if (modal.forIndex === -1) {
-      // Adding a brand new line — append a fully-populated row directly.
-      setItems(prev => [...prev, { ...newLineItem(modal.type), ...populated }]);
+      // Adding a brand new line — append a fully-populated row directly, expanded so its
+      // qty/serials/warranty can be reviewed right away.
+      const newItem = { ...newLineItem(modal.type), ...populated };
+      setItems(prev => [...prev, newItem]);
+      setExpandedItemId(newItem.id);
     } else {
-      // Replacing what an existing line points to (the "Change" link on a row).
+      // Replacing what an existing line points to (the "Change" link on a row) — the product
+      // changed, so any previously-fetched serial options no longer apply to this line.
+      const replacedId = items[modal.forIndex]?.id;
+      if (replacedId) {
+        setSerialOptions(prev => {
+          const next = { ...prev };
+          delete next[replacedId];
+          return next;
+        });
+      }
       setItems(prev => prev.map((li, idx) => (idx === modal.forIndex ? { ...li, ...populated } : li)));
     }
     setSearchModal(null);
@@ -625,7 +971,42 @@ export default function OrderForm({ orderId }: OrderFormProps) {
   const tax      = parseFloat(meta.tax || '0') || 0;
   const total    = subtotal - discount + shipping + tax;
 
+  // Auto-suggests correcting the recorded payment to match whenever this edit drops the total
+  // below what's already been paid — the customer is now owed the difference, and "Correct
+  // Payment Amount" is exactly the mechanism that reflects that (it reverses/reposts the
+  // Cash-account entry too, not just the order's own paid_amount field). Deliberately never
+  // auto-suggests the other direction (total going up) — that would fabricate a payment that was
+  // never actually collected; a legitimate "still owes more" balance is handled via the normal
+  // Record Payment flow on the order page instead.
+  //
+  // The amount always stays live-synced to whatever the total currently is — add, remove, or
+  // edit any item (or the discount) and this recalculates immediately, every time, with no way
+  // to "stick" a stale value. A manual override the admin types is only ever respected until the
+  // next item/discount change, at which point it resyncs — it's a last-second tweak right before
+  // Save, not a standing decision to stop following the total. The reason text is the one
+  // exception: once the admin writes their own, it's left alone rather than silently replaced.
+  useEffect(() => {
+    if (!canSuperAdminAmend || !superAdminUnlocked) return;
+    const paidAmount = Number(loadedOrder?.paid_amount ?? 0);
+    if (total < paidAmount - 0.004) {
+      setCorrectedPaidAmount(total.toFixed(2));
+      if (!reasonManuallyEdited) {
+        setPaymentCorrectionReason('Order total reduced after payment — correcting recorded payment to match, refunding the difference.');
+      }
+    } else {
+      setCorrectedPaidAmount('');
+      if (!reasonManuallyEdited) {
+        setPaymentCorrectionReason('');
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [total, canSuperAdminAmend, superAdminUnlocked, loadedOrder?.paid_amount, reasonManuallyEdited]);
+
   // ── Submit ─────────────────────────────────────────────────────────────
+
+  const paymentAmountChanged = canSuperAdminAmend && superAdminUnlocked
+    && correctedPaidAmount !== ''
+    && parseFloat(correctedPaidAmount) !== Number(loadedOrder?.paid_amount ?? 0);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -640,18 +1021,10 @@ export default function OrderForm({ orderId }: OrderFormProps) {
         return;
       }
     }
-    if (!customerInfo.customer_name && !selectedCustomer) {
-      toast.error('Please provide a customer name or select a customer');
-      return;
-    }
     if (duplicateMatch) {
       toast.error('This phone/email already belongs to an existing customer — use them or fix the typo before continuing.');
       return;
     }
-
-    const paymentAmountChanged = canSuperAdminAmend && superAdminUnlocked
-      && correctedPaidAmount !== ''
-      && parseFloat(correctedPaidAmount) !== Number(loadedOrder?.paid_amount ?? 0);
 
     if (paymentAmountChanged) {
       if (isNaN(parseFloat(correctedPaidAmount)) || parseFloat(correctedPaidAmount) < 0) {
@@ -664,11 +1037,21 @@ export default function OrderForm({ orderId }: OrderFormProps) {
       }
     }
 
+    // Every save — creating a new order or saving edits, with or without a payment correction
+    // riding along — goes through one review-and-confirm step rather than committing immediately.
+    // This also means an Enter keypress in a field can never silently save on its own: at worst
+    // it opens this modal, which still needs an explicit click to actually do anything.
+    setShowSaveConfirm(true);
+  }
+
+  async function performSave() {
+    setShowSaveConfirm(false);
     setIsSaving(true);
     try {
       if (isEditMode) {
         const payload: Record<string, unknown> = {
           ...customerInfo,
+          customer_name: resolveCustomerName(),
           payment_method: meta.payment_method,
           admin_notes: meta.admin_notes || null,
           customer_notes: meta.customer_notes || null,
@@ -685,7 +1068,11 @@ export default function OrderForm({ orderId }: OrderFormProps) {
             item_sku: i.item_sku || null,
             quantity: i.quantity,
             unit_price: i.unit_price,
+            cost_price: i.cost_price,
+            warranty_value: i.warranty_value,
+            warranty_unit: i.warranty_unit,
             notes: i.notes || null,
+            serials: i.serials && i.serials.length > 0 ? i.serials : undefined,
           }));
         }
 
@@ -712,6 +1099,7 @@ export default function OrderForm({ orderId }: OrderFormProps) {
 
       const payload: Record<string, unknown> = {
         ...customerInfo,
+        customer_name: resolveCustomerName(),
         customer_id: selectedCustomer?.id ?? null,
         vendor_profile_id: meta.vendor_profile_id || null,
         payment_method: meta.payment_method,
@@ -730,7 +1118,11 @@ export default function OrderForm({ orderId }: OrderFormProps) {
           item_sku: i.item_sku || null,
           quantity: i.quantity,
           unit_price: i.unit_price,
+          cost_price: i.cost_price,
+          warranty_value: i.warranty_value,
+          warranty_unit: i.warranty_unit,
           notes: i.notes || null,
+          serials: i.serials && i.serials.length > 0 ? i.serials : undefined,
         })),
       };
 
@@ -788,7 +1180,7 @@ export default function OrderForm({ orderId }: OrderFormProps) {
 
   return (
     <AdminLayout>
-      <div className="space-y-6">
+      <div className="space-y-4">
         {/* Header */}
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="sm" onClick={() => router.back()}>
@@ -822,7 +1214,7 @@ export default function OrderForm({ orderId }: OrderFormProps) {
               Items and pricing are locked because a payment has already been recorded against this order.
             </div>
             <Button type="button" variant="ghost" size="sm" onClick={() => setSuperAdminUnlocked(true)} leftIcon={<ShieldAlert className="w-4 h-4" />}>
-              Unlock amendment (Super Admin)
+              Unlock amendment
             </Button>
           </div>
         )}
@@ -846,6 +1238,13 @@ export default function OrderForm({ orderId }: OrderFormProps) {
               staff typed the wrong cash amount) — separate from the item/pricing change above. Leave
               the amount unchanged to skip this.
             </p>
+            {correctedPaidAmount !== '' && (
+              <p className="text-xs text-indigo-600 bg-indigo-100 rounded-md px-2 py-1.5">
+                Auto-calculated: the current total (৳{total.toFixed(2)}) is less than what&apos;s already
+                been paid, so this stays synced to match as you add, remove, or edit items — type a
+                different amount below to override just before saving.
+              </p>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Correct amount actually received</label>
@@ -863,7 +1262,7 @@ export default function OrderForm({ orderId }: OrderFormProps) {
                 <input
                   type="text"
                   value={paymentCorrectionReason}
-                  onChange={(e) => setPaymentCorrectionReason(e.target.value)}
+                  onChange={(e) => { setPaymentCorrectionReason(e.target.value); setReasonManuallyEdited(true); }}
                   placeholder="e.g. Staff recorded the wrong cash amount"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                 />
@@ -872,13 +1271,25 @@ export default function OrderForm({ orderId }: OrderFormProps) {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <form
+          onSubmit={handleSubmit}
+          // Enter in a plain input/select would otherwise trigger the browser's native
+          // "submit the nearest form" behavior, saving before anyone meant to — block it there
+          // (a real Save still always routes through the confirm-before-save modal above).
+          // Textareas are exempt so Enter still inserts a newline while typing notes.
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
+              e.preventDefault();
+            }
+          }}
+          className="grid grid-cols-1 lg:grid-cols-3 gap-4"
+        >
           {/* ── Left column ── */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="lg:col-span-2 space-y-4">
 
             {/* Customer section */}
-            <Card>
-              <CardHeader>
+            <Card className="bg-sky-50/60 border-sky-100">
+              <CardHeader className="border-sky-100">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <User className="w-4 h-4" /> Customer
                 </CardTitle>
@@ -894,11 +1305,10 @@ export default function OrderForm({ orderId }: OrderFormProps) {
                     )}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <Input
-                        label="Customer Name *"
+                        label="Customer Name"
                         value={customerInfo.customer_name}
                         onChange={e => setCustomerInfo(p => ({ ...p, customer_name: e.target.value }))}
-                        placeholder="Full name"
-                        required
+                        placeholder="Full name (optional)"
                       />
                       <Input
                         label="Phone"
@@ -938,25 +1348,30 @@ export default function OrderForm({ orderId }: OrderFormProps) {
                   </div>
                 ) : (
                   <div className="relative">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Find Existing Customer
-                    </label>
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <input
-                        value={customerSearch}
-                        onChange={e => { setCustomerSearch(e.target.value); setSelectedCustomer(null); }}
-                        placeholder="Type a name, phone, or email to search..."
-                        className="w-full pl-9 pr-9 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    {/* Name and Phone double as the search box — typing either searches existing
+                        customers (dropdown below); picking a result fills everything in, and
+                        just leaving typed text creates a new customer on save. One place to
+                        type, instead of a separate search box above these same two fields. */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <Input
+                        label="Customer Name"
+                        value={customerInfo.customer_name}
+                        onChange={e => setCustomerInfo(p => ({ ...p, customer_name: e.target.value }))}
+                        placeholder="Search or type a new name..."
                       />
-                      {customerLoading && (
-                        <LoadingSpinner size="sm" className="absolute right-3 top-1/2 -translate-y-1/2" />
-                      )}
+                      <Input
+                        label="Phone"
+                        value={customerInfo.customer_phone}
+                        onChange={e => setCustomerInfo(p => ({ ...p, customer_phone: e.target.value }))}
+                        placeholder="Search or type a new phone..."
+                      />
                     </div>
 
                     {showCustomerDropdown && (
                       <div className="absolute z-20 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-52 overflow-y-auto w-full">
-                        {customerResults.length > 0 ? customerResults.map(c => (
+                        {customerLoading ? (
+                          <p className="px-4 py-3 text-sm text-gray-400">Searching...</p>
+                        ) : customerResults.length > 0 ? customerResults.map(c => (
                           <button
                             key={c.id}
                             type="button"
@@ -967,54 +1382,28 @@ export default function OrderForm({ orderId }: OrderFormProps) {
                             <span className="text-gray-400 ml-2">{c.email}</span>
                             {c.phone && <span className="text-gray-400 ml-2">· {c.phone}</span>}
                           </button>
-                        )) : !customerLoading && (
-                          <p className="px-4 py-3 text-sm text-gray-500">
-                            No match — fill in the details below to create a new customer.
-                          </p>
+                        )) : (
+                          <p className="px-4 py-3 text-sm text-gray-500">No match — this will create a new customer.</p>
                         )}
                       </div>
                     )}
 
-                    <div className="flex items-center gap-2 my-4">
-                      <div className="flex-1 h-px bg-gray-200" />
-                      <span className="text-xs text-gray-400 flex items-center gap-1">
-                        <UserPlus className="w-3.5 h-3.5" /> or enter new customer details
-                      </span>
-                      <div className="flex-1 h-px bg-gray-200" />
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <Input
-                        label="Customer Name *"
-                        value={customerInfo.customer_name}
-                        onChange={e => setCustomerInfo(p => ({ ...p, customer_name: e.target.value }))}
-                        placeholder="Full name"
-                        required={!selectedCustomer}
-                      />
-                      <Input
-                        label="Phone"
-                        value={customerInfo.customer_phone}
-                        onChange={e => setCustomerInfo(p => ({ ...p, customer_phone: e.target.value }))}
-                        placeholder="+880..."
-                      />
-                      <Input
-                        label="Email"
-                        type="email"
-                        value={customerInfo.customer_email}
-                        onChange={e => setCustomerInfo(p => ({ ...p, customer_email: e.target.value }))}
-                        placeholder="email@example.com"
-                      />
-                    </div>
+                    <Input
+                      label="Email"
+                      type="email"
+                      className="mt-3"
+                      value={customerInfo.customer_email}
+                      onChange={e => setCustomerInfo(p => ({ ...p, customer_email: e.target.value }))}
+                      placeholder="email@example.com (optional)"
+                    />
 
                     {duplicateMatch ? (
-                      <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3">
-                        <p className="text-sm text-red-700">
-                          <span className="font-semibold">Duplicate customer</span> — this phone/email already
-                          belongs to <span className="font-medium">{duplicateMatch.name}</span>
-                          {duplicateMatch.email && ` (${duplicateMatch.email})`}
-                          {duplicateMatch.phone && ` · ${duplicateMatch.phone}`}.
+                      <div className="mt-2.5 rounded-lg border border-red-200 bg-red-50 p-2.5">
+                        <p className="text-xs text-red-700">
+                          <span className="font-semibold">Duplicate</span> — this phone/email already belongs to{' '}
+                          <span className="font-medium">{duplicateMatch.name}</span>.
                         </p>
-                        <Button type="button" size="sm" className="mt-2" onClick={useDuplicateCustomer}>
+                        <Button type="button" size="sm" className="mt-1.5" onClick={useDuplicateCustomer}>
                           Use {duplicateMatch.name} instead
                         </Button>
                       </div>
@@ -1022,7 +1411,7 @@ export default function OrderForm({ orderId }: OrderFormProps) {
                       <p className="text-xs text-gray-400 mt-2">
                         {checkingDuplicate
                           ? 'Checking for an existing customer with this phone/email...'
-                          : 'A customer account is created automatically from these details — no need to register them separately.'}
+                          : 'Both are optional — leave blank for a walk-in sale, or search above to reuse an existing customer.'}
                       </p>
                     )}
                   </div>
@@ -1038,8 +1427,8 @@ export default function OrderForm({ orderId }: OrderFormProps) {
             </Card>
 
             {/* Items section */}
-            <Card>
-              <CardHeader>
+            <Card className="bg-violet-50/60 border-violet-100">
+              <CardHeader className="border-violet-100">
                 <div className="flex items-center justify-between">
                   <CardTitle className="flex items-center gap-2 text-base">
                     <Package className="w-4 h-4" /> Order Items
@@ -1064,113 +1453,206 @@ export default function OrderForm({ orderId }: OrderFormProps) {
                   </p>
                 )}
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-2.5">
                 {items.length === 0 && (
                   <p className="text-center text-gray-400 py-6 text-sm">No items yet — add a product, a service, or a custom charge.</p>
                 )}
 
-                {items.map((item, idx) => (
-                  <div key={item.id} className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50">
-                    {/* Row 1: type badge + change link + remove */}
-                    <div className="flex items-center gap-2">
+                {items.map((item, idx) => {
+                  const accent = item.item_type === 'product' ? 'border-l-blue-300' : item.item_type === 'service' ? 'border-l-emerald-300' : 'border-l-gray-300';
+                  const margin = (item.unit_price - item.cost_price) * item.quantity;
+                  const isExpanded = expandedItemId === item.id;
+                  return (
+                  <div key={item.id} className={`border border-gray-200 border-l-4 ${accent} rounded-lg bg-white overflow-hidden`}>
+                    {/* Header strip: collapsed shows one summary line; expanded shows editable
+                        name/sku + change. Only one item can be expanded at a time. Clicking
+                        anywhere on the collapsed row opens it — not just the pencil icon. */}
+                    <div
+                      onClick={() => { if (!isExpanded) toggleExpand(item.id); }}
+                      className={`flex items-center gap-2 px-3 py-2 ${isExpanded ? 'bg-gray-50 border-b border-gray-100' : 'cursor-pointer hover:bg-gray-50'}`}
+                    >
                       <Badge
                         variant={item.item_type === 'product' ? 'info' : item.item_type === 'service' ? 'success' : 'default'}
-                        className="capitalize text-xs"
+                        className="capitalize text-[10px] flex-shrink-0"
                       >
-                        {item.item_type === 'custom' ? 'Custom Charge' : item.item_type}
+                        {item.item_type === 'custom' ? 'Custom' : item.item_type}
                       </Badge>
 
-                      {canEditItemsAndPricing && (item.item_type === 'product' || item.item_type === 'service') && (
-                        <button
-                          type="button"
-                          onClick={() => openChangeItem(idx, item.item_type as 'product' | 'service')}
-                          className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 font-medium"
-                        >
-                          <Search className="w-3 h-3" />
-                          Change
-                        </button>
+                      {isExpanded ? (
+                        <>
+                          <input
+                            value={item.item_name}
+                            onChange={e => updateItem(item.id, 'item_name', e.target.value)}
+                            placeholder="Item name"
+                            required
+                            autoFocus
+                            disabled={!canEditItemsAndPricing}
+                            className="flex-1 min-w-0 bg-transparent text-sm font-medium text-gray-900 focus:outline-none disabled:text-gray-500 placeholder:font-normal placeholder:text-gray-400"
+                          />
+                          <input
+                            value={item.item_sku}
+                            onChange={e => updateItem(item.id, 'item_sku', e.target.value)}
+                            placeholder="SKU"
+                            disabled={!canEditItemsAndPricing}
+                            className="w-20 flex-shrink-0 bg-transparent text-xs text-gray-500 text-right focus:outline-none disabled:text-gray-400"
+                          />
+                          {canEditItemsAndPricing && (item.item_type === 'product' || item.item_type === 'service') && (
+                            <button
+                              type="button"
+                              onClick={() => openChangeItem(idx, item.item_type as 'product' | 'service')}
+                              title="Change item"
+                              className="flex-shrink-0 text-primary-500 hover:text-primary-700"
+                            >
+                              <Search className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <span className="flex-1 min-w-0 truncate text-sm font-medium text-gray-900">
+                            {item.item_name || <span className="font-normal text-gray-400">Unnamed item</span>}
+                          </span>
+                          {item.item_sku && (
+                            <span className="hidden sm:inline text-xs text-gray-400 flex-shrink-0">{item.item_sku}</span>
+                          )}
+                          <span className="hidden sm:inline text-xs text-gray-500 flex-shrink-0">
+                            {item.quantity} &times; {formatCurrency(item.unit_price)}
+                          </span>
+                          {item.item_type === 'product' && item.warranty_value ? (
+                            <Badge variant="default" className="text-[10px] flex-shrink-0 hidden md:inline-flex">
+                              {item.warranty_value} {item.warranty_unit}
+                            </Badge>
+                          ) : null}
+                          <span className="text-sm font-semibold text-gray-900 flex-shrink-0">
+                            {formatCurrency(item.unit_price * item.quantity)}
+                          </span>
+                        </>
                       )}
 
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); toggleExpand(item.id); }}
+                        title={isExpanded ? 'Collapse' : canEditItemsAndPricing ? 'Edit item' : 'View item'}
+                        className="flex-shrink-0 text-gray-400 hover:text-primary-600"
+                      >
+                        {isExpanded ? <ChevronUp className="w-4 h-4" /> : <Pencil className="w-3.5 h-3.5" />}
+                      </button>
                       {canEditItemsAndPricing && (
                         <button
                           type="button"
-                          onClick={() => removeItem(item.id)}
-                          className="ml-auto p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
+                          onClick={(e) => { e.stopPropagation(); removeItem(item.id); }}
+                          title="Remove item"
+                          className="flex-shrink-0 text-red-400 hover:text-red-600"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       )}
                     </div>
 
-                    {/* Row 2: name + sku */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div className="sm:col-span-2">
+                    {isExpanded && (
+                    <div className="p-3 space-y-2.5">
+                      {/* Pricing row: qty + price + cost + total */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 items-end">
                         <Input
-                          label="Item Name *"
-                          value={item.item_name}
-                          onChange={e => updateItem(item.id, 'item_name', e.target.value)}
-                          placeholder="Item name"
+                          label="Qty *"
+                          type="number"
+                          min={1}
+                          value={item.quantity}
+                          onChange={e => updateItem(item.id, 'quantity', Math.max(1, parseInt(e.target.value) || 1))}
                           required
                           disabled={!canEditItemsAndPricing}
                         />
-                      </div>
-                      <Input
-                        label="SKU / Code"
-                        value={item.item_sku}
-                        onChange={e => updateItem(item.id, 'item_sku', e.target.value)}
-                        placeholder="Optional"
-                        disabled={!canEditItemsAndPricing}
-                      />
-                    </div>
-
-                    {/* Row 3: qty + price + total */}
-                    <div className="grid grid-cols-3 gap-3 items-end">
-                      <Input
-                        label="Quantity *"
-                        type="number"
-                        min={1}
-                        value={item.quantity}
-                        onChange={e => updateItem(item.id, 'quantity', Math.max(1, parseInt(e.target.value) || 1))}
-                        required
-                        disabled={!canEditItemsAndPricing}
-                      />
-                      <Input
-                        label="Unit Price (৳) *"
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        value={item.unit_price}
-                        onChange={e => updateItem(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
-                        required
-                        disabled={!canEditItemsAndPricing}
-                      />
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Line Total</label>
-                        <div className="px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm font-semibold text-gray-700">
-                          {formatCurrency(item.unit_price * item.quantity)}
+                        <Input
+                          label="Unit Price (৳) *"
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={item.unit_price}
+                          onChange={e => updateItem(item.id, 'unit_price', parseFloat(e.target.value) || 0)}
+                          required
+                          disabled={!canEditItemsAndPricing}
+                        />
+                        <Input
+                          label="Cost (৳)"
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={item.cost_price}
+                          onChange={e => updateItem(item.id, 'cost_price', parseFloat(e.target.value) || 0)}
+                          disabled={!canEditItemsAndPricing}
+                        />
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-1">Line Total</label>
+                          <div className="px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-semibold text-gray-700">
+                            {formatCurrency(item.unit_price * item.quantity)}
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    {/* Row 4: notes */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Item Notes</label>
+                      {/* Warranty + margin — soft amber panel, product lines only */}
+                      {item.item_type === 'product' && (
+                        <div className="flex items-center gap-3 bg-amber-50/70 border border-amber-100 rounded-lg px-3 py-2">
+                          <span className="text-xs font-medium text-amber-800 flex-shrink-0">Warranty</span>
+                          <input
+                            type="number"
+                            min={0}
+                            value={item.warranty_value ?? ''}
+                            onChange={e => updateItem(item.id, 'warranty_value', e.target.value ? parseInt(e.target.value) : null)}
+                            placeholder="—"
+                            disabled={!canEditItemsAndPricing}
+                            className="w-14 px-2 py-1 border border-amber-200 rounded-md text-xs bg-white focus:outline-none focus:ring-1 focus:ring-amber-400 disabled:bg-gray-50"
+                          />
+                          <select
+                            value={item.warranty_unit ?? ''}
+                            onChange={e => updateItem(item.id, 'warranty_unit', e.target.value || null)}
+                            disabled={!canEditItemsAndPricing}
+                            className="px-2 py-1 border border-amber-200 rounded-md text-xs bg-white focus:outline-none focus:ring-1 focus:ring-amber-400 disabled:bg-gray-50"
+                          >
+                            <option value="">No warranty</option>
+                            <option value="day">Day(s)</option>
+                            <option value="week">Week(s)</option>
+                            <option value="month">Month(s)</option>
+                            <option value="year">Year(s)</option>
+                          </select>
+                          <span className={`ml-auto text-xs font-medium ${margin >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                            Margin {formatCurrency(margin)}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Serial picker — soft slate panel, shown once the serial list has loaded
+                          (even empty, since a new one can be typed in directly). */}
+                      {item.item_type === 'product' && item.product_id && serialOptions[item.id] !== undefined && (
+                        <div className="bg-slate-50/70 border border-slate-100 rounded-lg px-3 py-2">
+                          <label className="block text-xs font-medium text-slate-600 mb-1.5">Serial Number(s)</label>
+                          <SerialPickerDropdown
+                            options={serialOptions[item.id]}
+                            selected={item.serials ?? []}
+                            max={item.quantity}
+                            disabled={!canEditItemsAndPricing}
+                            onToggle={(sn) => toggleSerial(item.id, sn)}
+                          />
+                        </div>
+                      )}
+
                       <input
                         value={item.notes}
                         onChange={e => updateItem(item.id, 'notes', e.target.value)}
-                        placeholder="Color, size, special instructions..."
+                        placeholder="Notes — color, size, special instructions..."
                         disabled={!canEditItemsAndPricing}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:bg-gray-100 disabled:text-gray-500"
+                        className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-primary-400 disabled:bg-gray-50 disabled:text-gray-400"
                       />
                     </div>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </CardContent>
             </Card>
 
             {/* Notes section */}
-            <Card>
-              <CardHeader>
+            <Card className="bg-rose-50/60 border-rose-100">
+              <CardHeader className="border-rose-100">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <FileText className="w-4 h-4" /> Notes
                 </CardTitle>
@@ -1201,11 +1683,11 @@ export default function OrderForm({ orderId }: OrderFormProps) {
           </div>
 
           {/* ── Right column (sidebar) ── */}
-          <div className="space-y-6">
+          <div className="space-y-4">
 
             {/* Order summary */}
-            <Card>
-              <CardHeader>
+            <Card className="bg-emerald-50/60 border-emerald-100">
+              <CardHeader className="border-emerald-100">
                 <CardTitle className="text-base">Order Summary</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -1264,8 +1746,8 @@ export default function OrderForm({ orderId }: OrderFormProps) {
             </Card>
 
             {/* Payment & Status */}
-            <Card>
-              <CardHeader>
+            <Card className="bg-indigo-50/60 border-indigo-100">
+              <CardHeader className="border-indigo-100">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <CreditCard className="w-4 h-4" /> Payment & Status
                 </CardTitle>
@@ -1310,8 +1792,8 @@ export default function OrderForm({ orderId }: OrderFormProps) {
             </Card>
 
             {/* Delivery info */}
-            <Card>
-              <CardHeader>
+            <Card className="bg-cyan-50/60 border-cyan-100">
+              <CardHeader className="border-cyan-100">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <MapPin className="w-4 h-4" /> Delivery
                 </CardTitle>
@@ -1357,6 +1839,25 @@ export default function OrderForm({ orderId }: OrderFormProps) {
           onClose={() => setSearchModal(null)}
         />
       )}
+
+      {/* Every save — new order or edit, with or without a riding payment correction — gets one
+          short review-and-confirm step rather than committing the instant Save is triggered. */}
+      <ConfirmModal
+        isOpen={showSaveConfirm}
+        onClose={() => setShowSaveConfirm(false)}
+        onConfirm={performSave}
+        title={paymentAmountChanged ? 'Also correct the recorded payment?' : isEditMode ? 'Save these changes?' : 'Create this order?'}
+        message={
+          paymentAmountChanged
+            ? `Saving this order change will also correct the recorded payment from ${formatCurrency(Number(loadedOrder?.paid_amount ?? 0))} to ${formatCurrency(parseFloat(correctedPaidAmount) || 0)} (reason: "${paymentCorrectionReason.trim()}"). Both changes will be saved together. Continue?`
+            : `${items.length} item${items.length !== 1 ? 's' : ''} · Subtotal ${formatCurrency(subtotal)}${discount > 0 ? ` · Discount ${formatCurrency(discount)}` : ''} · Total ${formatCurrency(total)}${
+                isEditMode ? '' : ` for ${selectedCustomer?.name || resolveCustomerName()}`
+              }.`
+        }
+        confirmLabel={paymentAmountChanged ? 'Yes, save both' : isEditMode ? 'Save Changes' : 'Create Order'}
+        variant="warning"
+        isLoading={isSaving}
+      />
     </AdminLayout>
   );
 }

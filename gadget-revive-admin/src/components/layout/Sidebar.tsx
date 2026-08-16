@@ -31,6 +31,7 @@ import {
   TrendingUp,
   Truck,
   BookOpen,
+  MessageSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/auth';
@@ -122,10 +123,11 @@ const navigation: NavSection[] = [
       {
         title: 'Purchases',
         icon: <Truck className="w-5 h-5" />,
-        permissions: ['manage_purchases', 'view_purchases', 'manage_suppliers'],
+        permissions: ['manage_purchases', 'view_purchases', 'manage_suppliers', 'view_purchase_history'],
         children: [
           { title: 'All Purchase Orders', href: '/purchases' },
           { title: 'Create Purchase Order', href: '/purchases/create' },
+          { title: 'Purchase History', href: '/purchases/history' },
           { title: 'Suppliers', href: '/suppliers' },
         ],
       },
@@ -278,6 +280,12 @@ const navigation: NavSection[] = [
         href: '/audit-logs',
         icon: <ClipboardList className="w-5 h-5" />,
         permissions: ['view_audit_logs'],
+      },
+      {
+        title: 'SMS Center',
+        href: '/sms',
+        icon: <MessageSquare className="w-5 h-5" />,
+        permissions: ['manage_settings'],
       },
       {
         title: 'Settings',

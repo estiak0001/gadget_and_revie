@@ -1,10 +1,10 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { RefreshCw, Printer } from 'lucide-react';
+import { RefreshCw, Printer, ArrowUpCircle, ArrowDownCircle, Wallet, PiggyBank } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import { Card, CardContent, Button, DateRangePicker, LoadingSpinner, ErrorState, InfoButton, StepFlow } from '@/components/ui';
-import { CashBook } from '@/types';
+import { CashBook, IncomeStatement } from '@/types';
 import { formatCurrency, getErrorMessage } from '@/lib/utils';
 import adminService from '@/lib/adminService';
 import toast from 'react-hot-toast';
@@ -15,6 +15,7 @@ export default function CashBookPage() {
   const [fromDate, setFromDate] = useState(today());
   const [toDate, setToDate] = useState(today());
   const [data, setData] = useState<CashBook | null>(null);
+  const [incomeStatement, setIncomeStatement] = useState<IncomeStatement | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(false);
 
@@ -22,8 +23,12 @@ export default function CashBookPage() {
     setIsLoading(true);
     setError(false);
     try {
-      const res = await adminService.getCashBook(fromDate, toDate);
-      setData(res.data?.data ?? null);
+      const [cashBookRes, incomeRes] = await Promise.all([
+        adminService.getCashBook(fromDate, toDate),
+        adminService.getIncomeStatement(fromDate, toDate),
+      ]);
+      setData(cashBookRes.data?.data ?? null);
+      setIncomeStatement(incomeRes.data?.data ?? null);
     } catch (err) {
       toast.error(getErrorMessage(err));
       setError(true);
@@ -81,138 +86,199 @@ export default function CashBookPage() {
         ) : error || !data ? (
           <ErrorState message="Failed to load cash book." onRetry={fetchData} />
         ) : (
-          <div className="bg-white rounded-lg border border-gray-200 p-4 print:border-0 print:p-0">
-            <div className="text-center mb-4">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 sm:p-5 print:border-0 print:shadow-none print:p-0">
+            <div className="text-center mb-5">
               <h2 className="text-lg font-bold text-gray-900">Cash Book</h2>
-              <p className="text-sm text-gray-600">As of End of Day: {asOfLabel}</p>
+              <p className="text-sm text-gray-500">As of End of Day: {asOfLabel}</p>
             </div>
 
-            {/* Cash Receipts */}
-            <div className="mb-6">
-              <h3 className="text-sm font-semibold text-gray-800 bg-gray-100 px-3 py-1.5 rounded-t">Cash Receipts</h3>
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm border border-gray-200 border-t-0">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-3 py-2 text-left font-medium text-gray-600 border-b border-gray-200">Date</th>
-                      <th className="px-3 py-2 text-left font-medium text-gray-600 border-b border-gray-200">Voucher</th>
-                      <th className="px-3 py-2 text-left font-medium text-gray-600 border-b border-gray-200">Particulars</th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-600 border-b border-gray-200">Cheque (Tk)</th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-600 border-b border-gray-200">Cash Received (Tk)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="border-b border-gray-100 bg-primary-50/30">
-                      <td className="px-3 py-2 text-gray-700">{fromDate}</td>
-                      <td className="px-3 py-2 text-gray-400">-</td>
-                      <td className="px-3 py-2 font-medium text-gray-800">Opening Balance</td>
-                      <td className="px-3 py-2 text-right text-gray-400">-</td>
-                      <td className="px-3 py-2 text-right font-medium text-gray-800">{formatCurrency(data.opening_balance)}</td>
-                    </tr>
-                    {data.receipts.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="px-3 py-3 text-center text-gray-400">No cash receipts in this period.</td>
+            {/* Receipt (left) / Payment (right), side by side — both totals below are the same
+                number (Opening + Receipts = Payments + Closing), same "does it balance" check
+                as a traditional receipts-and-payments statement. */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 print:grid-cols-2 print:gap-3">
+              {/* Receipt */}
+              <div className="rounded-xl border-2 border-gray-200 overflow-hidden shadow-sm flex flex-col">
+                <div className="bg-gradient-to-r from-emerald-50 to-green-50 border-b-2 border-emerald-100 px-4 py-2.5 text-center flex-shrink-0">
+                  <h3 className="text-sm font-bold text-emerald-800 tracking-wide">RECEIPT</h3>
+                </div>
+                {/* Scrollable transaction list — caps the card's height instead of the whole
+                    page growing unbounded when there are lots of transactions. */}
+                <div className="overflow-auto max-h-[420px] print:max-h-none print:overflow-visible">
+                  <table className="min-w-full text-sm">
+                    <colgroup>
+                      <col className="w-[92px]" /><col className="w-[108px]" /><col /><col className="w-[128px]" />
+                    </colgroup>
+                    <thead className="sticky top-0 z-10">
+                      <tr className="bg-gray-50 shadow-[0_1px_0_0_theme(colors.gray.200)]">
+                        <th className="px-3.5 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 whitespace-nowrap">Date</th>
+                        <th className="px-3.5 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 whitespace-nowrap">Voucher</th>
+                        <th className="px-3.5 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500">Particulars</th>
+                        <th className="px-3.5 py-2 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-500">Amount (Tk)</th>
                       </tr>
-                    ) : data.receipts.map((r, i) => (
-                      <tr key={i} className="border-b border-gray-100">
-                        <td className="px-3 py-2 text-gray-700">{r.date}</td>
-                        <td className="px-3 py-2 text-gray-500">{r.voucher}</td>
-                        <td className="px-3 py-2 text-gray-800">{r.particulars}</td>
-                        <td className="px-3 py-2 text-right text-gray-400">{r.cheque ? formatCurrency(r.cheque) : '-'}</td>
-                        <td className="px-3 py-2 text-right text-gray-800">{formatCurrency(r.cash_received)}</td>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      <tr className="bg-primary-50/40">
+                        <td className="px-3.5 py-2.5 text-gray-600 whitespace-nowrap">{fromDate}</td>
+                        <td className="px-3.5 py-2.5 text-gray-400">-</td>
+                        <td className="px-3.5 py-2.5 font-medium text-gray-800">Opening Balance</td>
+                        <td className="px-3.5 py-2.5 text-right font-medium text-gray-800 tabular-nums">{formatCurrency(data.opening_balance)}</td>
                       </tr>
-                    ))}
-                  </tbody>
+                      {data.receipts.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="px-3.5 py-4 text-center text-gray-400">No cash receipts in this period.</td>
+                        </tr>
+                      ) : data.receipts.map((r, i) => (
+                        <tr key={i} className="hover:bg-gray-50/70 transition-colors">
+                          <td className="px-3.5 py-2 text-gray-500 whitespace-nowrap">{r.date}</td>
+                          <td className="px-3.5 py-2 text-gray-400 whitespace-nowrap">{r.voucher}</td>
+                          <td className="px-3.5 py-2 text-gray-700">{r.particulars}</td>
+                          <td className="px-3.5 py-2 text-right text-gray-800 tabular-nums">{formatCurrency(r.cash_received)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {/* Totals — outside the scroll area so they always stay in view at the
+                    bottom of the card, same column widths as the table above. */}
+                <table className="min-w-full text-sm border-t-2 border-gray-200 flex-shrink-0">
+                  <colgroup>
+                    <col className="w-[92px]" /><col className="w-[108px]" /><col /><col className="w-[128px]" />
+                  </colgroup>
                   <tfoot>
-                    <tr className="bg-gray-50 font-semibold">
-                      <td className="px-3 py-2" colSpan={4}>Total Cash Received</td>
-                      <td className="px-3 py-2 text-right">{formatCurrency(data.opening_balance + data.total_received)}</td>
+                    <tr className="bg-gray-50/80 font-semibold">
+                      <td className="px-3.5 py-2.5" colSpan={3}>Total Receipt</td>
+                      <td className="px-3.5 py-2.5 text-right tabular-nums">{formatCurrency(data.total_received)}</td>
+                    </tr>
+                    <tr className="bg-emerald-50 font-bold border-t border-emerald-100">
+                      <td className="px-3.5 py-2.5 text-emerald-800" colSpan={3}>Total (Opening + Receipts)</td>
+                      <td className="px-3.5 py-2.5 text-right text-emerald-800 tabular-nums">{formatCurrency(data.opening_balance + data.total_received)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Payment */}
+              <div className="rounded-xl border-2 border-gray-200 overflow-hidden shadow-sm flex flex-col">
+                <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-b-2 border-amber-100 px-4 py-2.5 text-center flex-shrink-0">
+                  <h3 className="text-sm font-bold text-amber-800 tracking-wide">PAYMENT</h3>
+                </div>
+                <div className="overflow-auto max-h-[420px] print:max-h-none print:overflow-visible">
+                  <table className="min-w-full text-sm">
+                    <colgroup>
+                      <col className="w-[92px]" /><col className="w-[108px]" /><col /><col className="w-[128px]" />
+                    </colgroup>
+                    <thead className="sticky top-0 z-10">
+                      <tr className="bg-gray-50 shadow-[0_1px_0_0_theme(colors.gray.200)]">
+                        <th className="px-3.5 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 whitespace-nowrap">Date</th>
+                        <th className="px-3.5 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 whitespace-nowrap">Voucher</th>
+                        <th className="px-3.5 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500">Particulars</th>
+                        <th className="px-3.5 py-2 text-right text-[11px] font-semibold uppercase tracking-wide text-gray-500">Amount (Tk)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {data.payments.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="px-3.5 py-4 text-center text-gray-400">No cash payments in this period.</td>
+                        </tr>
+                      ) : data.payments.map((p, i) => (
+                        <tr key={i} className="hover:bg-gray-50/70 transition-colors">
+                          <td className="px-3.5 py-2 text-gray-500 whitespace-nowrap">{p.date}</td>
+                          <td className="px-3.5 py-2 text-gray-400 whitespace-nowrap">{p.voucher}</td>
+                          <td className="px-3.5 py-2 text-gray-700">
+                            {p.particulars}
+                            {p.salary > 0 && (
+                              <span className="ml-1.5 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700">Salary</span>
+                            )}
+                          </td>
+                          <td className="px-3.5 py-2 text-right text-gray-800 tabular-nums">{formatCurrency(p.salary || p.cash_payment)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {/* Totals — outside the scroll area, same column widths as the table above. */}
+                <table className="min-w-full text-sm border-t-2 border-gray-200 flex-shrink-0">
+                  <colgroup>
+                    <col className="w-[92px]" /><col className="w-[108px]" /><col /><col className="w-[128px]" />
+                  </colgroup>
+                  <tfoot>
+                    <tr className="bg-gray-50/80 font-semibold">
+                      <td className="px-3.5 py-2.5" colSpan={3}>Total Payment</td>
+                      <td className="px-3.5 py-2.5 text-right tabular-nums">{formatCurrency(data.total_paid)}</td>
+                    </tr>
+                    <tr className="bg-primary-50/40 border-t border-gray-200">
+                      <td className="px-3.5 py-2.5 font-medium text-gray-800" colSpan={3}>Closing Balance</td>
+                      <td className="px-3.5 py-2.5 text-right font-medium text-gray-800 tabular-nums">{formatCurrency(data.closing_balance)}</td>
+                    </tr>
+                    <tr className="bg-amber-50 font-bold border-t border-amber-100">
+                      <td className="px-3.5 py-2.5 text-amber-800" colSpan={3}>Total (Payments + Closing)</td>
+                      <td className="px-3.5 py-2.5 text-right text-amber-800 tabular-nums">{formatCurrency(data.total_paid + data.closing_balance)}</td>
                     </tr>
                   </tfoot>
                 </table>
               </div>
             </div>
 
-            {/* Cash Payments */}
-            <div className="mb-6">
-              <h3 className="text-sm font-semibold text-gray-800 bg-gray-100 px-3 py-1.5 rounded-t">Cash Payments</h3>
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm border border-gray-200 border-t-0">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-3 py-2 text-left font-medium text-gray-600 border-b border-gray-200">Date</th>
-                      <th className="px-3 py-2 text-left font-medium text-gray-600 border-b border-gray-200">Voucher</th>
-                      <th className="px-3 py-2 text-left font-medium text-gray-600 border-b border-gray-200">Particulars</th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-600 border-b border-gray-200">Salary (Tk)</th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-600 border-b border-gray-200">Cash Payment (Tk)</th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-600 border-b border-gray-200">Cheque (Tk)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.payments.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="px-3 py-3 text-center text-gray-400">No cash payments in this period.</td>
-                      </tr>
-                    ) : data.payments.map((p, i) => (
-                      <tr key={i} className="border-b border-gray-100">
-                        <td className="px-3 py-2 text-gray-700">{p.date}</td>
-                        <td className="px-3 py-2 text-gray-500">{p.voucher}</td>
-                        <td className="px-3 py-2 text-gray-800">{p.particulars}</td>
-                        <td className="px-3 py-2 text-right text-gray-800">{p.salary ? formatCurrency(p.salary) : '-'}</td>
-                        <td className="px-3 py-2 text-right text-gray-800">{p.cash_payment ? formatCurrency(p.cash_payment) : '-'}</td>
-                        <td className="px-3 py-2 text-right text-gray-400">{p.cheque ? formatCurrency(p.cheque) : '-'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-gray-50 font-semibold">
-                      <td className="px-3 py-2" colSpan={3}>Total Payments</td>
-                      <td className="px-3 py-2 text-right">{formatCurrency(data.total_salary)}</td>
-                      <td className="px-3 py-2 text-right">{formatCurrency(data.total_cash_payment)}</td>
-                      <td className="px-3 py-2 text-right">{formatCurrency(data.total_payment_cheque)}</td>
-                    </tr>
-                    <tr className="bg-gray-100 font-bold">
-                      <td className="px-3 py-2" colSpan={5}>Grand Total Paid</td>
-                      <td className="px-3 py-2 text-right">{formatCurrency(data.total_paid)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
+            {/* Summary strip — the same four headline figures from the tables above, at a glance */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
+              <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-3.5">
+                <div className="flex items-center gap-1.5 text-gray-500">
+                  <PiggyBank className="w-3.5 h-3.5" />
+                  <p className="text-[11px] font-semibold uppercase tracking-wide">Opening Balance</p>
+                </div>
+                <p className="text-lg font-bold text-gray-900 mt-1 tabular-nums">{formatCurrency(data.opening_balance)}</p>
+              </div>
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3.5">
+                <div className="flex items-center gap-1.5 text-emerald-700">
+                  <ArrowUpCircle className="w-3.5 h-3.5" />
+                  <p className="text-[11px] font-semibold uppercase tracking-wide">Total Receipts</p>
+                </div>
+                <p className="text-lg font-bold text-emerald-800 mt-1 tabular-nums">{formatCurrency(data.total_received)}</p>
+              </div>
+              <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-3.5">
+                <div className="flex items-center gap-1.5 text-amber-700">
+                  <ArrowDownCircle className="w-3.5 h-3.5" />
+                  <p className="text-[11px] font-semibold uppercase tracking-wide">Total Payments</p>
+                </div>
+                <p className="text-lg font-bold text-amber-800 mt-1 tabular-nums">{formatCurrency(data.total_paid)}</p>
+              </div>
+              <div className="rounded-xl border border-primary-200 bg-primary-50/60 p-3.5">
+                <div className="flex items-center gap-1.5 text-primary-700">
+                  <Wallet className="w-3.5 h-3.5" />
+                  <p className="text-[11px] font-semibold uppercase tracking-wide">Closing Balance</p>
+                </div>
+                <p className="text-lg font-bold text-primary-800 mt-1 tabular-nums">{formatCurrency(data.closing_balance)}</p>
               </div>
             </div>
 
-            {/* Cash Summary */}
-            <div className="mb-6 max-w-md">
-              <h3 className="text-sm font-semibold text-gray-800 bg-gray-100 px-3 py-1.5 rounded-t">Cash Summary</h3>
-              <table className="min-w-full text-sm border border-gray-200 border-t-0">
-                <tbody>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2 text-gray-700">Total Cash Received</td>
-                    <td className="px-3 py-2 text-right text-gray-800">{formatCurrency(data.opening_balance + data.total_received)}</td>
-                  </tr>
-                  <tr className="border-b border-gray-100">
-                    <td className="px-3 py-2 text-gray-700">Less: Total Payments</td>
-                    <td className="px-3 py-2 text-right text-red-700">({formatCurrency(data.total_paid)})</td>
-                  </tr>
-                  <tr className="bg-gray-50 font-bold">
-                    <td className="px-3 py-2 text-gray-900">Closing Cash in Hand</td>
-                    <td className="px-3 py-2 text-right text-gray-900">{formatCurrency(data.closing_balance)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            {/* Closing Balance */}
-            <div className="max-w-md">
-              <h3 className="text-sm font-semibold text-gray-800 bg-gray-100 px-3 py-1.5 rounded-t">Closing Balance</h3>
-              <table className="min-w-full text-sm border border-gray-200 border-t-0">
-                <tbody>
-                  <tr>
-                    <td className="px-3 py-2 text-gray-700">{toDate}</td>
-                    <td className="px-3 py-2 text-right font-bold text-primary-700">{formatCurrency(data.closing_balance)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+            {/* Income Statement Summary — same period, from the existing Income Statement report */}
+            {incomeStatement && (
+              <div className="mt-5 rounded-xl border border-gray-200 overflow-hidden">
+                <div className="bg-gray-50/80 px-4 py-2.5 text-center border-b border-gray-200">
+                  <h3 className="text-sm font-bold text-gray-800 tracking-wide">INCOME STATEMENT SUMMARY</h3>
+                </div>
+                <table className="min-w-full text-sm">
+                  <tbody className="divide-y divide-gray-100">
+                    <tr>
+                      <td className="px-4 py-2.5 text-gray-600">Total Income</td>
+                      <td className="px-4 py-2.5 text-right text-gray-800 tabular-nums">{formatCurrency(incomeStatement.total_revenue)}</td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-2.5 text-gray-600">Total Expense</td>
+                      <td className="px-4 py-2.5 text-right text-gray-800 tabular-nums">{formatCurrency(incomeStatement.total_expenses)}</td>
+                    </tr>
+                    <tr className={incomeStatement.net_income >= 0 ? 'bg-emerald-50 font-bold' : 'bg-red-50 font-bold'}>
+                      <td className={`px-4 py-2.5 ${incomeStatement.net_income >= 0 ? 'text-emerald-800' : 'text-red-800'}`}>
+                        Surplus / Deficit
+                      </td>
+                      <td className={`px-4 py-2.5 text-right tabular-nums ${incomeStatement.net_income >= 0 ? 'text-emerald-800' : 'text-red-800'}`}>
+                        {incomeStatement.net_income >= 0 ? '(+) ' : '(-) '}{formatCurrency(Math.abs(incomeStatement.net_income))}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </div>

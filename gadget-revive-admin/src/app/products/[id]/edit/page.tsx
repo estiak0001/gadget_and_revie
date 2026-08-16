@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { ArrowLeft, Save, Plus, Trash2, RefreshCw, Tag, GripVertical, Edit2, Check, X, ChevronRight } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import { Card, CardContent, CardHeader, CardTitle, Button, Input, Textarea, Select, SearchableSelect, LoadingSpinner, RichTextEditor, Modal, ImageUpload } from '@/components/ui';
-import { Product, ProductCategory, ProductBrand, CategoryAttribute, ProductAttributeValueEntry } from '@/types';
+import { Product, ProductCategory, ProductBrand, CategoryAttribute, ProductAttributeValueEntry, ProductSerial } from '@/types';
 import { getErrorMessage } from '@/lib/utils';
 import adminService from '@/lib/adminService';
 import toast from 'react-hot-toast';
@@ -20,6 +20,9 @@ export default function EditProductPage() {
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [brands, setBrands] = useState<ProductBrand[]>([]);
   const [product, setProduct] = useState<Product | null>(null);
+  const [serials, setSerials] = useState<ProductSerial[]>([]);
+  const [newSerialsText, setNewSerialsText] = useState('');
+  const [isAddingSerials, setIsAddingSerials] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -35,10 +38,12 @@ export default function EditProductPage() {
     stock_qty: '',
     low_stock_threshold: '5',
     always_in_stock: false,
-    average_cost: '',
+    current_cost: '',
     unit: 'piece',
     brand_id: '',
     model: '',
+    warranty_value: '',
+    warranty_unit: '',
     warranty: '',
     is_active: true,
     is_featured: false,
@@ -119,7 +124,8 @@ export default function EditProductPage() {
       const response = await adminService.getProduct(productId);
       const data = response.data?.data || response.data;
       setProduct(data);
-      
+      setSerials(data.serials ?? []);
+
       // Populate form with product data
       setFormData({
         vendor_profile_id: data.vendor_profile_id?.toString() || '',
@@ -134,11 +140,13 @@ export default function EditProductPage() {
         stock_qty: data.stock_qty?.toString() || '',
         low_stock_threshold: data.low_stock_threshold?.toString() || '5',
         always_in_stock: data.always_in_stock ?? false,
-        average_cost: data.average_cost != null ? data.average_cost.toString() : '',
+        current_cost: data.current_cost != null ? data.current_cost.toString() : '',
         unit: data.unit || 'piece',
         brand_id: data.brand_id?.toString() || '',
         model: data.model || '',
-        warranty: data.warranty || '',
+        warranty_value: data.warranty_value != null ? data.warranty_value.toString() : '',
+        warranty_unit: data.warranty_unit || '',
+        warranty: data.warranty_note || '',
         is_active: data.is_active ?? true,
         is_featured: data.is_featured ?? false,
         sort_order: data.sort_order?.toString() || '0',
@@ -353,6 +361,23 @@ export default function EditProductPage() {
       toast.error(getErrorMessage(error));
     } finally {
       setIsCreatingBrand(false);
+    }
+  };
+
+  const handleAddSerials = async () => {
+    const newSerials = newSerialsText.split('\n').map((s) => s.trim()).filter(Boolean);
+    if (newSerials.length === 0) return;
+
+    setIsAddingSerials(true);
+    try {
+      const response = await adminService.addProductSerials(productId, newSerials);
+      setSerials(response.data?.data || []);
+      setNewSerialsText('');
+      toast.success('Serial numbers added');
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setIsAddingSerials(false);
     }
   };
 
@@ -589,10 +614,10 @@ export default function EditProductPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Content - Left Side (2/3) */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="lg:col-span-2 space-y-4">
             {/* Basic Information */}
-            <Card>
-              <CardHeader>
+            <Card className="bg-sky-50/60 border-sky-100">
+              <CardHeader className="border-sky-100">
                 <CardTitle>Basic Information</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -748,8 +773,8 @@ export default function EditProductPage() {
             </Card>
 
             {/* Images */}
-            <Card>
-              <CardHeader>
+            <Card className="bg-violet-50/60 border-violet-100">
+              <CardHeader className="border-violet-100">
                 <CardTitle>Product Images</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -809,8 +834,8 @@ export default function EditProductPage() {
             </Card>
 
             {/* Specifications */}
-            <Card>
-              <CardHeader>
+            <Card className="bg-teal-50/60 border-teal-100">
+              <CardHeader className="border-teal-100">
                 <CardTitle>Technical Specifications</CardTitle>
                 <p className="text-sm text-gray-500 mt-1">Drag items to reorder, click to edit</p>
               </CardHeader>
@@ -963,8 +988,8 @@ export default function EditProductPage() {
             </Card>
 
             {/* Category Filter Attributes */}
-            <Card>
-              <CardHeader>
+            <Card className="bg-rose-50/60 border-rose-100">
+              <CardHeader className="border-rose-100">
                 <CardTitle>Category Filter Attributes</CardTitle>
                 <p className="text-sm text-gray-500 mt-1">
                   Attributes defined on the selected category (and inherited from its parents).
@@ -1079,10 +1104,10 @@ export default function EditProductPage() {
           </div>
 
           {/* Sidebar - Right Side (1/3) */}
-          <div className="space-y-6">
+          <div className="space-y-4">
             {/* Pricing */}
-            <Card>
-              <CardHeader>
+            <Card className="bg-emerald-50/60 border-emerald-100">
+              <CardHeader className="border-emerald-100">
                 <CardTitle>Pricing</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1120,8 +1145,8 @@ export default function EditProductPage() {
             </Card>
 
             {/* Inventory */}
-            <Card>
-              <CardHeader>
+            <Card className="bg-cyan-50/60 border-cyan-100">
+              <CardHeader className="border-cyan-100">
                 <CardTitle>Inventory</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1156,17 +1181,17 @@ export default function EditProductPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Average Cost (৳)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Current Cost (৳)</label>
                   <Input
                     type="number"
                     step="0.01"
-                    value={formData.average_cost}
-                    onChange={(e) => setFormData({ ...formData, average_cost: e.target.value })}
+                    value={formData.current_cost}
+                    onChange={(e) => setFormData({ ...formData, current_cost: e.target.value })}
                     min={0}
                     placeholder="0.00"
                   />
                   <p className="text-xs text-gray-400 mt-1">
-                    What this item costs you per unit — used to calculate profit margin and Cost of Goods Sold. Automatically recalculated when a Purchase Order for this product is received.
+                    What this item costs you per unit — used to calculate profit margin and Cost of Goods Sold. Automatically overwritten with the latest price whenever a Purchase Order for this product is received — a manual edit here only holds until then.
                   </p>
                 </div>
                 <label className="flex items-center gap-3 cursor-pointer">
@@ -1188,9 +1213,68 @@ export default function EditProductPage() {
               </CardContent>
             </Card>
 
+            {/* Serial Numbers */}
+            {product && (
+              <Card className="bg-orange-50/60 border-orange-100">
+                <CardHeader className="border-orange-100">
+                  <CardTitle>Serial Numbers</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {(() => {
+                    const inStockCount = serials.filter((s) => s.status === 'in_stock').length;
+                    const untracked = Math.max(0, product.stock_qty - inStockCount);
+                    return (
+                      <p className="text-xs text-gray-500">
+                        {inStockCount} of {product.stock_qty} in-stock units have a serial recorded.
+                        {untracked > 0 && ` ${untracked} unit(s) don't have one yet — add them below.`}
+                      </p>
+                    );
+                  })()}
+
+                  {serials.length > 0 && (
+                    <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
+                      {serials.map((s) => (
+                        <div key={s.id} className="flex items-center justify-between px-3 py-1.5 text-sm">
+                          <span className="font-mono text-gray-800">{s.serial_number}</span>
+                          <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                            s.status === 'in_stock' ? 'bg-green-50 text-green-700'
+                              : s.status === 'sold' ? 'bg-gray-100 text-gray-500'
+                              : 'bg-amber-50 text-amber-700'
+                          }`}>
+                            {s.status.replace('_', ' ')}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div>
+                    <Textarea
+                      label="Add serial numbers (one per line)"
+                      rows={2}
+                      placeholder={'e.g.\nSN-00123\nSN-00124'}
+                      value={newSerialsText}
+                      onChange={(e) => setNewSerialsText(e.target.value)}
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="mt-2"
+                      onClick={handleAddSerials}
+                      isLoading={isAddingSerials}
+                      disabled={!newSerialsText.trim()}
+                    >
+                      Add
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Product Details */}
-            <Card>
-              <CardHeader>
+            <Card className="bg-slate-50/60 border-slate-200">
+              <CardHeader className="border-slate-200">
                 <CardTitle>Product Details</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1237,20 +1321,43 @@ export default function EditProductPage() {
                     placeholder="e.g., RTX 3060, Galaxy S23"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Warranty</label>
+                <div className="bg-amber-50/70 border border-amber-100 rounded-lg p-3 space-y-2.5">
+                  <p className="text-xs font-medium text-amber-800">Warranty</p>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <Input
+                      type="number"
+                      min={0}
+                      value={formData.warranty_value}
+                      onChange={(e) => setFormData({ ...formData, warranty_value: e.target.value })}
+                      placeholder="Value, e.g. 2"
+                      className="bg-white"
+                    />
+                    <Select
+                      options={[
+                        { value: '', label: 'Select unit...' },
+                        { value: 'day', label: 'Day(s)' },
+                        { value: 'week', label: 'Week(s)' },
+                        { value: 'month', label: 'Month(s)' },
+                        { value: 'year', label: 'Year(s)' },
+                      ]}
+                      value={formData.warranty_unit}
+                      onChange={(e) => setFormData({ ...formData, warranty_unit: e.target.value })}
+                      className="bg-white"
+                    />
+                  </div>
                   <Input
                     value={formData.warranty}
                     onChange={(e) => setFormData({ ...formData, warranty: e.target.value })}
-                    placeholder="e.g., 3 years, 1 year"
+                    placeholder="Notes — exceptions or extra details, e.g. No warranty for fan/cooler"
+                    className="bg-white"
                   />
                 </div>
               </CardContent>
             </Card>
 
             {/* Status */}
-            <Card>
-              <CardHeader>
+            <Card className="bg-indigo-50/60 border-indigo-100">
+              <CardHeader className="border-indigo-100">
                 <CardTitle>Status</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">

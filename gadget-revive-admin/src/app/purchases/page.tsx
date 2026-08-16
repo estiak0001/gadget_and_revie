@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { Plus, Eye, Pencil, XCircle, Package, RefreshCw, Filter, History } from 'lucide-react';
+import { Plus, Eye, Pencil, XCircle, Package, RefreshCw, Filter, History, Undo2, Trash2 } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import {
   Card, CardContent, CardHeader, CardTitle,
@@ -32,6 +32,28 @@ function canCancel(status: string) {
   return ['draft', 'ordered', 'partially_received'].includes(status);
 }
 
+/**
+ * "Returned" isn't a value `status` can hold — a PO can be `received` (or `partially_received`)
+ * *and* have some of its items sent back to the supplier afterward. So whether a return happened,
+ * and whether it's since been undone via Restock from Return, has to be derived from the item
+ * lines rather than read off status directly. Mirrors the has_returns filter added to
+ * PurchaseOrderController::index() and the same distinction already drawn on the PO detail page's
+ * Restock feature.
+ */
+function returnBadge(po: PurchaseOrder) {
+  const items = po.items || [];
+  if (items.length === 0) {
+    // items aren't loaded on the list response fallback path — fall back to the aggregate value.
+    if (po.returned_value > 0) return <Badge variant="warning">Returned</Badge>;
+    return null;
+  }
+  const totalReturned = items.reduce((sum, i) => sum + (i.returned_qty || 0), 0);
+  if (totalReturned <= 0) return null;
+  const totalReceived = items.reduce((sum, i) => sum + (i.received_qty || 0), 0);
+  const fullyReturned = totalReceived > 0 && totalReturned >= totalReceived;
+  return <Badge variant={fullyReturned ? 'danger' : 'warning'}>{fullyReturned ? 'Fully Returned' : 'Partially Returned'}</Badge>;
+}
+
 const PAYMENT_STATUSES: { value: string; label: string; variant: 'default' | 'warning' | 'success' }[] = [
   { value: 'unpaid', label: 'Unpaid', variant: 'default' },
   { value: 'partial', label: 'Partially Paid', variant: 'warning' },
@@ -57,6 +79,7 @@ export default function PurchasesPage() {
   const [filterStatus, setFilterStatus] = useState('');
   const [filterSupplier, setFilterSupplier] = useState<string | number>('');
   const [filterPaymentStatus, setFilterPaymentStatus] = useState('');
+  const [filterHasReturns, setFilterHasReturns] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Cancel confirm
@@ -83,6 +106,7 @@ export default function PurchasesPage() {
       if (filterStatus) params.status = filterStatus;
       if (filterSupplier) params.supplier_id = filterSupplier;
       if (filterPaymentStatus) params.payment_status = filterPaymentStatus;
+      if (filterHasReturns) params.has_returns = 1;
       if (searchQuery) params.search = searchQuery;
 
       const res = await adminService.getPurchases(params);
@@ -100,7 +124,7 @@ export default function PurchasesPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [currentPage, filterStatus, filterSupplier, filterPaymentStatus, searchQuery]);
+  }, [currentPage, filterStatus, filterSupplier, filterPaymentStatus, filterHasReturns, searchQuery]);
 
   useEffect(() => { fetchSuppliers(); }, [fetchSuppliers]);
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
@@ -114,6 +138,7 @@ export default function PurchasesPage() {
     setFilterStatus('');
     setFilterSupplier('');
     setFilterPaymentStatus('');
+    setFilterHasReturns(false);
     setSearchQuery('');
     setCurrentPage(1);
   };
@@ -142,9 +167,23 @@ export default function PurchasesPage() {
             <h1 className="text-2xl font-bold text-gray-900">Purchase Orders</h1>
             <p className="text-sm text-gray-500 mt-1">{totalCount} order{totalCount !== 1 ? 's' : ''}</p>
           </div>
-          <Button onClick={() => router.push('/purchases/create')} leftIcon={<Plus className="w-4 h-4" />}>
-            Create Purchase Order
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Deleted POs are hard-deleted and can never appear in this list — the only place
+                to see them (or the full return trail) is the dedicated History page. */}
+            <Link href="/purchases/history?tab=returns">
+              <Button variant="outline" size="sm" leftIcon={<Undo2 className="w-4 h-4" />}>
+                Return History
+              </Button>
+            </Link>
+            <Link href="/purchases/history?tab=deletes">
+              <Button variant="outline" size="sm" leftIcon={<Trash2 className="w-4 h-4" />}>
+                Delete History
+              </Button>
+            </Link>
+            <Button onClick={() => router.push('/purchases/create')} leftIcon={<Plus className="w-4 h-4" />}>
+              Create Purchase Order
+            </Button>
+          </div>
         </div>
 
         {/* Status tab-strip */}
@@ -168,6 +207,17 @@ export default function PurchasesPage() {
               {s.label}
             </button>
           ))}
+          {/* Not a `status` value — a PO keeps its receive/partial status even after some of its
+              items are sent back, so "has returns" is a separate, combinable toggle rather than
+              another mutually-exclusive status tab. */}
+          <button
+            onClick={() => { setFilterHasReturns((v) => !v); setCurrentPage(1); }}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              filterHasReturns ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            Has Returns
+          </button>
         </div>
 
         {/* Filters */}
@@ -249,7 +299,12 @@ export default function PurchasesPage() {
                             </Link>
                           </td>
                           <td className="px-6 py-4 text-gray-600">{po.supplier?.name || '—'}</td>
-                          <td className="px-6 py-4">{statusBadge(po.status)}</td>
+                          <td className="px-6 py-4">
+                            <div className="flex flex-col items-start gap-1">
+                              {statusBadge(po.status)}
+                              {returnBadge(po)}
+                            </div>
+                          </td>
                           <td className="px-6 py-4 text-right font-medium">{formatCurrency(Number(po.total))}</td>
                           <td className="px-6 py-4">
                             {paymentBadge(po.payment_status)}
@@ -276,7 +331,7 @@ export default function PurchasesPage() {
                               <Button variant="ghost" size="sm" title="View History" onClick={() => setHistoryPO(po)}>
                                 <History className="w-4 h-4 text-gray-500" />
                               </Button>
-                              {po.status === 'draft' && (
+                              {['draft', 'ordered'].includes(po.status) && (
                                 <Link href={`/purchases/${po.id}/edit`}>
                                   <Button variant="ghost" size="sm" title="Edit">
                                     <Pencil className="w-4 h-4" />

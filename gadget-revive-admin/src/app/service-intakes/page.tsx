@@ -4,14 +4,14 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   Plus, Search, Eye, Edit2, Trash2, Printer, RefreshCw, X, ClipboardCheck, ArrowRightCircle,
-  Link2, Download, BadgeDollarSign,
+  Link2, Download, BadgeDollarSign, History,
 } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import {
   Card, CardContent, Button, Input, Textarea, Select, SearchableSelect,
-  Modal, Badge, LoadingSpinner, Pagination, EmptyState, ErrorState, ConfirmModal,
+  Modal, Badge, LoadingSpinner, Pagination, EmptyState, ErrorState, ConfirmModal, HistoryModal,
 } from '@/components/ui';
-import { ServiceIntake, ServiceIntakeStatus, BranchLocation, Order } from '@/types';
+import { ServiceIntake, ServiceIntakeStatus, BranchLocation, Order, User } from '@/types';
 import { formatCurrency, getErrorMessage } from '@/lib/utils';
 import adminService from '@/lib/adminService';
 import toast from 'react-hot-toast';
@@ -71,6 +71,21 @@ const emptyForm = (): IntakeForm => ({
 const statusLabel = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ');
 const num = (v: unknown) => Number(v ?? 0) || 0;
 
+interface ConvertItemRow {
+  id: number;
+  item_name: string;
+  quantity: number;
+  include: boolean;
+  unit_price: string;
+}
+
+const emptyConvertData = () => ({
+  customer_id: '' as string | number,
+  customer_name: '', customer_phone: '', customer_email: '', customer_address: '',
+  payment_method: 'cash', payment_status: 'pending', order_status: 'in_progress',
+  tax: '', shipping: '', discount: '', admin_notes: '',
+});
+
 export default function ServiceIntakesPage() {
   const [intakes, setIntakes] = useState<ServiceIntake[]>([]);
   const [branches, setBranches] = useState<BranchLocation[]>([]);
@@ -88,13 +103,15 @@ export default function ServiceIntakesPage() {
   const [isPriceOpen, setIsPriceOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [selected, setSelected] = useState<ServiceIntake | null>(null);
+  const [historyIntake, setHistoryIntake] = useState<ServiceIntake | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [form, setForm] = useState<IntakeForm>(emptyForm());
 
-  const [convertData, setConvertData] = useState({
-    payment_method: 'cash', payment_status: 'pending', order_status: 'in_progress',
-  });
+  const [customers, setCustomers] = useState<User[]>([]);
+  const [convertData, setConvertData] = useState(emptyConvertData());
+  const [convertItems, setConvertItems] = useState<ConvertItemRow[]>([]);
+  const [customerMode, setCustomerMode] = useState<'existing' | 'new'>('new');
 
   // Confirm-price modal state (for intakes linked to an existing order)
   const [priceItems, setPriceItems] = useState<{ id: number; item_name: string; quantity: number; final_price: string }[]>([]);
@@ -146,8 +163,23 @@ export default function ServiceIntakesPage() {
     }
   };
 
-  useEffect(() => { fetchBranches(); fetchServiceOrders(); }, []);
+  const fetchCustomers = async () => {
+    try {
+      const res = await adminService.getCustomers({ per_page: 200 });
+      const body = res.data as unknown as { data?: User[] };
+      setCustomers(Array.isArray(body.data) ? body.data : []);
+    } catch {
+      setCustomers([]);
+    }
+  };
+
+  useEffect(() => { fetchBranches(); fetchServiceOrders(); fetchCustomers(); }, []);
   useEffect(() => { fetchIntakes(); }, [currentPage, filterStatus]);
+
+  const customerOptions = customers.map((c) => ({
+    value: c.id,
+    label: `${c.name}${c.phone ? ' — ' + c.phone : c.email ? ' — ' + c.email : ''}`,
+  }));
 
   const orderOptions = serviceOrders.map((o) => ({
     value: o.id,
@@ -338,15 +370,75 @@ export default function ServiceIntakesPage() {
 
   const openConvert = (intake: ServiceIntake) => {
     setSelected(intake);
-    setConvertData({ payment_method: 'cash', payment_status: 'pending', order_status: 'in_progress' });
+    setCustomerMode(intake.customer_id ? 'existing' : 'new');
+    setConvertData({
+      ...emptyConvertData(),
+      customer_id: intake.customer_id ? String(intake.customer_id) : '',
+      customer_name: intake.customer_name ?? '',
+      customer_phone: intake.customer_phone ?? '',
+      customer_email: intake.customer_email ?? '',
+      customer_address: intake.customer_address ?? '',
+    });
+    // Every item defaults to included — admin unchecks the ones being handed back to the
+    // customer as-is instead of becoming an order line.
+    setConvertItems(
+      (intake.items ?? []).map((it) => ({
+        id: it.id as number,
+        item_name: it.item_name,
+        quantity: it.quantity ?? 1,
+        include: true,
+        unit_price: it.estimated_price != null ? String(it.estimated_price) : '',
+      })),
+    );
     setIsConvertOpen(true);
   };
 
+  const convertIncludedItems = convertItems.filter((it) => it.include);
+  const convertSubtotal = convertIncludedItems.reduce((s, it) => s + num(it.unit_price) * (it.quantity || 1), 0);
+  const convertTotal = convertSubtotal + num(convertData.tax) + num(convertData.shipping) - num(convertData.discount);
+
+  const setConvertItem = (idx: number, patch: Partial<ConvertItemRow>) =>
+    setConvertItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+
   const handleConvert = async () => {
     if (!selected) return;
+    if (convertIncludedItems.length === 0) {
+      toast.error('Include at least one item to convert to an order.');
+      return;
+    }
+    if (convertIncludedItems.some((it) => it.unit_price === '')) {
+      toast.error('Enter a price for every included item.');
+      return;
+    }
+    if (customerMode === 'existing' && !convertData.customer_id) {
+      toast.error('Pick an existing customer, or switch to "New customer".');
+      return;
+    }
+    if (customerMode === 'new' && (!convertData.customer_name.trim() || !convertData.customer_phone.trim())) {
+      toast.error('New customer needs a name and phone number.');
+      return;
+    }
     setIsSaving(true);
     try {
-      await adminService.convertServiceIntake(selected.id, convertData);
+      await adminService.convertServiceIntake(selected.id, {
+        customer_id: customerMode === 'existing' ? Number(convertData.customer_id) : null,
+        customer_name: convertData.customer_name || undefined,
+        customer_phone: convertData.customer_phone || undefined,
+        customer_email: convertData.customer_email || undefined,
+        customer_address: convertData.customer_address || undefined,
+        payment_method: convertData.payment_method,
+        payment_status: convertData.payment_status,
+        order_status: convertData.order_status,
+        tax: convertData.tax ? num(convertData.tax) : undefined,
+        shipping: convertData.shipping ? num(convertData.shipping) : undefined,
+        discount: convertData.discount ? num(convertData.discount) : undefined,
+        admin_notes: convertData.admin_notes || undefined,
+        items: convertItems.map((it) => ({
+          id: it.id,
+          include: it.include,
+          unit_price: it.include ? num(it.unit_price) : null,
+        })),
+      });
       toast.success('Converted to a service order.');
       setIsConvertOpen(false);
       setIsViewOpen(false);
@@ -544,6 +636,9 @@ export default function ServiceIntakesPage() {
                             <button title="Preview & print receipt" onClick={() => handlePreviewReceipt(intake)} className="p-2 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg">
                               <Printer className="w-4 h-4" />
                             </button>
+                            <button title="View History" onClick={() => setHistoryIntake(intake)} className="p-2 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg">
+                              <History className="w-4 h-4" />
+                            </button>
                             {!intake.order_id && intake.status !== 'cancelled' && (
                               <button title="Edit" onClick={() => openEdit(intake)} className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg">
                                 <Edit2 className="w-4 h-4" />
@@ -730,9 +825,13 @@ export default function ServiceIntakesPage() {
               <div className="space-y-2">
                 {(selected.items ?? []).map((it, i) => (
                   <div key={i} className="border border-gray-200 rounded-lg p-3">
-                    <div className="flex justify-between">
+                    <div className="flex justify-between items-center">
                       <span className="font-medium text-gray-900">{it.item_name}</span>
-                      <span className="text-sm text-gray-600">Qty: {it.quantity}</span>
+                      <div className="flex items-center gap-2">
+                        {it.status === 'converted' && <Badge variant="success">Converted</Badge>}
+                        {it.status === 'returned' && <Badge variant="default">Returned to customer</Badge>}
+                        <span className="text-sm text-gray-600">Qty: {it.quantity}</span>
+                      </div>
                     </div>
                     {it.serial_number && <p className="text-xs text-gray-500 font-mono">SL: {it.serial_number}</p>}
                     {it.problem_reported && <p className="text-xs text-gray-600 mt-1"><span className="font-medium">Problem:</span> {it.problem_reported}</p>}
@@ -775,47 +874,156 @@ export default function ServiceIntakesPage() {
         )}
       </Modal>
 
+      {historyIntake && (
+        <HistoryModal
+          isOpen={!!historyIntake}
+          onClose={() => setHistoryIntake(null)}
+          resourceType="ServiceIntake"
+          resourceId={historyIntake.id}
+          resourceLabel={historyIntake.receipt_number}
+          createdBy={historyIntake.creator}
+          createdAt={historyIntake.created_at}
+          updatedAt={historyIntake.updated_at}
+        />
+      )}
+
       {/* ── Convert Modal ── */}
-      <Modal isOpen={isConvertOpen} onClose={() => setIsConvertOpen(false)} title="Convert to Service Order" size="md">
+      <Modal isOpen={isConvertOpen} onClose={() => setIsConvertOpen(false)} title="Convert to Service Order" size="lg">
         {selected && (
-          <div className="space-y-4">
+          <div className="space-y-5">
             <p className="text-sm text-gray-600">
-              This creates a service order from receipt <span className="font-mono font-semibold">{selected.receipt_number}</span>,
-              carrying over the items and their estimated prices.
+              This creates a service order from receipt <span className="font-mono font-semibold">{selected.receipt_number}</span>.
+              Uncheck any item the customer is taking back instead of ordering — it&apos;s left off the order and marked returned.
             </p>
-            <Select
-              label="Payment Method"
-              value={convertData.payment_method}
-              onChange={(e) => setConvertData((p) => ({ ...p, payment_method: e.target.value }))}
-              options={[
-                { value: 'cash', label: 'Cash' },
-                { value: 'bkash', label: 'bKash' },
-                { value: 'nagad', label: 'Nagad' },
-                { value: 'bank_transfer', label: 'Bank Transfer' },
-              ]}
-            />
-            <Select
-              label="Payment Status"
-              value={convertData.payment_status}
-              onChange={(e) => setConvertData((p) => ({ ...p, payment_status: e.target.value }))}
-              options={[
-                { value: 'pending', label: 'Pending' },
-                { value: 'awaiting_confirmation', label: 'Awaiting Confirmation' },
-                { value: 'paid', label: 'Paid' },
-              ]}
-            />
-            <Select
-              label="Order Status"
-              value={convertData.order_status}
-              onChange={(e) => setConvertData((p) => ({ ...p, order_status: e.target.value }))}
-              options={[
-                { value: 'in_progress', label: 'In Progress' },
-                { value: 'pending', label: 'Pending' },
-                { value: 'accepted', label: 'Accepted' },
-                { value: 'awaiting_payment', label: 'Awaiting Payment' },
-                { value: 'completed', label: 'Completed' },
-              ]}
-            />
+
+            {/* Items — per-item include/exclude + price */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">Items</h3>
+              <div className="space-y-2">
+                {convertItems.map((it, idx) => (
+                  <div
+                    key={it.id}
+                    className={`grid grid-cols-12 gap-2 items-center rounded-lg border p-2 ${
+                      it.include ? 'border-gray-200' : 'border-gray-100 bg-gray-50 opacity-60'
+                    }`}
+                  >
+                    <div className="col-span-1 flex justify-center">
+                      <input
+                        type="checkbox"
+                        checked={it.include}
+                        onChange={(e) => setConvertItem(idx, { include: e.target.checked })}
+                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div className="col-span-6">
+                      <p className="text-sm font-medium text-gray-800">{it.item_name}</p>
+                      <p className="text-xs text-gray-500">Qty: {it.quantity}</p>
+                    </div>
+                    <div className="col-span-5">
+                      {it.include ? (
+                        <Input
+                          type="number" min={0} step="0.01" placeholder="Price (required)"
+                          value={it.unit_price}
+                          onChange={(e) => setConvertItem(idx, { unit_price: e.target.value })}
+                        />
+                      ) : (
+                        <p className="text-xs text-gray-500 text-right pr-1">Returned to customer</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Customer — pick existing or create new */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold text-gray-700">Customer</h3>
+                <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setCustomerMode('existing')}
+                    className={`px-3 py-1 ${customerMode === 'existing' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                  >
+                    Existing customer
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCustomerMode('new')}
+                    className={`px-3 py-1 ${customerMode === 'new' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                  >
+                    New customer
+                  </button>
+                </div>
+              </div>
+
+              {customerMode === 'existing' ? (
+                <SearchableSelect
+                  value={convertData.customer_id}
+                  onChange={(v) => setConvertData((p) => ({ ...p, customer_id: v }))}
+                  placeholder="Search customer by name / phone…"
+                  options={customerOptions}
+                  allowClear
+                />
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <Input placeholder="Name *" value={convertData.customer_name} onChange={(e) => setConvertData((p) => ({ ...p, customer_name: e.target.value }))} />
+                  <Input placeholder="Phone *" value={convertData.customer_phone} onChange={(e) => setConvertData((p) => ({ ...p, customer_phone: e.target.value }))} />
+                  <Input placeholder="Email" type="email" value={convertData.customer_email} onChange={(e) => setConvertData((p) => ({ ...p, customer_email: e.target.value }))} />
+                  <Input placeholder="Address" value={convertData.customer_address} onChange={(e) => setConvertData((p) => ({ ...p, customer_address: e.target.value }))} />
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <Input label="Tax" type="number" min={0} step="0.01" value={convertData.tax} onChange={(e) => setConvertData((p) => ({ ...p, tax: e.target.value }))} />
+              <Input label="Shipping" type="number" min={0} step="0.01" value={convertData.shipping} onChange={(e) => setConvertData((p) => ({ ...p, shipping: e.target.value }))} />
+              <Input label="Discount" type="number" min={0} step="0.01" value={convertData.discount} onChange={(e) => setConvertData((p) => ({ ...p, discount: e.target.value }))} />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <Select
+                label="Payment Method"
+                value={convertData.payment_method}
+                onChange={(e) => setConvertData((p) => ({ ...p, payment_method: e.target.value }))}
+                options={[
+                  { value: 'cash', label: 'Cash' },
+                  { value: 'bkash', label: 'bKash' },
+                  { value: 'nagad', label: 'Nagad' },
+                  { value: 'bank_transfer', label: 'Bank Transfer' },
+                ]}
+              />
+              <Select
+                label="Payment Status"
+                value={convertData.payment_status}
+                onChange={(e) => setConvertData((p) => ({ ...p, payment_status: e.target.value }))}
+                options={[
+                  { value: 'pending', label: 'Pending' },
+                  { value: 'awaiting_confirmation', label: 'Awaiting Confirmation' },
+                  { value: 'paid', label: 'Paid' },
+                  { value: 'failed', label: 'Failed' },
+                ]}
+              />
+              <Select
+                label="Order Status"
+                value={convertData.order_status}
+                onChange={(e) => setConvertData((p) => ({ ...p, order_status: e.target.value }))}
+                options={[
+                  { value: 'in_progress', label: 'In Progress' },
+                  { value: 'pending', label: 'Pending' },
+                  { value: 'accepted', label: 'Accepted' },
+                  { value: 'awaiting_payment', label: 'Awaiting Payment' },
+                  { value: 'completed', label: 'Completed' },
+                ]}
+              />
+            </div>
+
+            <Textarea label="Admin notes (optional)" rows={2} value={convertData.admin_notes} onChange={(e) => setConvertData((p) => ({ ...p, admin_notes: e.target.value }))} />
+
+            <div className="text-right text-sm">
+              Order total: <span className="font-bold text-gray-900">{formatCurrency(convertTotal)}</span>
+            </div>
+
             <div className="flex justify-end gap-2 pt-3 border-t">
               <Button variant="outline" onClick={() => setIsConvertOpen(false)}>Cancel</Button>
               <Button onClick={handleConvert} disabled={isSaving}>

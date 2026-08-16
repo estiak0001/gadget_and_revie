@@ -47,6 +47,7 @@ export default function OrdersPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterPayment, setFilterPayment] = useState('');
+  const [filterHasPO, setFilterHasPO] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -77,6 +78,7 @@ export default function OrdersPage() {
       if (searchQuery) params.search = searchQuery;
       if (filterStatus) params.status = filterStatus;
       if (filterPayment) params.payment_status = filterPayment;
+      if (filterHasPO) params.has_purchase_order = filterHasPO;
 
       const response = await adminService.getOrders(params);
       setOrders(response.data.data);
@@ -93,7 +95,7 @@ export default function OrdersPage() {
 
   useEffect(() => {
     fetchOrders();
-  }, [currentPage, filterStatus, filterPayment]);
+  }, [currentPage, filterStatus, filterPayment, filterHasPO]);
 
   const handleSearch = () => {
     setCurrentPage(1);
@@ -105,6 +107,7 @@ export default function OrdersPage() {
       const params: Record<string, string> = {};
       if (filterStatus) params.status = filterStatus;
       if (filterPayment) params.payment_status = filterPayment;
+      if (filterHasPO) params.has_purchase_order = filterHasPO;
       const response = await adminService.exportOrders(params);
       downloadBlob(new Blob([response.data]), `orders-${new Date().toISOString().split('T')[0]}.csv`);
       toast.success('Orders exported successfully');
@@ -397,6 +400,15 @@ export default function OrdersPage() {
               ]}
               value={filterPayment}
               onChange={(e) => { setFilterPayment(e.target.value); setCurrentPage(1); }}
+            />
+            <Select
+              options={[
+                { value: '', label: 'All Orders' },
+                { value: 'true', label: 'Has Purchase Order' },
+                { value: 'false', label: 'No Purchase Order' },
+              ]}
+              value={filterHasPO}
+              onChange={(e) => { setFilterHasPO(e.target.value); setCurrentPage(1); }}
             />
             <Button onClick={handleSearch}>Search</Button>
           </div>

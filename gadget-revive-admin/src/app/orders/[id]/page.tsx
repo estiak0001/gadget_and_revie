@@ -25,6 +25,10 @@ import {
     DollarSign,
     History,
     Edit3,
+    Receipt,
+    ClipboardList,
+    Download,
+    MessageSquare,
 } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import {
@@ -41,6 +45,7 @@ import {
     ErrorState,
     Modal,
     HistoryModal,
+    ConfirmModal,
 } from '@/components/ui';
 import { Order, OrderItem, ExpenseCategory, CustomInvoice } from '@/types';
 import { formatCurrency, formatDate, formatDateTime, getStatusColor, getErrorMessage } from '@/lib/utils';
@@ -48,6 +53,8 @@ import adminService from '@/lib/adminService';
 import { useAuthStore } from '@/store/auth';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
+
+type SmsKind = 'status' | 'delivered' | 'due' | 'custom_invoice';
 
 const ORDER_STATUSES = [
     { value: 'pending', label: 'Pending' },
@@ -77,17 +84,34 @@ export default function OrderDetailPage() {
 
     const currentUser = useAuthStore((s) => s.user);
     const isSuperAdmin = currentUser?.role === 'super_admin';
+    // The backend already accepts these granular permissions as an alternative to super_admin
+    // for amending a paid order / correcting its payment / issuing a custom invoice — this mirrors
+    // that on the frontend so a custom role granted just the permission actually sees the button,
+    // instead of only ever showing it to literal super_admins.
+    const hasPermission = (perm: string) => isSuperAdmin || !!currentUser?.permissions?.includes(perm);
 
     const [order, setOrder] = useState<Order | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(false);
     const [newStatus, setNewStatus] = useState('');
+    const [showStatusConfirm, setShowStatusConfirm] = useState(false);
     const [adminNotes, setAdminNotes] = useState('');
     const [isSaving, setIsSaving] = useState(false);
     const [downloadingInvoice, setDownloadingInvoice] = useState(false);
     const [previewingInvoice, setPreviewingInvoice] = useState(false);
     const [sendingInvoice, setSendingInvoice] = useState(false);
+    const [downloadingMoneyReceipt, setDownloadingMoneyReceipt] = useState(false);
+    const [previewingMoneyReceipt, setPreviewingMoneyReceipt] = useState(false);
+    const [downloadingChalan, setDownloadingChalan] = useState(false);
+    const [previewingChalan, setPreviewingChalan] = useState(false);
     const [isSyncingLedger, setIsSyncingLedger] = useState(false);
+    // Manual order/invoice SMS — one shared preview-then-confirm flow for all 4 send types
+    // (status / delivered / due / custom invoice) instead of a bare browser confirm(), so the
+    // admin sees the exact rendered text before it goes out.
+    const [pendingSms, setPendingSms] = useState<{ kind: SmsKind; invoiceId?: number } | null>(null);
+    const [smsPreview, setSmsPreview] = useState<{ phone: string; message: string } | null>(null);
+    const [loadingPreviewKey, setLoadingPreviewKey] = useState<string | null>(null);
+    const [isSendingSms, setIsSendingSms] = useState(false);
     const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
     const [isRecordPaymentOpen, setIsRecordPaymentOpen] = useState(false);
@@ -114,6 +138,12 @@ export default function OrderDetailPage() {
     const [costForm, setCostForm] = useState({ expense_category_id: '', title: '', amount: '', expense_date: '', description: '' });
     const [isSavingCost, setIsSavingCost] = useState(false);
     const [reversingCostId, setReversingCostId] = useState<number | null>(null);
+
+    // Bulk "Create Purchase Order" — bundles any/all out-of-stock product lines on this order
+    // into a single PO (one supplier, picked on the next screen); the per-item truck icon covers
+    // just one line at a time, this covers several at once.
+    const [isBulkPOModalOpen, setIsBulkPOModalOpen] = useState(false);
+    const [bulkPOSelected, setBulkPOSelected] = useState<Record<number, boolean>>({});
 
     // Custom Invoice — a document-only alternate invoice for a customer (e.g. for their own
     // reimbursement paperwork). Never touches the real order/stock/ledger; every one created is
@@ -180,6 +210,44 @@ export default function OrderDetailPage() {
             toast.error(getErrorMessage(err));
         } finally {
             setIsSyncingLedger(false);
+        }
+    };
+
+    // Opens the confirm modal pre-loaded with the exact rendered SMS text (fetched from the
+    // preview endpoint) rather than a bare browser confirm() with no visibility into what the
+    // customer will actually receive.
+    const openSmsPreview = async (kind: SmsKind, invoiceId?: number) => {
+        if (!order) return;
+        const key = kind === 'custom_invoice' ? `custom_invoice-${invoiceId}` : kind;
+        setLoadingPreviewKey(key);
+        try {
+            const res = kind === 'custom_invoice'
+                ? await adminService.previewCustomInvoiceSms(invoiceId!)
+                : await adminService.previewOrderSms(order.id, kind);
+            setSmsPreview(res.data.data);
+            setPendingSms({ kind, invoiceId });
+        } catch (err) {
+            toast.error(getErrorMessage(err));
+        } finally {
+            setLoadingPreviewKey(null);
+        }
+    };
+
+    const handleConfirmSendSms = async () => {
+        if (!pendingSms || !order) return;
+        setIsSendingSms(true);
+        try {
+            if (pendingSms.kind === 'status') await adminService.sendOrderStatusSms(order.id);
+            else if (pendingSms.kind === 'delivered') await adminService.sendOrderDeliveredSms(order.id);
+            else if (pendingSms.kind === 'due') await adminService.sendOrderDueSms(order.id);
+            else if (pendingSms.kind === 'custom_invoice') await adminService.sendCustomInvoiceSms(pendingSms.invoiceId!);
+            toast.success('SMS sent.');
+            setPendingSms(null);
+            setSmsPreview(null);
+        } catch (err) {
+            toast.error(getErrorMessage(err));
+        } finally {
+            setIsSendingSms(false);
         }
     };
 
@@ -368,6 +436,7 @@ export default function OrderDetailPage() {
 
     const handleStatusUpdate = async () => {
         if (!order) return;
+        setShowStatusConfirm(false);
         setIsSaving(true);
         try {
             await adminService.updateOrderStatus(order.id, {
@@ -407,6 +476,34 @@ export default function OrderDetailPage() {
             toast.error(getErrorMessage(err));
         } finally {
             setDownloadingInvoice(false);
+        }
+    };
+
+    const handleDownloadMoneyReceipt = async () => {
+        if (!order) return;
+        setDownloadingMoneyReceipt(true);
+        try {
+            const response = await adminService.downloadMoneyReceipt(order.id);
+            triggerPdfDownload(response.data as BlobPart, `Money-Receipt-${order.order_number}.pdf`);
+            toast.success('Money receipt downloaded!');
+        } catch (err) {
+            toast.error(getErrorMessage(err));
+        } finally {
+            setDownloadingMoneyReceipt(false);
+        }
+    };
+
+    const handleDownloadChalan = async () => {
+        if (!order) return;
+        setDownloadingChalan(true);
+        try {
+            const response = await adminService.downloadDeliveryChalan(order.id);
+            triggerPdfDownload(response.data as BlobPart, `Delivery-Chalan-${order.order_number}.pdf`);
+            toast.success('Delivery chalan downloaded!');
+        } catch (err) {
+            toast.error(getErrorMessage(err));
+        } finally {
+            setDownloadingChalan(false);
         }
     };
 
@@ -516,6 +613,14 @@ export default function OrderDetailPage() {
         }
     };
 
+    const handleSendCustomInvoiceSms = (invoice: CustomInvoice) => {
+        if (!invoice.customer_phone) {
+            toast.error('This invoice has no customer phone number.');
+            return;
+        }
+        openSmsPreview('custom_invoice', invoice.id);
+    };
+
     // Opens the PDF in a new tab via a blob URL (rather than navigating to the
     // authenticated API route directly, which the browser would hit without
     // the Bearer token and get a 401).
@@ -558,6 +663,58 @@ export default function OrderDetailPage() {
         }
     };
 
+    const handlePreviewMoneyReceipt = async () => {
+        if (!order) return;
+        const newTab = window.open('', '_blank');
+        setPreviewingMoneyReceipt(true);
+        try {
+            const response = await adminService.downloadMoneyReceipt(order.id);
+            const blob = new Blob([response.data as BlobPart], { type: 'application/pdf' });
+            const url = window.URL.createObjectURL(blob);
+            if (newTab) {
+                newTab.document.write(
+                    `<!DOCTYPE html><html><head><title>Money-Receipt-${order.order_number}</title></head>` +
+                    `<body style="margin:0"><embed src="${url}" type="application/pdf" width="100%" height="100%" style="border:none;position:fixed;inset:0" /></body></html>`
+                );
+                newTab.document.close();
+            } else {
+                toast.error('Please allow pop-ups to preview the money receipt.');
+            }
+            setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+        } catch (err) {
+            newTab?.close();
+            toast.error(getErrorMessage(err));
+        } finally {
+            setPreviewingMoneyReceipt(false);
+        }
+    };
+
+    const handlePreviewChalan = async () => {
+        if (!order) return;
+        const newTab = window.open('', '_blank');
+        setPreviewingChalan(true);
+        try {
+            const response = await adminService.downloadDeliveryChalan(order.id);
+            const blob = new Blob([response.data as BlobPart], { type: 'application/pdf' });
+            const url = window.URL.createObjectURL(blob);
+            if (newTab) {
+                newTab.document.write(
+                    `<!DOCTYPE html><html><head><title>Delivery-Chalan-${order.order_number}</title></head>` +
+                    `<body style="margin:0"><embed src="${url}" type="application/pdf" width="100%" height="100%" style="border:none;position:fixed;inset:0" /></body></html>`
+                );
+                newTab.document.close();
+            } else {
+                toast.error('Please allow pop-ups to preview the delivery chalan.');
+            }
+            setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+        } catch (err) {
+            newTab?.close();
+            toast.error(getErrorMessage(err));
+        } finally {
+            setPreviewingChalan(false);
+        }
+    };
+
     const handleSendInvoiceEmail = async () => {
         if (!order) return;
         setSendingInvoice(true);
@@ -569,6 +726,49 @@ export default function OrderDetailPage() {
         } finally {
             setSendingInvoice(false);
         }
+    };
+
+    // The most recently created PO (highest id) already covering this product within this
+    // order, if any — once one exists, the per-item action becomes a status badge instead of
+    // the "create PO" icon, regardless of what stock does afterward.
+    const linkedPOForProduct = (productId: number | null | undefined) => {
+        if (!productId || !order?.purchase_orders) return null;
+        const matches = order.purchase_orders.filter((po) => po.product_ids.includes(productId));
+        if (matches.length === 0) return null;
+        return matches.reduce((latest, po) => (po.id > latest.id ? po : latest));
+    };
+
+    const outOfStockItems = (order?.items ?? []).filter(
+        (i) =>
+            i.item_type === 'product' &&
+            i.product_id &&
+            !i.product?.always_in_stock &&
+            (i.product?.stock_qty ?? 0) <= 0 &&
+            !linkedPOForProduct(i.product_id)
+    );
+
+    const openBulkPOModal = () => {
+        const defaults: Record<number, boolean> = {};
+        outOfStockItems.forEach((i) => { if (i.product_id) defaults[i.product_id] = true; });
+        setBulkPOSelected(defaults);
+        setIsBulkPOModalOpen(true);
+    };
+
+    const toggleBulkPOItem = (productId: number) => {
+        setBulkPOSelected((prev) => ({ ...prev, [productId]: !prev[productId] }));
+    };
+
+    const handleBulkPOContinue = () => {
+        if (!order) return;
+        const items = outOfStockItems
+            .filter((i) => i.product_id && bulkPOSelected[i.product_id])
+            .map((i) => ({ product_id: i.product_id, quantity: i.quantity }));
+        if (items.length === 0) {
+            toast.error('Select at least one item to source.');
+            return;
+        }
+        const params = new URLSearchParams({ order_id: String(order.id), items: JSON.stringify(items) });
+        router.push(`/purchases/create?${params.toString()}`);
     };
 
     if (error && !order) {
@@ -619,7 +819,7 @@ export default function OrderDetailPage() {
                             <Button variant="ghost" size="sm" onClick={() => setIsHistoryOpen(true)} title="View History">
                                 <History className="w-4 h-4" />
                             </Button>
-                            {(order.can_be_edited || (order.requires_super_admin_to_amend && isSuperAdmin)) && (
+                            {(order.can_be_edited || (order.requires_super_admin_to_amend && hasPermission('amend_paid_orders'))) && (
                                 <Link href={`/orders/${order.id}/edit`}>
                                     <Button variant="outline" size="sm">Edit Order</Button>
                                 </Link>
@@ -640,11 +840,33 @@ export default function OrderDetailPage() {
                         {/* Order Items */}
                         <Card>
                             <CardHeader>
-                                <CardTitle className="flex items-center gap-2">
-                                    <Package className="w-5 h-5" />
-                                    Order Items
-                                </CardTitle>
+                                <div className="flex items-center justify-between gap-3">
+                                    <CardTitle className="flex items-center gap-2">
+                                        <Package className="w-5 h-5" />
+                                        Order Items
+                                    </CardTitle>
+                                    {outOfStockItems.length > 0 && (
+                                        <Button variant="outline" size="sm" onClick={openBulkPOModal} className="border-orange-300 text-orange-700 hover:bg-orange-50">
+                                            <Truck className="w-4 h-4 mr-1.5" />
+                                            Create Purchase Order
+                                        </Button>
+                                    )}
+                                </div>
                             </CardHeader>
+                            {order.purchase_orders && order.purchase_orders.length > 0 && (
+                                <div className="px-4 py-2.5 bg-blue-50 border-b border-blue-100 flex flex-wrap gap-2">
+                                    {order.purchase_orders.map((po) => (
+                                        <Link
+                                            key={po.id}
+                                            href={`/purchases/${po.id}`}
+                                            className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-700 bg-white px-2.5 py-1 rounded-lg border border-blue-200 hover:bg-blue-100"
+                                        >
+                                            <Truck className="w-3.5 h-3.5" />
+                                            Awaiting stock via {po.po_number} ({po.status.replace('_', ' ')})
+                                        </Link>
+                                    ))}
+                                </div>
+                            )}
                             <CardContent className="p-0">
                                 {order.items && order.items.length > 0 ? (
                                     <>
@@ -664,6 +886,7 @@ export default function OrderDetailPage() {
                                                 {order.items.map((item) => {
                                                     const totalCost = item.total_cost ?? 0;
                                                     const margin = item.margin ?? ((item.total_price ?? item.total ?? 0) - totalCost);
+                                                    const linkedPO = item.item_type === 'product' ? linkedPOForProduct(item.product_id) : null;
                                                     return (
                                                     <tr key={item.id} className="hover:bg-gray-50">
                                                         <td className="px-4 py-4">
@@ -689,14 +912,38 @@ export default function OrderDetailPage() {
                                                             )}
                                                         </td>
                                                         <td className="pl-2 pr-4 py-4 text-right">
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="sm"
-                                                                onClick={() => openCostModal(item)}
-                                                                title="Manage costs for this item"
-                                                            >
-                                                                <DollarSign className="w-4 h-4" />
-                                                            </Button>
+                                                            <div className="flex items-center justify-end gap-1">
+                                                                <Button
+                                                                    variant="ghost"
+                                                                    size="sm"
+                                                                    onClick={() => openCostModal(item)}
+                                                                    title="Manage costs for this item"
+                                                                >
+                                                                    <DollarSign className="w-4 h-4" />
+                                                                </Button>
+                                                                {linkedPO ? (
+                                                                    <Link
+                                                                        href={`/purchases/${linkedPO.id}`}
+                                                                        title={`Sourced via ${linkedPO.po_number}`}
+                                                                        className="inline-flex"
+                                                                    >
+                                                                        <Badge variant={linkedPO.status === 'received' ? 'success' : linkedPO.status === 'cancelled' ? 'danger' : 'info'} className="text-[10px] whitespace-nowrap">
+                                                                            {linkedPO.status.replace('_', ' ')}
+                                                                        </Badge>
+                                                                    </Link>
+                                                                ) : (
+                                                                    item.item_type === 'product' && item.product_id && !item.product?.always_in_stock && (item.product?.stock_qty ?? 0) <= 0 && (
+                                                                        <Button
+                                                                            variant="ghost"
+                                                                            size="sm"
+                                                                            onClick={() => router.push(`/purchases/create?order_id=${order.id}&product_id=${item.product_id}&quantity=${item.quantity}`)}
+                                                                            title="Out of stock — create a Purchase Order to source this item"
+                                                                        >
+                                                                            <Truck className="w-4 h-4 text-orange-600" />
+                                                                        </Button>
+                                                                    )
+                                                                )}
+                                                            </div>
                                                         </td>
                                                     </tr>
                                                     );
@@ -850,7 +1097,12 @@ export default function OrderDetailPage() {
                                             rows={3}
                                         />
                                     </div>
-                                    <Button onClick={handleStatusUpdate} isLoading={isSaving} className="w-full">
+                                    <Button
+                                        onClick={() => setShowStatusConfirm(true)}
+                                        isLoading={isSaving}
+                                        disabled={newStatus === (order.status || order.order_status)}
+                                        className="w-full"
+                                    >
                                         Update Status
                                     </Button>
                                 </div>
@@ -1077,7 +1329,19 @@ export default function OrderDetailPage() {
                                             Record Payment
                                         </Button>
                                     )}
-                                    {isSuperAdmin && order.requires_super_admin_to_amend && (
+                                    {order.customer_phone && (order.outstanding_receivable ?? 0) > 0 && !['cancelled', 'refunded', 'rejected'].includes(order.order_status) && (
+                                        <Button
+                                            onClick={() => openSmsPreview('due')}
+                                            isLoading={loadingPreviewKey === 'due'}
+                                            variant="outline"
+                                            className="w-full justify-start border-amber-300 text-amber-700 hover:bg-amber-50"
+                                            title="Manually remind the customer about their outstanding balance."
+                                        >
+                                            <MessageSquare className="w-4 h-4 mr-2" />
+                                            Send Due SMS
+                                        </Button>
+                                    )}
+                                    {order.requires_super_admin_to_amend && hasPermission('correct_payment_amounts') && (
                                         <Button onClick={openCorrectPayment} variant="outline" className="w-full justify-start border-indigo-300 text-indigo-700 hover:bg-indigo-50">
                                             <Edit3 className="w-4 h-4 mr-2" />
                                             Correct Payment Amount
@@ -1093,6 +1357,30 @@ export default function OrderDetailPage() {
                                             Sync to Ledger
                                         </Button>
                                     )}
+                                    {order.customer_phone && !['cancelled', 'refunded', 'rejected'].includes(order.order_status) && (
+                                        <Button
+                                            onClick={() => openSmsPreview('status')}
+                                            isLoading={loadingPreviewKey === 'status'}
+                                            variant="outline"
+                                            className="w-full justify-start border-gray-300 text-gray-700 hover:bg-gray-50"
+                                            title={`Manually notify the customer the order is now "${order.order_status}" — not sent automatically on status change.`}
+                                        >
+                                            <MessageSquare className="w-4 h-4 mr-2" />
+                                            Send Status SMS
+                                        </Button>
+                                    )}
+                                    {order.customer_phone && !['cancelled', 'refunded', 'rejected'].includes(order.order_status) && (
+                                        <Button
+                                            onClick={() => openSmsPreview('delivered')}
+                                            isLoading={loadingPreviewKey === 'delivered'}
+                                            variant="outline"
+                                            className="w-full justify-start border-green-300 text-green-700 hover:bg-green-50"
+                                            title="Manually notify the customer their order has arrived — not tied to any status change."
+                                        >
+                                            <MessageSquare className="w-4 h-4 mr-2" />
+                                            Send Delivery SMS
+                                        </Button>
+                                    )}
                                     {Number(order.paid_amount ?? 0) > 0 && !['cancelled', 'refunded', 'rejected'].includes(order.order_status) && (
                                         <Button onClick={openReturn} variant="outline" className="w-full justify-start border-red-300 text-red-700 hover:bg-red-50">
                                             <RefreshCw className="w-4 h-4 mr-2" />
@@ -1103,103 +1391,176 @@ export default function OrderDetailPage() {
                             </CardContent>
                         </Card>
 
-                        {/* Invoice Card */}
-                        <Card className="border-orange-200 bg-gradient-to-br from-orange-50 to-amber-50">
+                        {/* Documents — Invoice, Money Receipt, Delivery Chalan, Custom Invoice.
+                            One compact card with an icon row per document type instead of four
+                            full cards, so the sidebar doesn't turn into an endless scroll. */}
+                        <Card>
                             <CardHeader>
-                                <CardTitle className="text-sm flex items-center gap-2 text-orange-800">
-                                    <FileText className="w-4 h-4 text-orange-500" />
-                                    Invoice
+                                <CardTitle className="text-sm flex items-center gap-2">
+                                    <FileText className="w-4 h-4" />
+                                    Documents
                                 </CardTitle>
                             </CardHeader>
-                            <CardContent>
-                                <p className="text-xs text-orange-700 mb-3">Generate and share the official invoice for this order.</p>
-                                <div className="space-y-2">
-                                    <Button
-                                        variant="outline"
-                                        onClick={handlePreviewInvoice}
-                                        isLoading={previewingInvoice}
-                                        className="w-full justify-start border-orange-300 text-orange-700 hover:bg-orange-50"
-                                    >
-                                        <Eye className="w-4 h-4 mr-2" />
-                                        {previewingInvoice ? 'Opening…' : 'Preview & Print Invoice'}
-                                    </Button>
-                                    <Button
-                                        onClick={handleDownloadInvoice}
-                                        isLoading={downloadingInvoice}
-                                        className="w-full bg-orange-500 hover:bg-orange-600 text-white justify-start"
-                                    >
-                                        <FileText className="w-4 h-4 mr-2" />
-                                        {downloadingInvoice ? 'Generating PDF...' : 'Download Invoice PDF'}
-                                    </Button>
-                                    {(order.customer_email || order.customer?.email) && (
-                                        <Button
-                                            variant="outline"
-                                            onClick={handleSendInvoiceEmail}
-                                            isLoading={sendingInvoice}
-                                            className="w-full justify-start border-orange-300 text-orange-700 hover:bg-orange-50"
-                                        >
-                                            <Mail className="w-4 h-4 mr-2" />
-                                            {sendingInvoice ? 'Sending...' : 'Email Invoice to Customer'}
+                            <CardContent className="divide-y divide-gray-100">
+                                {/* Invoice */}
+                                <div className="flex items-center justify-between gap-2 py-3 first:pt-0">
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                        <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0">
+                                            <FileText className="w-4 h-4 text-orange-600" />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-medium text-gray-900">Invoice</p>
+                                            <p className="text-xs text-gray-500 truncate" title="Generate and share the official invoice for this order.">Official invoice for this order</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-0.5 flex-shrink-0">
+                                        <Button variant="ghost" size="sm" onClick={handlePreviewInvoice} isLoading={previewingInvoice} title="Preview & Print Invoice">
+                                            <Eye className="w-4 h-4" />
                                         </Button>
-                                    )}
+                                        <Button variant="ghost" size="sm" onClick={handleDownloadInvoice} isLoading={downloadingInvoice} title="Download Invoice PDF">
+                                            <Download className="w-4 h-4" />
+                                        </Button>
+                                        {(order.customer_email || order.customer?.email) && (
+                                            <Button variant="ghost" size="sm" onClick={handleSendInvoiceEmail} isLoading={sendingInvoice} title="Email Invoice to Customer">
+                                                <Mail className="w-4 h-4" />
+                                            </Button>
+                                        )}
+                                    </div>
                                 </div>
-                            </CardContent>
-                        </Card>
 
-                        {/* Custom Invoice Card — visually distinct from the genuine Invoice card
-                            above so the two are never confused at a glance */}
-                        <Card className="border-indigo-200 bg-gradient-to-br from-indigo-50 to-violet-50">
-                            <CardHeader>
-                                <CardTitle className="text-sm flex items-center gap-2 text-indigo-800">
-                                    <FileText className="w-4 h-4 text-indigo-500" />
-                                    Custom Invoice
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <p className="text-xs text-indigo-700 mb-3">
-                                    A document-only invoice with amounts/details you choose — doesn&apos;t change this order&apos;s real total, stock, or accounting.
-                                </p>
-                                {isSuperAdmin && (
-                                    <Button
-                                        onClick={openCustomInvoiceModal}
-                                        className="w-full bg-indigo-500 hover:bg-indigo-600 text-white justify-start mb-3"
-                                    >
-                                        <FileText className="w-4 h-4 mr-2" />
-                                        Create Custom Invoice
-                                    </Button>
-                                )}
-                                {customInvoices.length > 0 && (
-                                    <div className="space-y-2">
-                                        <p className="text-xs font-semibold text-indigo-800 uppercase tracking-wide">History</p>
-                                        {customInvoices.map((inv) => (
-                                            <div key={inv.id} className="flex items-center justify-between gap-2 bg-white/70 border border-indigo-100 rounded-lg px-3 py-2 text-xs">
-                                                <div className="min-w-0">
-                                                    <p className="font-semibold text-gray-900 truncate">{inv.invoice_number}</p>
-                                                    <p className="text-gray-500">
-                                                        {formatDate(inv.invoice_date)} &middot; {formatCurrency(inv.total)}
-                                                        {inv.creator?.name ? ` · by ${inv.creator.name}` : ''}
-                                                    </p>
-                                                </div>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => handleDownloadCustomInvoice(inv)}
-                                                    isLoading={downloadingCustomInvoiceId === inv.id}
-                                                >
-                                                    <FileText className="w-3.5 h-3.5" />
-                                                </Button>
+                                {/* Money Receipt — proof of payment, separate from the Invoice */}
+                                {Number(order.paid_amount ?? 0) > 0 && (
+                                    <div className="flex items-center justify-between gap-2 py-3">
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                            <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0">
+                                                <Receipt className="w-4 h-4 text-green-600" />
                                             </div>
-                                        ))}
+                                            <div className="min-w-0">
+                                                <p className="text-sm font-medium text-gray-900">Money Receipt</p>
+                                                <p className="text-xs text-gray-500 truncate" title="BD-style money receipt (counterfoil + main receipt) — proof of payment received.">BD-style receipt — proof of payment</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-0.5 flex-shrink-0">
+                                            <Button variant="ghost" size="sm" onClick={handlePreviewMoneyReceipt} isLoading={previewingMoneyReceipt} title="Preview & Print Receipt">
+                                                <Eye className="w-4 h-4" />
+                                            </Button>
+                                            <Button variant="ghost" size="sm" onClick={handleDownloadMoneyReceipt} isLoading={downloadingMoneyReceipt} title="Download Money Receipt">
+                                                <Download className="w-4 h-4" />
+                                            </Button>
+                                        </div>
                                     </div>
                                 )}
-                                {customInvoices.length === 0 && !isSuperAdmin && (
-                                    <p className="text-xs text-gray-400">No custom invoices have been issued for this order.</p>
-                                )}
+
+                                {/* Delivery Chalan — goods-delivery note, items/qty/serials, no prices */}
+                                <div className="flex items-center justify-between gap-2 py-3">
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                        <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
+                                            <ClipboardList className="w-4 h-4 text-amber-600" />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-medium text-gray-900">Delivery Chalan</p>
+                                            <p className="text-xs text-gray-500 truncate" title="Goods-delivery note — items, serials & quantity only, no prices. For delivery verification.">Items &amp; quantity only, no prices</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-0.5 flex-shrink-0">
+                                        <Button variant="ghost" size="sm" onClick={handlePreviewChalan} isLoading={previewingChalan} title="Preview & Print Chalan">
+                                            <Eye className="w-4 h-4" />
+                                        </Button>
+                                        <Button variant="ghost" size="sm" onClick={handleDownloadChalan} isLoading={downloadingChalan} title="Download Delivery Chalan">
+                                            <Download className="w-4 h-4" />
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                {/* Custom Invoice — document-only, doesn't touch the real order */}
+                                <div className="py-3 last:pb-0">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                            <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                                                <FileText className="w-4 h-4 text-indigo-600" />
+                                            </div>
+                                            <div className="min-w-0">
+                                                <p className="text-sm font-medium text-gray-900">Custom Invoice</p>
+                                                <p className="text-xs text-gray-500 truncate" title="A document-only invoice with amounts/details you choose — doesn't change this order's real total, stock, or accounting.">Document-only — doesn&apos;t affect real totals</p>
+                                            </div>
+                                        </div>
+                                        {hasPermission('create_custom_invoices') && (
+                                            <Button variant="outline" size="sm" onClick={openCustomInvoiceModal} className="flex-shrink-0 border-indigo-300 text-indigo-700 hover:bg-indigo-50">
+                                                Create
+                                            </Button>
+                                        )}
+                                    </div>
+                                    {customInvoices.length > 0 && (
+                                        <div className="mt-2 space-y-1.5 pl-[42px]">
+                                            {customInvoices.map((inv) => (
+                                                <div key={inv.id} className="flex items-center justify-between gap-2 bg-gray-50 border border-gray-100 rounded-lg px-2.5 py-1.5 text-xs">
+                                                    <div className="min-w-0">
+                                                        <p className="font-semibold text-gray-900 truncate">{inv.invoice_number}</p>
+                                                        <p className="text-gray-500">
+                                                            {formatDate(inv.invoice_date)} &middot; {formatCurrency(inv.total)}
+                                                            {inv.creator?.name ? ` · by ${inv.creator.name}` : ''}
+                                                        </p>
+                                                    </div>
+                                                    <div className="flex items-center gap-0.5 flex-shrink-0">
+                                                        {inv.customer_phone && (
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                onClick={() => handleSendCustomInvoiceSms(inv)}
+                                                                isLoading={loadingPreviewKey === `custom_invoice-${inv.id}`}
+                                                                title="Send SMS"
+                                                            >
+                                                                <MessageSquare className="w-3.5 h-3.5" />
+                                                            </Button>
+                                                        )}
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => handleDownloadCustomInvoice(inv)}
+                                                            isLoading={downloadingCustomInvoiceId === inv.id}
+                                                            title="Download"
+                                                        >
+                                                            <Download className="w-3.5 h-3.5" />
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {customInvoices.length === 0 && !hasPermission('create_custom_invoices') && (
+                                        <p className="text-xs text-gray-400 mt-1 pl-[42px]">No custom invoices have been issued for this order.</p>
+                                    )}
+                                </div>
                             </CardContent>
                         </Card>
                     </div>
                 </div>
             ) : null}
+
+            {/* SMS Confirm Modal — shared by status / delivery / due / custom-invoice sends, so
+                the admin always sees the exact rendered text before it goes out. */}
+            <Modal isOpen={!!pendingSms} onClose={() => { setPendingSms(null); setSmsPreview(null); }} title="Confirm SMS" size="sm">
+                {smsPreview && (
+                    <div className="space-y-4">
+                        <div>
+                            <p className="text-xs font-medium text-gray-500 uppercase mb-1">To</p>
+                            <p className="text-sm font-medium text-gray-900">{smsPreview.phone}</p>
+                        </div>
+                        <div>
+                            <p className="text-xs font-medium text-gray-500 uppercase mb-1">Message</p>
+                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm text-gray-800 whitespace-pre-wrap">
+                                {smsPreview.message}
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2 pt-2 border-t">
+                            <Button variant="outline" onClick={() => { setPendingSms(null); setSmsPreview(null); }}>Cancel</Button>
+                            <Button onClick={handleConfirmSendSms} isLoading={isSendingSms} leftIcon={<MessageSquare className="w-4 h-4" />}>
+                                Send SMS
+                            </Button>
+                        </div>
+                    </div>
+                )}
+            </Modal>
 
             {/* Record Payment Modal */}
             <Modal isOpen={isRecordPaymentOpen} onClose={() => setIsRecordPaymentOpen(false)} title="Record Payment" size="sm">
@@ -1590,6 +1951,55 @@ export default function OrderDetailPage() {
                     updatedAt={order.updated_at}
                 />
             )}
+
+            {order && (
+                <ConfirmModal
+                    isOpen={showStatusConfirm}
+                    onClose={() => setShowStatusConfirm(false)}
+                    onConfirm={handleStatusUpdate}
+                    title="Change order status?"
+                    message={
+                        ['cancelled', 'refunded'].includes(newStatus)
+                            ? `Change status from "${(order.status || order.order_status || '').replace('_', ' ')}" to "${newStatus.replace('_', ' ')}"? This will restock inventory and reverse the accounting entries already posted for this order.`
+                            : newStatus === 'completed'
+                                ? `Change status from "${(order.status || order.order_status || '').replace('_', ' ')}" to "completed"? This recognizes the sale (and cost of goods sold) in the accounts.`
+                                : `Change status from "${(order.status || order.order_status || '').replace('_', ' ')}" to "${newStatus.replace('_', ' ')}"?`
+                    }
+                    confirmLabel="Yes, update status"
+                    variant={['cancelled', 'refunded'].includes(newStatus) ? 'danger' : 'warning'}
+                    isLoading={isSaving}
+                />
+            )}
+
+            {/* Bulk Create Purchase Order — bundle several out-of-stock lines into one PO */}
+            <Modal isOpen={isBulkPOModalOpen} onClose={() => setIsBulkPOModalOpen(false)} title="Create Purchase Order" size="sm">
+                <div className="space-y-4">
+                    <p className="text-sm text-gray-600">
+                        Select which out-of-stock items to source. They&apos;ll go into a single Purchase Order —
+                        pick the supplier on the next screen. Uncheck any you want to order separately (e.g. from a different supplier).
+                    </p>
+                    <div className="space-y-2">
+                        {outOfStockItems.map((item) => (
+                            <label key={item.id} className="flex items-center gap-3 bg-gray-50 hover:bg-gray-100 p-3 rounded-lg cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={item.product_id ? !!bulkPOSelected[item.product_id] : false}
+                                    onChange={() => item.product_id && toggleBulkPOItem(item.product_id)}
+                                    className="rounded border-gray-300 text-primary focus:ring-primary"
+                                />
+                                <div>
+                                    <p className="text-sm font-medium text-gray-900">{item.item_name || item.name}</p>
+                                    <p className="text-xs text-gray-500">Qty needed: {item.quantity}</p>
+                                </div>
+                            </label>
+                        ))}
+                    </div>
+                    <div className="flex justify-end gap-3 pt-2">
+                        <Button variant="outline" onClick={() => setIsBulkPOModalOpen(false)}>Cancel</Button>
+                        <Button onClick={handleBulkPOContinue} className="bg-orange-600 hover:bg-orange-700">Continue</Button>
+                    </div>
+                </div>
+            </Modal>
         </AdminLayout>
     );
 }

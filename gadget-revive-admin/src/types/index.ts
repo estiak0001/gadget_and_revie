@@ -1,5 +1,6 @@
 export interface User {
   id: number;
+  user_code?: string;
   name: string;
   email: string;
   phone?: string;
@@ -171,13 +172,16 @@ export interface Product {
   stock_qty: number;
   low_stock_threshold: number;
   always_in_stock?: boolean;
-  average_cost?: number | null;
+  current_cost?: number | null;
   unit?: string;
   brand?: string; // Deprecated text field
   brand_name?: string;
   brand_details?: ProductBrand;
   model?: string;
-  warranty?: string;
+  warranty_value?: number | null;
+  warranty_unit?: 'day' | 'week' | 'month' | 'year' | null;
+  /** Free-text exceptions/details, e.g. "No warranty for fan or cooler" — kept alongside the structured value/unit above. */
+  warranty_note?: string;
   specifications?: Record<string, string>;
   image?: string;
   gallery?: string[];
@@ -192,6 +196,14 @@ export interface Product {
   vendor?: VendorProfile;
   category?: ProductCategory;
   attribute_values?: ProductAttributeValueEntry[];
+  serials?: ProductSerial[];
+}
+
+export interface ProductSerial {
+  id: number;
+  serial_number: string;
+  status: 'in_stock' | 'sold' | 'returned';
+  created_at?: string;
 }
 
 export interface AttributeValue {
@@ -314,6 +326,8 @@ export interface Order {
     status: ServiceIntakeStatus;
     received_at?: string | null;
   } | null;
+  /** Purchase Order(s) manually created to source stock for this order. */
+  purchase_orders?: { id: number; po_number: string; status: PurchaseOrderStatus; product_ids: number[] }[];
 }
 
 export interface CustomInvoiceItem {
@@ -360,6 +374,11 @@ export interface OrderItem {
   unit_price: number;
   price?: number; // kept for compatibility
   quantity: number;
+  /** What this line item actually cost — snapshotted at time of sale, editable in the admin order form. */
+  cost_price?: number | null;
+  /** The warranty promised to the customer for this sale — defaults from the product, editable per line. */
+  warranty_value?: number | null;
+  warranty_unit?: string | null;
   total_price: number;
   total?: number; // kept for compatibility
   notes?: string | null;
@@ -375,6 +394,8 @@ export interface OrderItem {
   }[];
   product?: Product | null;
   service?: Service | null;
+  /** Which specific in-stock unit(s) were sold under this line item, when the product is serialized. */
+  serials?: ProductSerial[];
 }
 
 export type ServiceIntakeStatus =
@@ -384,6 +405,8 @@ export type ServiceIntakeStatus =
   | 'converted'
   | 'delivered'
   | 'cancelled';
+
+export type ServiceIntakeItemStatus = 'pending' | 'converted' | 'returned';
 
 export interface ServiceIntakeItem {
   id?: number;
@@ -396,6 +419,7 @@ export interface ServiceIntakeItem {
   condition_notes?: string | null;
   quantity: number;
   estimated_price?: number | string | null;
+  status?: ServiceIntakeItemStatus;
   service?: Service | null;
 }
 
@@ -424,6 +448,7 @@ export interface ServiceIntake {
   updated_at?: string;
   items?: ServiceIntakeItem[];
   customer?: User | null;
+  creator?: { id: number; name: string };
   branch_location?: BranchLocation | null;
   order?: Order | null;
 }
@@ -746,9 +771,14 @@ export interface PurchaseOrderItem {
   product_id: number;
   quantity: number;
   received_qty: number;
+  returned_qty: number;
   unit_cost: number | string;
   total_cost: number | string;
+  /** The supplier's warranty on this specific batch — independent of the product's own warranty. */
+  warranty_value?: number | null;
+  warranty_unit?: string | null;
   product?: Product;
+  serials?: ProductSerial[];
 }
 
 export type PurchaseOrderStatus = 'draft' | 'ordered' | 'partially_received' | 'received' | 'cancelled';
@@ -757,6 +787,8 @@ export interface PurchaseOrder {
   id: number;
   po_number: string;
   supplier_id: number;
+  /** Set when this PO was created specifically to source stock for an order already placed. */
+  order_id?: number | null;
   status: PurchaseOrderStatus;
   subtotal: number | string;
   tax: number | string;
@@ -764,7 +796,10 @@ export interface PurchaseOrder {
   total: number | string;
   paid_amount: number | string;
   received_value: number;
+  returned_value: number;
   outstanding_payable: number;
+  /** Set when returns have pushed net-owed below zero — a refund owed back to us. */
+  refund_due_from_supplier: number;
   unposted_received_value: number;
   payment_status: 'unpaid' | 'partial' | 'paid';
   expected_date?: string | null;
@@ -778,6 +813,94 @@ export interface PurchaseOrder {
   supplier?: Supplier;
   items?: PurchaseOrderItem[];
   creator?: { id: number; name: string };
+  order?: { id: number; order_number: string } | null;
+}
+
+/** One serial number from a purchase batch, traced forward to whichever sale (order/invoice)
+ *  consumed it — `sold` is null while the unit is still `in_stock` or was `returned` upstream. */
+export interface PurchaseProductHistorySerial {
+  serial_number: string;
+  status: 'in_stock' | 'sold' | 'returned';
+  sold: {
+    order_id: number;
+    order_number: string;
+    customer_name?: string | null;
+    sold_at: string;
+  } | null;
+}
+
+/** Every purchase-order line that's ever brought a given product in, across every supplier —
+ *  used by the Purchase History page's "By Product" tab. A single purchase order can carry
+ *  multiple products (and each product line its own serials), so this is scoped per line item,
+ *  not per PO. */
+export interface PurchaseProductHistoryItem {
+  id: number;
+  po_id: number;
+  po_number: string;
+  po_status: PurchaseOrderStatus;
+  date: string;
+  supplier: { id: number; name: string } | null;
+  quantity: number;
+  received_qty: number;
+  returned_qty: number;
+  unit_cost: number | string;
+  total_cost: number | string;
+  warranty_value?: number | null;
+  warranty_unit?: 'day' | 'week' | 'month' | 'year' | null;
+  serials: PurchaseProductHistorySerial[];
+}
+
+export interface PurchaseProductHistory {
+  product: {
+    id: number;
+    name: string;
+    sku: string;
+    current_cost?: number | string | null;
+    stock_qty: number;
+    warranty_value?: number | null;
+    warranty_unit?: 'day' | 'week' | 'month' | 'year' | null;
+    warranty_note?: string;
+  };
+  items: PurchaseProductHistoryItem[];
+  summary: {
+    total_purchase_orders: number;
+    total_quantity_ordered: number;
+    total_quantity_received: number;
+    total_spent: number;
+    avg_unit_cost: number;
+    last_purchase_date: string | null;
+  };
+}
+
+/** One unit found by a serial-number lookup — used by the Purchase History page's "By Serial"
+ *  tab. `serial_number` is unique per product but not globally, so a search can legitimately
+ *  return more than one match (e.g. two different products that happen to share a serial string). */
+export interface PurchaseSerialHistoryEntry {
+  serial_number: string;
+  status: 'in_stock' | 'sold' | 'returned';
+  product: {
+    id: number;
+    name: string;
+    sku: string;
+    warranty_value?: number | null;
+    warranty_unit?: 'day' | 'week' | 'month' | 'year' | null;
+    warranty_note?: string;
+  } | null;
+  purchase: {
+    po_id: number;
+    po_number: string;
+    supplier: { id: number; name: string } | null;
+    date: string;
+    unit_cost: number | string;
+    warranty_value?: number | null;
+    warranty_unit?: 'day' | 'week' | 'month' | 'year' | null;
+  } | null;
+  sold: {
+    order_id: number;
+    order_number: string;
+    customer_name?: string | null;
+    sold_at: string;
+  } | null;
 }
 
 export type AccountType = 'asset' | 'liability' | 'equity' | 'revenue' | 'expense';
@@ -916,4 +1039,72 @@ export interface PendingSyncSummary {
   expenses: number;
   orders: number;
   purchase_orders: number;
+}
+
+export interface SmsConnection {
+  id: number;
+  name: string;
+  provider_name?: string | null;
+  api_url: string;
+  balance_url?: string | null;
+  report_url?: string | null;
+  method: 'GET' | 'POST';
+  api_key?: string | null;
+  sender_id?: string | null;
+  phone_format: 'as_is' | 'bd_880';
+  is_active: boolean;
+  creator?: { id: number; name: string } | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SmsBalance {
+  configured: boolean;
+  ok: boolean;
+  balance: string | null;
+  validity: string | null;
+  raw: string | null;
+}
+
+export interface SmsUsageByPurpose {
+  purpose: string;
+  total: number;
+  sent: number;
+  failed: number;
+  total_cost: number | string | null;
+}
+
+export interface SmsUsageStats {
+  by_purpose: SmsUsageByPurpose[];
+  overall: { total: number; sent: number; failed: number; total_cost: number | string | null };
+}
+
+export interface SmsCampaign {
+  id: number;
+  name: string;
+  message: string;
+  sms_connection_id?: number | null;
+  connection?: { id: number; name: string } | null;
+  recipient_source: 'all_customers' | 'manual';
+  recipient_count: number;
+  sent_count: number;
+  failed_count: number;
+  status: 'completed' | 'failed';
+  creator?: { id: number; name: string } | null;
+  created_at: string;
+}
+
+export interface SmsLog {
+  id: number;
+  phone: string;
+  message: string;
+  purpose: 'otp' | 'order_placed' | 'order_status' | 'order_delivered' | 'custom_invoice' | 'payment_due' | 'campaign' | 'test' | 'other';
+  status: 'sent' | 'failed';
+  response?: string | null;
+  provider_request_id?: string | null;
+  cost?: number | string | null;
+  related_id?: number | null;
+  sender?: { id: number; name: string } | null;
+  connection?: { id: number; name: string } | null;
+  created_at: string;
 }

@@ -423,8 +423,12 @@ export default function BannersPage() {
                 </label>
               )}
             </div>
-            {watchPosition === 'homepage_slider' && <p className="text-xs text-gray-400 mt-1">Recommended: 1200×400px</p>}
-            {watchPosition === 'homepage_banner' && <p className="text-xs text-gray-400 mt-1">Recommended: 400×280px</p>}
+            {/* Matches the storefront's actual slot ratio (10-column grid: main slide 6/10,
+                side banners 4/10, over a max-w-[1600px] page, main slide 420px tall) so an
+                image uploaded at this size needs the least cropping from the object-cover fit
+                that fills each card on the homepage. */}
+            {watchPosition === 'homepage_slider' && <p className="text-xs text-gray-400 mt-1">Recommended: 1200×550px (~2.2:1) — image is cropped to fill, so keep important content centered</p>}
+            {watchPosition === 'homepage_banner' && <p className="text-xs text-gray-400 mt-1">Recommended: 600×200px (~3:1) — image is cropped to fill, so keep important content centered</p>}
           </div>
 
           <div className="flex items-center gap-2">

@@ -22,6 +22,9 @@ interface PurchaseLineItem {
   product_sku: string;
   quantity: number;
   unit_cost: number;
+  /** The supplier's warranty on this specific batch — independent of the product's own warranty. */
+  warranty_value?: number | null;
+  warranty_unit?: string | null;
 }
 
 function generateId() {
@@ -157,7 +160,7 @@ export default function EditPurchaseOrderPage() {
           setLoadError(true);
           return;
         }
-        if (po.status !== 'draft') {
+        if (!['draft', 'ordered'].includes(po.status)) {
           setLocked(true);
           return;
         }
@@ -175,6 +178,8 @@ export default function EditPurchaseOrderPage() {
             product_sku: item.product?.sku || '',
             quantity: item.quantity,
             unit_cost: Number(item.unit_cost),
+            warranty_value: item.warranty_value ?? null,
+            warranty_unit: item.warranty_unit ?? null,
           }))
         );
       })
@@ -210,7 +215,7 @@ export default function EditPurchaseOrderPage() {
     setItems((prev) => prev.filter((i) => i.id !== id));
   }
 
-  function updateItem(id: string, field: 'quantity' | 'unit_cost', value: number) {
+  function updateItem(id: string, field: 'quantity' | 'unit_cost' | 'warranty_value' | 'warranty_unit', value: number | string | null) {
     setItems((prev) => prev.map((i) => (i.id === id ? { ...i, [field]: value } : i)));
   }
 
@@ -247,6 +252,8 @@ export default function EditPurchaseOrderPage() {
           product_id: i.product_id,
           quantity: i.quantity,
           unit_cost: i.unit_cost,
+          warranty_value: i.warranty_value || null,
+          warranty_unit: i.warranty_unit || null,
         })),
       };
 
@@ -283,7 +290,7 @@ export default function EditPurchaseOrderPage() {
       <AdminLayout>
         <ErrorState
           title="This purchase order can no longer be edited"
-          message="Only draft purchase orders can be edited. View the order for its current status and available actions."
+          message="Purchase orders can only be edited before any goods have been received. View the order for its current status and available actions."
         />
         <div className="flex justify-center mt-4">
           <Button onClick={() => router.push(`/purchases/${poId}`)}>View Purchase Order</Button>
@@ -302,7 +309,7 @@ export default function EditPurchaseOrderPage() {
           </Button>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Edit Purchase Order {poNumber}</h1>
-            <p className="text-sm text-gray-500 mt-0.5">Update supplier, items, or costs while still a draft</p>
+            <p className="text-sm text-gray-500 mt-0.5">Update supplier, items, or costs — available any time before goods are received</p>
           </div>
         </div>
 
@@ -347,6 +354,7 @@ export default function EditPurchaseOrderPage() {
                           <th className="pb-2 pr-4 font-semibold text-gray-600">Product</th>
                           <th className="pb-2 pr-4 font-semibold text-gray-600 w-28">Qty</th>
                           <th className="pb-2 pr-4 font-semibold text-gray-600 w-36">Unit Cost (৳)</th>
+                          <th className="pb-2 pr-4 font-semibold text-gray-600 w-40">Warranty</th>
                           <th className="pb-2 pr-4 font-semibold text-gray-600 text-right">Line Total</th>
                           <th className="pb-2 w-10"></th>
                         </tr>
@@ -376,6 +384,29 @@ export default function EditPurchaseOrderPage() {
                                 onChange={(e) => updateItem(item.id, 'unit_cost', parseFloat(e.target.value) || 0)}
                                 className="w-28 px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                               />
+                            </td>
+                            <td className="py-2 pr-4">
+                              <div className="flex gap-1">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={item.warranty_value ?? ''}
+                                  onChange={(e) => updateItem(item.id, 'warranty_value', e.target.value ? parseInt(e.target.value) : null)}
+                                  placeholder="—"
+                                  className="w-14 px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                />
+                                <select
+                                  value={item.warranty_unit ?? ''}
+                                  onChange={(e) => updateItem(item.id, 'warranty_unit', e.target.value || null)}
+                                  className="flex-1 px-1.5 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                >
+                                  <option value="">Unit</option>
+                                  <option value="day">Day(s)</option>
+                                  <option value="week">Week(s)</option>
+                                  <option value="month">Month(s)</option>
+                                  <option value="year">Year(s)</option>
+                                </select>
+                              </div>
                             </td>
                             <td className="py-2 pr-4 text-right font-medium">
                               {formatCurrency(item.quantity * item.unit_cost)}
