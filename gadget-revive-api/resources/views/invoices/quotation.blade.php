@@ -28,47 +28,50 @@
 
         .page-bg { background: #ffffff; min-height: 100%; padding: 0; }
 
-        /* ── HEADER (dark band) ──────────────────────── */
-        .invoice-header {
-            background: #111827;
-            padding: 16px 32px;
+        /* ── HEADER — brand lockup on the left, a large document title with its own
+               quotation-no/date/valid-until block on the right. Single band, no second
+               "meta stripe" underneath repeating the same numbers. ──────────────── */
+        .doc-header {
+            padding: 24px 32px 18px;
             display: table;
             width: 100%;
+            border-bottom: 3px solid #1d4ed8;
         }
-        .header-left { display: table-cell; vertical-align: middle; width: 52%; }
-        .header-right { display: table-cell; vertical-align: middle; text-align: right; width: 48%; }
+        .doc-header-left  { display: table-cell; vertical-align: top; width: 55%; }
+        .doc-header-right { display: table-cell; vertical-align: top; width: 45%; text-align: right; }
 
         .brand-row { display: table; }
-        .brand-logo-cell { display: table-cell; vertical-align: middle; padding-right: 16px; }
-        .brand-logo-cell img { height: 52px; width: auto; }
+        .brand-logo-cell { display: table-cell; vertical-align: middle; padding-right: 14px; }
+        .brand-logo-cell img { height: 50px; width: auto; }
         .brand-monogram {
-            background: #ffffff; color: #000000; font-size: 21px; font-weight: 900;
-            width: 52px; height: 52px; border-radius: 8px; text-align: center; line-height: 52px;
+            background: #1d4ed8; color: #ffffff; font-size: 20px; font-weight: 900;
+            width: 50px; height: 50px; border-radius: 8px; text-align: center; line-height: 50px;
             letter-spacing: -1px;
         }
         .brand-text-cell { display: table-cell; vertical-align: middle; }
-        .brand-name { font-size: 27px; font-weight: 900; color: #ffffff; letter-spacing: 0.5px; line-height: 1.15; }
+        .brand-name { font-size: 25px; font-weight: 900; color: #000000; letter-spacing: 0.3px; line-height: 1.15; }
         .brand-motto {
-            font-size: 12.5px; color: #c7c7c7; font-weight: 400; letter-spacing: 2px;
-            text-transform: uppercase; margin-top: 4px;
+            font-size: 11.5px; color: #6b7280; font-weight: 600; letter-spacing: 1.8px;
+            text-transform: uppercase; margin-top: 3px;
         }
 
-        .company-contact { font-size: 13.5px; color: #e2e2e2; line-height: 1.75; }
-        .company-contact .cc-name { font-size: 15.5px; font-weight: 700; color: #ffffff; margin-bottom: 3px; }
+        .doc-title {
+            font-size: 36px; font-weight: 900; color: #1d4ed8; letter-spacing: 1.5px;
+            text-transform: uppercase; line-height: 1;
+        }
 
-        /* ── META STRIPE (accented for Quotation, distinct from black Invoice pill) ──── */
-        .meta-stripe { background: #eff6ff; padding: 8px 32px; display: table; width: 100%; }
-        .stripe-cell {
-            display: table-cell; vertical-align: middle; color: #000000; font-size: 14.5px;
-            font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; width: 34%;
+        .doc-meta-table { display: table; margin-left: auto; margin-top: 12px; border-collapse: collapse; }
+        .doc-meta-row { display: table-row; }
+        .doc-meta-label {
+            display: table-cell; text-align: left; font-size: 12px; color: #6b7280;
+            text-transform: uppercase; letter-spacing: 0.6px; white-space: nowrap;
+            padding: 2px 16px 2px 0; vertical-align: middle;
         }
-        .stripe-cell.center { text-align: center; width: 32%; }
-        .stripe-cell.right  { text-align: right; }
-        .stripe-cell .lbl { color: #000000; font-weight: 400; }
-        .doc-pill {
-            display: inline-block; background: #1d4ed8; color: #ffffff; padding: 6px 24px;
-            border-radius: 14px; font-size: 15.5px; font-weight: 900; letter-spacing: 2px;
+        .doc-meta-value {
+            display: table-cell; text-align: right; font-size: 14.5px; font-weight: 700;
+            color: #000000; white-space: nowrap; padding: 2px 0; vertical-align: middle;
         }
+        .doc-meta-value.accent { color: #1d4ed8; }
 
         /* ── BODY ────────────────────────────────────── */
         .body-wrap { padding: 16px 32px; padding-bottom: 34mm; background: #ffffff; }
@@ -84,17 +87,6 @@
         .party-name { font-size: 18.5px; font-weight: 700; color: #000000; margin-bottom: 4px; }
         .party-detail { font-size: 15.5px; color: #000000; margin-bottom: 2px; line-height: 1.4; }
         .party-detail strong { color: #000000; }
-
-        /* ── META INFO GRID ──────────────────────────── */
-        .meta-section { background: #f6f6f6; border-radius: 5px; padding: 8px 0; margin-bottom: 12px; }
-        .meta-inner { display: table; width: 100%; }
-        .meta-item { display: table-cell; text-align: center; vertical-align: middle; padding: 4px 8px; }
-        .meta-key {
-            font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px;
-            color: #000000; margin-bottom: 2px;
-        }
-        .meta-value { font-size: 17.5px; font-weight: 700; color: #000000; }
-        .meta-value.accent { color: #1d4ed8; }
 
         /* ── SECTION HEADING ─────────────────────────── */
         .section-heading {
@@ -185,20 +177,26 @@
         .corner-mark-logo { position: fixed; bottom: 6mm; right: 6mm; width: 62mm; pointer-events: none; }
         .corner-mark-logo img { width: 100%; height: auto; opacity: 0.09; }
 
-        /* ── FOOTER ──────────────────────────────────── */
+        /* ── FOOTER — bookends the header's blue rule with its own top border, and swaps the
+               old label+bold-text stack for a compact reference "chip" ──────────────── */
         .page-footer-fixed {
             position: fixed; bottom: 0; left: 0; right: 0;
-            background: rgba(29, 78, 216, 0.045); padding: 8px 32px 6px;
+            background: #ffffff; border-top: 2px solid #1d4ed8; padding: 10px 32px 8px;
         }
-        .invoice-footer { margin-top: 10px; padding-top: 10px; border-top: 1px solid #e5e7eb; display: table; width: 100%; }
-        .footer-left { display: table-cell; vertical-align: middle; width: 60%; }
-        .footer-right { display: table-cell; vertical-align: middle; text-align: right; width: 40%; }
-        .footer-brand { font-size: 16px; font-weight: 700; color: #000000; margin-bottom: 3px; }
-        .footer-sub { font-size: 14.5px; color: #000000; line-height: 1.7; }
-        .footer-ref-label { font-size: 13px; color: #000000; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 3px; }
-        .footer-ref-code { font-size: 16px; font-weight: 700; color: #1d4ed8; letter-spacing: 1px; }
-        .footer-timestamp { font-size: 13.5px; color: #000000; margin-top: 4px; }
-        .legal { text-align: center; font-size: 13.5px; color: #000000; margin-top: 8px; font-style: italic; }
+        .invoice-footer { display: table; width: 100%; }
+        .footer-left  { display: table-cell; vertical-align: middle; width: 62%; }
+        .footer-right { display: table-cell; vertical-align: middle; text-align: right; width: 38%; }
+        .footer-brand { font-size: 15.5px; font-weight: 700; color: #000000; margin-bottom: 2px; }
+        .footer-sub { font-size: 13px; color: #6b7280; line-height: 1.6; }
+        .footer-ref-chip {
+            display: inline-block; background: #eff6ff; color: #1d4ed8; font-weight: 700;
+            font-size: 14px; letter-spacing: 0.5px; padding: 4px 12px; border-radius: 6px;
+        }
+        .footer-timestamp { font-size: 12px; color: #9ca3af; margin-top: 4px; }
+        .legal {
+            text-align: center; font-size: 12px; color: #9ca3af; margin-top: 8px;
+            padding-top: 8px; border-top: 1px solid #e5e7eb; font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -221,13 +219,12 @@
                 <div class="footer-brand">{{ $settings['footer_brand'] ?? 'Gadget Revive Bangladesh Ltd.' }}</div>
                 <div class="footer-sub">
                     {{ $settings['footer_address'] ?? 'House 12, Road 4, Block C, Bashundhara R/A, Dhaka - 1229' }}<br>
-                    Phone: {{ $settings['footer_phone'] ?? '+880 1800-000000' }} | Email: {{ $settings['footer_email'] ?? 'support@gadgetrevive.com' }}
+                    {{ $settings['footer_phone'] ?? '+880 1800-000000' }} &nbsp;|&nbsp; {{ $settings['footer_email'] ?? 'support@gadgetrevive.com' }}
                 </div>
             </div>
             <div class="footer-right">
-                <div class="footer-ref-label">Quotation Reference</div>
-                <div class="footer-ref-code">{{ $quotation->quotation_number }}</div>
-                <div class="footer-timestamp">Generated: {{ now()->format('d M Y, h:i A') }}</div>
+                <span class="footer-ref-chip">{{ $quotation->quotation_number }}</span>
+                <div class="footer-timestamp">Generated {{ now()->format('d M Y, h:i A') }}</div>
             </div>
         </div>
 
@@ -239,12 +236,14 @@
 
 <div class="page-bg">
 
-    {{-- ═══════════════════ HEADER ═══════════════════ --}}
-    <div class="invoice-header">
-        <div class="header-left">
+    {{-- ═══════════════════ HEADER — brand lockup + document title/meta, one band ═══════════════════ --}}
+    <div class="doc-header">
+        <div class="doc-header-left">
             <div class="brand-row">
                 <div class="brand-logo-cell">
-                    @if(!empty($settings['logo_white']))
+                    @if(!empty($settings['logo_black']))
+                        <img src="{{ $settings['logo_black'] }}" alt="logo">
+                    @elseif(!empty($settings['logo_white']))
                         <img src="{{ $settings['logo_white'] }}" alt="logo">
                     @else
                         <div class="brand-monogram">GR</div>
@@ -258,27 +257,22 @@
                 </div>
             </div>
         </div>
-        <div class="header-right">
-            <div class="company-contact">
-                <div class="cc-name">{{ $settings['footer_brand'] ?? 'Gadget Revive Bangladesh Ltd.' }}</div>
-                {{ $settings['address'] ?? '' }}<br>
-                Mobile: {{ $settings['phone'] ?? '' }}<br>
-                {{ $settings['email'] ?? '' }}
-                @if(!empty($settings['website'])) &nbsp;|&nbsp; {{ $settings['website'] }} @endif
+        <div class="doc-header-right">
+            <div class="doc-title">Quotation</div>
+            <div class="doc-meta-table">
+                <div class="doc-meta-row">
+                    <div class="doc-meta-label">Quotation No</div>
+                    <div class="doc-meta-value">{{ $quotation->quotation_number }}</div>
+                </div>
+                <div class="doc-meta-row">
+                    <div class="doc-meta-label">Date</div>
+                    <div class="doc-meta-value">{{ $quotation->quotation_date->format('d M Y') }}</div>
+                </div>
+                <div class="doc-meta-row">
+                    <div class="doc-meta-label">Valid Until</div>
+                    <div class="doc-meta-value accent">{{ $quotation->valid_until ? $quotation->valid_until->format('d M Y') : '—' }}</div>
+                </div>
             </div>
-        </div>
-    </div>
-
-    {{-- ═══════════════════ META STRIPE ═══════════════════ --}}
-    <div class="meta-stripe">
-        <div class="stripe-cell">
-            <span class="lbl">Quotation No:</span> {{ $quotation->quotation_number }}
-        </div>
-        <div class="stripe-cell center">
-            <span class="doc-pill">QUOTATION</span>
-        </div>
-        <div class="stripe-cell right">
-            <span class="lbl">Date:</span> {{ $quotation->quotation_date->format('d/m/Y') }}
         </div>
     </div>
 
@@ -306,24 +300,6 @@
                 @if($quotation->customer_address)
                 <div class="party-detail"><strong>Address:</strong> {{ $quotation->customer_address }}</div>
                 @endif
-            </div>
-        </div>
-
-        {{-- META INFO GRID --}}
-        <div class="meta-section">
-            <div class="meta-inner">
-                <div class="meta-item">
-                    <div class="meta-key">Quotation No</div>
-                    <div class="meta-value">{{ $quotation->quotation_number }}</div>
-                </div>
-                <div class="meta-item">
-                    <div class="meta-key">Issue Date</div>
-                    <div class="meta-value">{{ $quotation->quotation_date->format('d M Y') }}</div>
-                </div>
-                <div class="meta-item">
-                    <div class="meta-key">Valid Until</div>
-                    <div class="meta-value accent">{{ $quotation->valid_until ? $quotation->valid_until->format('d M Y') : '—' }}</div>
-                </div>
             </div>
         </div>
 
