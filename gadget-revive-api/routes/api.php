@@ -28,6 +28,7 @@ use App\Http\Controllers\Api\SmsConnectionController;
 use App\Http\Controllers\Api\SupplierController;
 use App\Http\Controllers\Api\TicketController;
 use App\Http\Controllers\Api\InvoiceController;
+use App\Http\Controllers\Api\QuotationController;
 use App\Http\Controllers\Api\UploadController;
 use App\Http\Controllers\Api\VendorController;
 use App\Http\Controllers\Api\VendorDashboardController;
@@ -397,6 +398,21 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::post('/{orderId}/custom', [InvoiceController::class, 'customStore'])->middleware('permission:view_orders,manage_orders,process_orders,create_custom_invoices');
             Route::post('/custom/{id}/send-sms', [InvoiceController::class, 'customSendSms'])->middleware('permission:view_orders,manage_orders,process_orders,create_custom_invoices');
             Route::get('/custom/{id}/sms-preview', [InvoiceController::class, 'customPreviewSms'])->middleware('permission:view_orders,manage_orders,process_orders,create_custom_invoices');
+        });
+
+        // Quotations — a pre-sale offer, deliberately never tied to an Order (see CustomInvoice
+        // above for the order-tied equivalent). Read routes accept either permission; writes
+        // require manage_quotations specifically.
+        Route::prefix('quotations')->group(function () {
+            Route::get('/', [QuotationController::class, 'index'])->middleware('permission:view_quotations,manage_quotations');
+            Route::get('/search-products', [QuotationController::class, 'searchProducts'])->middleware('permission:view_quotations,manage_quotations');
+            Route::get('/{id}', [QuotationController::class, 'show'])->middleware('permission:view_quotations,manage_quotations');
+            Route::get('/{id}/download', [QuotationController::class, 'download'])->middleware('permission:view_quotations,manage_quotations');
+            Route::get('/{id}/stream', [QuotationController::class, 'stream'])->middleware('permission:view_quotations,manage_quotations');
+            Route::post('/', [QuotationController::class, 'store'])->middleware('permission:manage_quotations');
+            Route::put('/{id}', [QuotationController::class, 'update'])->middleware('permission:manage_quotations');
+            Route::put('/{id}/status', [QuotationController::class, 'updateStatus'])->middleware('permission:manage_quotations');
+            Route::delete('/{id}', [QuotationController::class, 'destroy'])->middleware('permission:manage_quotations');
         });
 
         // Service Intakes (device received → receipt → convert to order) — old 5-way OR kept

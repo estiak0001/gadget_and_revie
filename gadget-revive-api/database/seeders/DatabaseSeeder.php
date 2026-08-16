@@ -20,6 +20,7 @@ class DatabaseSeeder extends Seeder
             AdminTierSeeder::class,
             SalesFinancePermissionSeeder::class,
             GranularPermissionSeeder::class,
+            QuotationPermissionSeeder::class,
             ChartOfAccountSeeder::class,
             LocationSeeder::class,
             CategorySeeder::class,

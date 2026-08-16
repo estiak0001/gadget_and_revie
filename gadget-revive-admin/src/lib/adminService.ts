@@ -7,6 +7,7 @@ import {
   ChartOfAccount, JournalEntry, TrialBalance, IncomeStatement, BalanceSheet, AccountLedger, CashPosition, CashBook,
   PendingSyncSummary, Investor, Investment, CustomInvoice, ProductSerial, PurchaseProductHistory, PurchaseSerialHistoryEntry,
   SmsLog, SmsConnection, SmsCampaign, SmsBalance, SmsUsageStats,
+  Quotation, QuotationProductSearchResult,
 } from '@/types';
 
 // Query params type
@@ -103,6 +104,23 @@ export const adminService = {
   sendCustomInvoiceSms: (id: number) => api.post(`/admin/invoices/custom/${id}/send-sms`),
   previewCustomInvoiceSms: (id: number) =>
     api.get<ApiResponse<{ phone: string; message: string }>>(`/admin/invoices/custom/${id}/sms-preview`),
+
+  // Quotations — standalone pre-sale offers, never tied to an Order
+  getQuotations: (params?: ListParams & { status?: string }) =>
+    api.get<PaginatedResponse<Quotation>>('/admin/quotations', { params }),
+  getQuotation: (id: number) => api.get<ApiResponse<Quotation>>(`/admin/quotations/${id}`),
+  createQuotation: (data: Record<string, unknown>) =>
+    api.post<ApiResponse<Quotation>>('/admin/quotations', data),
+  updateQuotation: (id: number, data: Record<string, unknown>) =>
+    api.put<ApiResponse<Quotation>>(`/admin/quotations/${id}`, data),
+  updateQuotationStatus: (id: number, status: string) =>
+    api.put<ApiResponse<Quotation>>(`/admin/quotations/${id}/status`, { status }),
+  deleteQuotation: (id: number) => api.delete(`/admin/quotations/${id}`),
+  downloadQuotation: (id: number) =>
+    api.get(`/admin/quotations/${id}/download`, { responseType: 'blob' }),
+  streamQuotationUrl: (id: number) => `${api.defaults.baseURL}/admin/quotations/${id}/stream`,
+  searchQuotationProducts: (search: string) =>
+    api.get<ApiResponse<QuotationProductSearchResult[]>>('/admin/quotations/search-products', { params: { search } }),
 
   // Service Intakes (device received → receipt → convert to order)
   getServiceIntakes: (params?: ListParams) =>

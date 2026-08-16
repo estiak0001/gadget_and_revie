@@ -98,6 +98,12 @@ const navigation: NavSection[] = [
         permissions: ['view_orders', 'manage_orders', 'process_orders'],
       },
       {
+        title: 'Quotations',
+        href: '/quotations',
+        icon: <FileText className="w-5 h-5" />,
+        permissions: ['view_quotations', 'manage_quotations'],
+      },
+      {
         title: 'Service Intakes',
         href: '/service-intakes',
         icon: <ClipboardCheck className="w-5 h-5" />,

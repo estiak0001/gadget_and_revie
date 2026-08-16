@@ -361,6 +361,53 @@ export interface CustomInvoice {
   updated_at: string;
 }
 
+export type QuotationStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired';
+
+export interface QuotationItem {
+  product_id?: number | null;
+  item_name: string;
+  item_sku?: string | null;
+  description?: string | null;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+}
+
+export interface Quotation {
+  id: number;
+  quotation_number: string;
+  quotation_date: string;
+  valid_until?: string | null;
+  customer_id?: number | null;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  customer_email?: string | null;
+  customer_address?: string | null;
+  items: QuotationItem[];
+  subtotal: number;
+  discount: number;
+  shipping: number;
+  tax: number;
+  total: number;
+  notes?: string | null;
+  terms?: string | null;
+  status: QuotationStatus;
+  is_expired: boolean;
+  created_by?: number | null;
+  customer?: User | null;
+  creator?: { id: number; name: string };
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QuotationProductSearchResult {
+  id: number;
+  name: string;
+  sku?: string | null;
+  current_price: number;
+  image?: string | null;
+}
+
 export interface OrderItem {
   id: number;
   order_id: number;

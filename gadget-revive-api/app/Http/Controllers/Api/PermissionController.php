@@ -48,6 +48,7 @@ class PermissionController extends Controller
             'payments' => 'Payments',
             'investors' => 'Investors', 'investor_returns' => 'Investors',
             'notifications' => 'Notifications',
+            'quotations' => 'Quotations',
         ];
         $verbs = [
             'manage', 'view', 'create', 'edit', 'delete', 'process', 'respond', 'approve', 'export',

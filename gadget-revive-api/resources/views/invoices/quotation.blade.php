@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Quotation {{ $quotation->quotation_number }}</title>
+
+    <style>
+        /* ── Page ──────────────────────────────────── */
+        @page { size: A4; margin: 12mm 10mm; }
+
+        /* ── Reset ─────────────────────────────────── */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'DejaVu Sans', Arial, sans-serif;
+            font-size: 17px;
+            line-height: 1.6;
+            color: #000000;
+            background-color: #ffffff;
+        }
+
+        /* Keep these blocks from being awkwardly split across a page break */
+        table.items tr,
+        .totals-section,
+        .signature-section,
+        .closing-block,
+        .invoice-footer { page-break-inside: avoid; }
+
+        .page-bg { background: #ffffff; min-height: 100%; padding: 0; }
+
+        /* ── HEADER (dark band) ──────────────────────── */
+        .invoice-header {
+            background: #111827;
+            padding: 16px 32px;
+            display: table;
+            width: 100%;
+        }
+        .header-left { display: table-cell; vertical-align: middle; width: 52%; }
+        .header-right { display: table-cell; vertical-align: middle; text-align: right; width: 48%; }
+
+        .brand-row { display: table; }
+        .brand-logo-cell { display: table-cell; vertical-align: middle; padding-right: 16px; }
+        .brand-logo-cell img { height: 52px; width: auto; }
+        .brand-monogram {
+            background: #ffffff; color: #000000; font-size: 21px; font-weight: 900;
+            width: 52px; height: 52px; border-radius: 8px; text-align: center; line-height: 52px;
+            letter-spacing: -1px;
+        }
+        .brand-text-cell { display: table-cell; vertical-align: middle; }
+        .brand-name { font-size: 27px; font-weight: 900; color: #ffffff; letter-spacing: 0.5px; line-height: 1.15; }
+        .brand-motto {
+            font-size: 12.5px; color: #c7c7c7; font-weight: 400; letter-spacing: 2px;
+            text-transform: uppercase; margin-top: 4px;
+        }
+
+        .company-contact { font-size: 13.5px; color: #e2e2e2; line-height: 1.75; }
+        .company-contact .cc-name { font-size: 15.5px; font-weight: 700; color: #ffffff; margin-bottom: 3px; }
+
+        /* ── META STRIPE (accented for Quotation, distinct from black Invoice pill) ──── */
+        .meta-stripe { background: #eff6ff; padding: 8px 32px; display: table; width: 100%; }
+        .stripe-cell {
+            display: table-cell; vertical-align: middle; color: #000000; font-size: 14.5px;
+            font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; width: 34%;
+        }
+        .stripe-cell.center { text-align: center; width: 32%; }
+        .stripe-cell.right  { text-align: right; }
+        .stripe-cell .lbl { color: #000000; font-weight: 400; }
+        .doc-pill {
+            display: inline-block; background: #1d4ed8; color: #ffffff; padding: 6px 24px;
+            border-radius: 14px; font-size: 15.5px; font-weight: 900; letter-spacing: 2px;
+        }
+
+        /* Status badge — small colored pill next to the quotation number */
+        .status-pill {
+            display: inline-block; padding: 3px 12px; border-radius: 10px; font-size: 12px;
+            font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; margin-left: 8px;
+        }
+        .status-draft    { background: #e5e7eb; color: #374151; }
+        .status-sent     { background: #dbeafe; color: #1d4ed8; }
+        .status-accepted { background: #d1fae5; color: #047857; }
+        .status-rejected { background: #fee2e2; color: #b91c1c; }
+        .status-expired  { background: #fef3c7; color: #92400e; }
+
+        /* ── BODY ────────────────────────────────────── */
+        .body-wrap { padding: 16px 32px; padding-bottom: 34mm; background: #ffffff; }
+
+        /* ── FROM / PREPARED FOR ─────────────────────── */
+        .parties-table { display: table; width: 100%; margin-bottom: 12px; }
+        .party-cell { display: table-cell; width: 50%; vertical-align: top; }
+        .party-cell-right { display: table-cell; width: 50%; vertical-align: top; padding-left: 5%; }
+        .party-label {
+            font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px;
+            color: #1d4ed8; padding-bottom: 4px; margin-bottom: 6px;
+        }
+        .party-name { font-size: 18.5px; font-weight: 700; color: #000000; margin-bottom: 4px; }
+        .party-detail { font-size: 15.5px; color: #000000; margin-bottom: 2px; line-height: 1.4; }
+        .party-detail strong { color: #000000; }
+
+        /* ── META INFO GRID ──────────────────────────── */
+        .meta-section { background: #f6f6f6; border-radius: 5px; padding: 8px 0; margin-bottom: 12px; }
+        .meta-inner { display: table; width: 100%; }
+        .meta-item { display: table-cell; text-align: center; vertical-align: middle; padding: 4px 8px; }
+        .meta-key {
+            font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px;
+            color: #000000; margin-bottom: 2px;
+        }
+        .meta-value { font-size: 17.5px; font-weight: 700; color: #000000; }
+        .meta-value.accent { color: #1d4ed8; }
+
+        /* ── SECTION HEADING ─────────────────────────── */
+        .section-heading {
+            font-size: 14.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px;
+            color: #000000; margin-bottom: 6px;
+        }
+
+        /* ── ITEMS TABLE ─────────────────────────────── */
+        .items-section { margin-bottom: 12px; }
+
+        table.items { width: 100%; border-collapse: collapse; }
+        table.items thead tr { background: #eff6ff; }
+        table.items thead tr.thead-spacer { background: transparent; }
+        table.items thead tr.thead-spacer td { border: none; padding: 0; height: 20pt; }
+        table.items thead th {
+            padding: 7px 8px; font-size: 14px; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.8px; color: #000000; text-align: left; border: 1px solid #000000;
+        }
+        table.items thead th.r { text-align: right; }
+        table.items thead th.c { text-align: center; }
+
+        table.items tbody tr { border-bottom: 1px solid #000000; }
+        table.items tbody tr:nth-child(even) { background: #f6f6f6; }
+        table.items tbody td {
+            padding: 6px 8px; font-size: 15.5px; color: #000000; vertical-align: top;
+            line-height: 1.35; border: 1px solid #000000;
+        }
+        table.items tbody td.r { text-align: right; }
+        table.items tbody td.c { text-align: center; }
+        table.items tbody td.bold { font-weight: 700; color: #000000; }
+
+        .item-sub { font-size: 13.5px; color: #4b5563; margin-top: 2px; line-height: 1.35; }
+        .item-sub strong { color: #000000; }
+        .catalog-tag {
+            display: inline-block; background: #eff6ff; color: #1d4ed8; font-size: 11.5px;
+            font-weight: 700; padding: 1px 7px; border-radius: 8px; margin-top: 3px;
+            text-transform: uppercase; letter-spacing: 0.4px;
+        }
+
+        /* ── TOTALS ──────────────────────────────────── */
+        .totals-section { display: table; width: 100%; margin-bottom: 12px; }
+        .totals-spacer { display: table-cell; width: 48%; }
+        .totals-block  { display: table-cell; width: 52%; vertical-align: top; }
+
+        .total-row { display: table; width: 100%; padding: 3px 4px; }
+        .total-lbl { display: table-cell; font-size: 15.5px; color: #000000; }
+        .total-val { display: table-cell; text-align: right; font-size: 15.5px; font-weight: 600; color: #000000; }
+
+        .grand-total-row {
+            border-top: 1.5px solid #1d4ed8; padding: 4px 8px 2px; display: table; width: 100%;
+        }
+        .grand-total-lbl {
+            display: table-cell; font-size: 17.5px; font-weight: 700; color: #000000;
+            text-transform: uppercase; letter-spacing: 0.5px; vertical-align: middle;
+        }
+        .grand-total-val {
+            display: table-cell; text-align: right; font-size: 24px; font-weight: 900;
+            color: #1d4ed8; vertical-align: middle;
+        }
+
+        /* ── NOTES ───────────────────────────────────── */
+        .notes-section { background: #f6f6f6; border-radius: 5px; padding: 8px 14px; margin-bottom: 12px; }
+        .notes-title {
+            font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+            color: #000000; margin-bottom: 5px;
+        }
+        .notes-text { font-size: 15.5px; color: #000000; line-height: 1.5; }
+
+        /* ── SIGNATURE SECTION ───────────────────────── */
+        .signature-section { display: table; width: 100%; margin: 28px 0 10px; }
+        .sig-cell { display: table-cell; width: 50%; vertical-align: bottom; text-align: center; padding: 45px 14px 0; }
+        .sig-line { border-top: 1px dotted #000000; margin: 0 auto 10px; height: 1px; }
+        .sig-label { font-size: 16.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #000000; }
+
+        /* ── TERMS BANNER ────────────────────────────── */
+        .terms-banner {
+            background: #eff6ff; color: #1d4ed8; text-align: center; font-size: 18.5px;
+            font-weight: 700; letter-spacing: 0.3px; padding: 8px 16px; border-radius: 4px;
+            margin-bottom: 8px;
+        }
+        .terms-text { font-size: 15.5px; color: #000000; line-height: 1.5; text-align: justify; margin-bottom: 10px; }
+
+        /* ── CORNER LOGO WATERMARK ───────────────────── */
+        .corner-mark-shape {
+            position: fixed; bottom: -18mm; right: -18mm; width: 100mm; height: 100mm;
+            border-radius: 50%; background: #1d4ed8; opacity: 0.035; pointer-events: none;
+        }
+        .corner-mark-logo { position: fixed; bottom: 6mm; right: 6mm; width: 62mm; pointer-events: none; }
+        .corner-mark-logo img { width: 100%; height: auto; opacity: 0.09; }
+
+        /* ── FOOTER ──────────────────────────────────── */
+        .page-footer-fixed {
+            position: fixed; bottom: 0; left: 0; right: 0;
+            background: rgba(29, 78, 216, 0.045); padding: 8px 32px 6px;
+        }
+        .invoice-footer { margin-top: 10px; padding-top: 10px; border-top: 1px solid #e5e7eb; display: table; width: 100%; }
+        .footer-left { display: table-cell; vertical-align: middle; width: 60%; }
+        .footer-right { display: table-cell; vertical-align: middle; text-align: right; width: 40%; }
+        .footer-brand { font-size: 16px; font-weight: 700; color: #000000; margin-bottom: 3px; }
+        .footer-sub { font-size: 14.5px; color: #000000; line-height: 1.7; }
+        .footer-ref-label { font-size: 13px; color: #000000; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 3px; }
+        .footer-ref-code { font-size: 16px; font-weight: 700; color: #1d4ed8; letter-spacing: 1px; }
+        .footer-timestamp { font-size: 13.5px; color: #000000; margin-top: 4px; }
+        .legal { text-align: center; font-size: 13.5px; color: #000000; margin-top: 8px; font-style: italic; }
+    </style>
+</head>
+<body>
+
+    @php
+        $cornerLogo = $settings['logo_black'] ?? $settings['logo_white'] ?? null;
+        $statusLabels = ['draft' => 'Draft', 'sent' => 'Sent', 'accepted' => 'Accepted', 'rejected' => 'Rejected', 'expired' => 'Expired'];
+        $effectiveStatus = $quotation->is_expired ? 'expired' : $quotation->status;
+    @endphp
+
+    <div class="corner-mark-shape"></div>
+    @if($cornerLogo)
+    <div class="corner-mark-logo">
+        <img src="{{ $cornerLogo }}" alt="">
+    </div>
+    @endif
+
+    {{-- FOOTER — fixed to the page bottom, on every page. --}}
+    <div class="page-footer-fixed">
+        <div class="invoice-footer">
+            <div class="footer-left">
+                <div class="footer-brand">{{ $settings['footer_brand'] ?? 'Gadget Revive Bangladesh Ltd.' }}</div>
+                <div class="footer-sub">
+                    {{ $settings['footer_address'] ?? 'House 12, Road 4, Block C, Bashundhara R/A, Dhaka - 1229' }}<br>
+                    Phone: {{ $settings['footer_phone'] ?? '+880 1800-000000' }} | Email: {{ $settings['footer_email'] ?? 'support@gadgetrevive.com' }}
+                </div>
+            </div>
+            <div class="footer-right">
+                <div class="footer-ref-label">Quotation Reference</div>
+                <div class="footer-ref-code">{{ $quotation->quotation_number }}</div>
+                <div class="footer-timestamp">Generated: {{ now()->format('d M Y, h:i A') }}</div>
+            </div>
+        </div>
+
+        <div class="legal">
+            This is a computer-generated quotation and does not require a physical signature.
+            &copy; {{ date('Y') }} {{ $settings['legal_entity'] ?? 'Gadget Revive Bangladesh Ltd.' }}. All rights reserved.
+        </div>
+    </div>
+
+<div class="page-bg">
+
+    {{-- ═══════════════════ HEADER ═══════════════════ --}}
+    <div class="invoice-header">
+        <div class="header-left">
+            <div class="brand-row">
+                <div class="brand-logo-cell">
+                    @if(!empty($settings['logo_white']))
+                        <img src="{{ $settings['logo_white'] }}" alt="logo">
+                    @else
+                        <div class="brand-monogram">GR</div>
+                    @endif
+                </div>
+                <div class="brand-text-cell">
+                    <div class="brand-name">{{ $settings['site_name'] ?? 'Gadget Revive' }}</div>
+                    @if(!empty($settings['site_tagline']))
+                        <div class="brand-motto">{{ $settings['site_tagline'] }}</div>
+                    @endif
+                </div>
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="company-contact">
+                <div class="cc-name">{{ $settings['footer_brand'] ?? 'Gadget Revive Bangladesh Ltd.' }}</div>
+                {{ $settings['address'] ?? '' }}<br>
+                Mobile: {{ $settings['phone'] ?? '' }}<br>
+                {{ $settings['email'] ?? '' }}
+                @if(!empty($settings['website'])) &nbsp;|&nbsp; {{ $settings['website'] }} @endif
+            </div>
+        </div>
+    </div>
+
+    {{-- ═══════════════════ META STRIPE ═══════════════════ --}}
+    <div class="meta-stripe">
+        <div class="stripe-cell">
+            <span class="lbl">Quotation No:</span> {{ $quotation->quotation_number }}
+            <span class="status-pill status-{{ $effectiveStatus }}">{{ $statusLabels[$effectiveStatus] ?? ucfirst($effectiveStatus) }}</span>
+        </div>
+        <div class="stripe-cell center">
+            <span class="doc-pill">QUOTATION</span>
+        </div>
+        <div class="stripe-cell right">
+            <span class="lbl">Date:</span> {{ $quotation->quotation_date->format('d/m/Y') }}
+        </div>
+    </div>
+
+    {{-- ═══════════════════ BODY ═══════════════════ --}}
+    <div class="body-wrap">
+
+        {{-- FROM / PREPARED FOR --}}
+        <div class="parties-table">
+            <div class="party-cell">
+                <div class="party-label">From</div>
+                <div class="party-name">{{ $settings['footer_brand'] ?? 'Gadget Revive Bangladesh Ltd.' }}</div>
+                <div class="party-detail">{{ $settings['address'] ?? '' }}</div>
+                <div class="party-detail"><strong>Mobile:</strong> {{ $settings['phone'] ?? '' }}</div>
+                <div class="party-detail"><strong>Email:</strong> {{ $settings['email'] ?? '' }}</div>
+            </div>
+            <div class="party-cell-right">
+                <div class="party-label">Prepared For</div>
+                <div class="party-name">{{ $quotation->customer_name ?? 'Valued Customer' }}</div>
+                @if($quotation->customer_phone)
+                <div class="party-detail"><strong>Mobile:</strong> {{ $quotation->customer_phone }}</div>
+                @endif
+                @if($quotation->customer_email)
+                <div class="party-detail"><strong>Email:</strong> {{ $quotation->customer_email }}</div>
+                @endif
+                @if($quotation->customer_address)
+                <div class="party-detail"><strong>Address:</strong> {{ $quotation->customer_address }}</div>
+                @endif
+            </div>
+        </div>
+
+        {{-- META INFO GRID --}}
+        <div class="meta-section">
+            <div class="meta-inner">
+                <div class="meta-item">
+                    <div class="meta-key">Quotation No</div>
+                    <div class="meta-value">{{ $quotation->quotation_number }}</div>
+                </div>
+                <div class="meta-item">
+                    <div class="meta-key">Issue Date</div>
+                    <div class="meta-value">{{ $quotation->quotation_date->format('d M Y') }}</div>
+                </div>
+                <div class="meta-item">
+                    <div class="meta-key">Valid Until</div>
+                    <div class="meta-value accent">{{ $quotation->valid_until ? $quotation->valid_until->format('d M Y') : '—' }}</div>
+                </div>
+            </div>
+        </div>
+
+        {{-- ITEMS TABLE --}}
+        <div class="items-section">
+            <div class="section-heading">Quoted Items</div>
+            <table class="items">
+                <thead>
+                    <tr class="thead-spacer"><td colspan="5"></td></tr>
+                    <tr>
+                        <th style="width:4%;">#</th>
+                        <th style="width:46%;">Item / Description</th>
+                        <th class="r" style="width:16%;">Unit Price (BDT)</th>
+                        <th class="c" style="width:8%;">Qty</th>
+                        <th class="r" style="width:18%;">Total (BDT)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @forelse($quotation->items as $index => $item)
+                    <tr>
+                        <td>{{ $index + 1 }}</td>
+                        <td class="bold">
+                            {{ $item['item_name'] }}
+                            @if(!empty($item['item_sku']))
+                            <div class="item-sub"><strong>SKU:</strong> {{ $item['item_sku'] }}</div>
+                            @endif
+                            @if(!empty($item['description']))
+                            <div class="item-sub">{{ $item['description'] }}</div>
+                            @endif
+                            @if(!empty($item['product_id']))
+                            <span class="catalog-tag">Catalog Item</span>
+                            @endif
+                        </td>
+                        <td class="r">{{ number_format($item['unit_price'], 2) }}</td>
+                        <td class="c">{{ $item['quantity'] }}</td>
+                        <td class="r bold">{{ number_format($item['total_price'], 2) }}</td>
+                    </tr>
+                    @empty
+                    <tr>
+                        <td colspan="5" style="text-align:center; color:#000000; padding:20px;">No items found.</td>
+                    </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+
+        {{-- TOTALS --}}
+        <div class="totals-section">
+            <div class="totals-spacer"></div>
+            <div class="totals-block">
+                <div class="totals-box">
+                    <div class="total-row">
+                        <div class="total-lbl">Subtotal</div>
+                        <div class="total-val">BDT {{ number_format($quotation->subtotal, 2) }}</div>
+                    </div>
+                    @if($quotation->tax > 0)
+                    <div class="total-row">
+                        <div class="total-lbl">Tax / VAT</div>
+                        <div class="total-val">BDT {{ number_format($quotation->tax, 2) }}</div>
+                    </div>
+                    @endif
+                    @if($quotation->shipping > 0)
+                    <div class="total-row">
+                        <div class="total-lbl">Shipping</div>
+                        <div class="total-val">BDT {{ number_format($quotation->shipping, 2) }}</div>
+                    </div>
+                    @endif
+                    @if($quotation->discount > 0)
+                    <div class="total-row">
+                        <div class="total-lbl">Discount</div>
+                        <div class="total-val">- BDT {{ number_format($quotation->discount, 2) }}</div>
+                    </div>
+                    @endif
+                    <div class="grand-total-row">
+                        <div class="grand-total-lbl">Total</div>
+                        <div class="grand-total-val">BDT {{ number_format($quotation->total, 2) }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{-- NOTES --}}
+        @if($quotation->notes)
+        <div class="notes-section">
+            <div class="notes-title">Notes</div>
+            <div class="notes-text">{{ $quotation->notes }}</div>
+        </div>
+        @endif
+
+        {{-- SIGNATURE + TERMS --}}
+        <div class="closing-block">
+            <div class="signature-section">
+                <div class="sig-cell">
+                    <div class="sig-line"></div>
+                    <div class="sig-label">Prepared By</div>
+                </div>
+                <div class="sig-cell">
+                    <div class="sig-line"></div>
+                    <div class="sig-label">Customer Approval</div>
+                </div>
+            </div>
+
+            @if($quotation->terms)
+            <div class="terms-banner">Terms &amp; Conditions</div>
+            <div class="terms-text">{{ $quotation->terms }}</div>
+            @endif
+        </div>
+
+    </div>{{-- /body-wrap --}}
+</div>{{-- /page-bg --}}
+</body>
+</html>
