@@ -15,14 +15,19 @@ class User extends Authenticatable
     use HasApiTokens, HasFactory, Notifiable, SoftDeletes, HasRoles;
 
     protected $fillable = [
+        'user_code',
         'name',
         'email',
         'phone',
         'password',
         'role',
         'status',
+        'email_verified_at',
         'phone_verification_code',
+        'phone_verification_expires_at',
         'phone_verified_at',
+        'password_reset_otp',
+        'password_reset_otp_expires_at',
         'avatar',
         'is_auto_created',
     ];
@@ -31,6 +36,9 @@ class User extends Authenticatable
         'password',
         'remember_token',
         'phone_verification_code',
+        'phone_verification_expires_at',
+        'password_reset_otp',
+        'password_reset_otp_expires_at',
     ];
 
     protected function casts(): array
@@ -38,9 +46,30 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'phone_verified_at' => 'datetime',
+            'phone_verification_expires_at' => 'datetime',
+            'password_reset_otp_expires_at' => 'datetime',
             'password' => 'hashed',
             'is_auto_created' => 'boolean',
         ];
+    }
+
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($user) {
+            if (empty($user->user_code)) {
+                $user->user_code = 'USR-PENDING';
+            }
+        });
+
+        static::created(function ($user) {
+            if ($user->user_code === 'USR-PENDING') {
+                $user->updateQuietly([
+                    'user_code' => 'USR-' . str_pad((string) $user->id, 5, '0', STR_PAD_LEFT),
+                ]);
+            }
+        });
     }
 
     /**

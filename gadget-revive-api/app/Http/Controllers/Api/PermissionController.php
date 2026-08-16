@@ -38,7 +38,7 @@ class PermissionController extends Controller
             'customer_reports' => 'Reports', 'catalog_reports' => 'Reports', 'review_reports' => 'Reports',
             'ticket_reports' => 'Reports',
             'audit_logs' => 'Audit Logs', 'purchases' => 'Purchases', 'purchase_orders' => 'Purchases',
-            'suppliers' => 'Purchases',
+            'suppliers' => 'Purchases', 'purchase_history' => 'Purchases', 'purchase_receipts' => 'Purchases',
             'accounts' => 'Accounts & Finance', 'ledger' => 'Accounts & Finance',
             'financial_statements' => 'Accounts & Finance', 'chart_of_accounts' => 'Accounts & Finance',
             'journal_entries' => 'Accounts & Finance', 'pending_ledger_items' => 'Accounts & Finance',

@@ -26,7 +26,7 @@ class Product extends Model
         'stock_qty',
         'low_stock_threshold',
         'always_in_stock',
-        'average_cost',
+        'current_cost',
         'unit',
         'image',
         'gallery',
@@ -34,6 +34,8 @@ class Product extends Model
         'brand',
         'model',
         'warranty',
+        'warranty_value',
+        'warranty_unit',
         'is_active',
         'is_draft',
         'is_featured',
@@ -47,7 +49,8 @@ class Product extends Model
         'stock_qty' => 'integer',
         'low_stock_threshold' => 'integer',
         'always_in_stock' => 'boolean',
-        'average_cost' => 'decimal:2',
+        'current_cost' => 'decimal:2',
+        'warranty_value' => 'integer',
         'gallery' => 'array',
         'specifications' => 'array',
         'is_active' => 'boolean',
@@ -103,6 +106,16 @@ class Product extends Model
     public function inventoryLogs()
     {
         return $this->hasMany(InventoryLog::class);
+    }
+
+    public function serials()
+    {
+        return $this->hasMany(ProductSerial::class);
+    }
+
+    public function availableSerials()
+    {
+        return $this->serials()->where('status', 'in_stock');
     }
 
     public function attributeValues()
@@ -191,21 +204,12 @@ class Product extends Model
     }
 
     /**
-     * Recompute the weighted-average cost as new stock arrives from a Purchase Order. Must be
-     * called with the quantity/cost of the *incoming* batch, before incrementStock() runs — the
-     * math needs stock_qty as it stood immediately before this receipt.
+     * Set the product's cost to the latest Purchase Order receipt price — always the most recent
+     * batch's unit cost, not a blend with whatever was on hand before.
      */
     public function recordPurchaseReceipt(int $qty, float $unitCost): void
     {
-        // Guard against negative stock (possible on always_in_stock items sold past zero) so it
-        // can't distort the average — treat "nothing on hand" as the floor for this calculation.
-        $currentQty = max(0, $this->stock_qty);
-        $currentValue = $currentQty * (float) ($this->average_cost ?? 0);
-        $newQty = $currentQty + $qty;
-
-        $this->average_cost = $newQty > 0
-            ? round(($currentValue + $qty * $unitCost) / $newQty, 2)
-            : $unitCost;
+        $this->current_cost = $unitCost;
         $this->save();
     }
 }

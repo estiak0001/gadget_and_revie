@@ -49,6 +49,16 @@ class OrderResource extends JsonResource
                 'status' => $this->serviceIntake->status,
                 'received_at' => $this->serviceIntake->received_at,
             ] : null),
+            // Purchase Order(s) manually created to source stock for this order — see
+            // PurchaseOrderController::store()'s optional order_id link.
+            'purchase_orders' => $this->whenLoaded('purchaseOrders', fn () => $this->purchaseOrders->map(fn ($po) => [
+                'id' => $po->id,
+                'po_number' => $po->po_number,
+                'status' => $po->status,
+                // Which of this order's products the PO actually covers — lets the frontend swap
+                // the "Create Purchase Order" icon for a status badge only on the lines it applies to.
+                'product_ids' => $po->relationLoaded('items') ? $po->items->pluck('product_id')->values() : [],
+            ])),
             'can_be_edited' => $this->canBeEdited(),
             'can_edit_items_and_pricing' => $this->canEditItemsAndPricing(),
             'requires_super_admin_to_amend' => $this->requiresSuperAdminToAmend(),

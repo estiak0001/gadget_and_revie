@@ -13,17 +13,17 @@ class PurchaseOrder extends Model
     use HasFactory, SoftDeletes;
 
     protected $fillable = [
-        'po_number', 'supplier_id', 'status', 'subtotal', 'tax', 'shipping_cost', 'total', 'paid_amount',
-        'expected_date', 'ordered_at', 'received_at', 'cancelled_at', 'notes', 'expense_id', 'created_by',
+        'po_number', 'supplier_id', 'order_id', 'status', 'subtotal', 'tax', 'shipping_cost', 'total', 'paid_amount',
+        'refund_received_amount', 'expected_date', 'ordered_at', 'received_at', 'cancelled_at', 'notes', 'expense_id', 'created_by',
     ];
 
     protected $casts = [
         'subtotal' => 'decimal:2', 'tax' => 'decimal:2', 'shipping_cost' => 'decimal:2', 'total' => 'decimal:2',
-        'paid_amount' => 'decimal:2',
+        'paid_amount' => 'decimal:2', 'refund_received_amount' => 'decimal:2',
         'expected_date' => 'date', 'ordered_at' => 'datetime', 'received_at' => 'datetime', 'cancelled_at' => 'datetime',
     ];
 
-    protected $appends = ['received_value', 'outstanding_payable', 'unposted_received_value', 'payment_status'];
+    protected $appends = ['received_value', 'returned_value', 'outstanding_payable', 'refund_due_from_supplier', 'unposted_received_value', 'payment_status'];
 
     protected static function boot()
     {
@@ -45,6 +45,12 @@ class PurchaseOrder extends Model
     public function supplier(): BelongsTo
     {
         return $this->belongsTo(Supplier::class);
+    }
+
+    /** The order this PO was created to fulfill, if it was linked that way — optional, manual link. */
+    public function order(): BelongsTo
+    {
+        return $this->belongsTo(Order::class);
     }
 
     public function items(): HasMany
@@ -88,10 +94,32 @@ class PurchaseOrder extends Model
         return (float) $this->items->sum(fn (PurchaseOrderItem $item) => $item->received_qty * $item->unit_cost);
     }
 
-    /** How much of the received value is still unpaid to the supplier. */
+    /** Total value of received goods since sent back to the supplier. */
+    public function getReturnedValueAttribute(): float
+    {
+        return (float) $this->items->sum(fn (PurchaseOrderItem $item) => $item->returned_qty * $item->unit_cost);
+    }
+
+    /**
+     * How much of the received value is still unpaid to the supplier, net of anything returned.
+     * Floored at 0 — once returns exceed what's left owed, the excess is a refund *due from* the
+     * supplier (see getRefundDueFromSupplierAttribute()), not a negative payable.
+     *
+     * `refund_received_amount` is added back in: once a refund has actually been collected back
+     * in cash (returnToSupplier()'s collect_refund_now path), the net-owed balance moves back
+     * toward (or past) zero exactly as if that cash were a payment — without this, a fully
+     * cash-settled return would still show as a standing refund_due forever.
+     */
     public function getOutstandingPayableAttribute(): float
     {
-        return round($this->received_value - (float) $this->paid_amount, 2);
+        return max(0, round($this->received_value - $this->returned_value - (float) $this->paid_amount + (float) $this->refund_received_amount, 2));
+    }
+
+    /** The flip side of outstanding_payable — set when returns push net-owed below zero, net of
+     *  whatever portion of that refund has already been collected back in cash (see above). */
+    public function getRefundDueFromSupplierAttribute(): float
+    {
+        return max(0, round($this->returned_value - ($this->received_value - (float) $this->paid_amount) - (float) $this->refund_received_amount, 2));
     }
 
     public function canPay(): bool
@@ -100,13 +128,13 @@ class PurchaseOrder extends Model
     }
 
     /**
-     * Supplier payment status derived from what's actually owed for goods
-     * received so far (not the full PO total — you don't owe for stock that
-     * hasn't arrived yet). One of: unpaid, partial, paid.
+     * Supplier payment status derived from what's actually owed for goods received so far, net
+     * of anything since returned (not the full PO total — you don't owe for stock that hasn't
+     * arrived, or that went back). One of: unpaid, partial, paid.
      */
     public function getPaymentStatusAttribute(): string
     {
-        $received = $this->received_value;
+        $received = $this->received_value - $this->returned_value;
         $paid = (float) $this->paid_amount;
 
         if ($received <= 0) {

@@ -88,7 +88,7 @@ class PublicController extends BaseController
     public function settings(): JsonResponse
     {
         $settings = SiteSetting::where('is_public', true)
-            ->orWhereIn('group', ['general', 'contact', 'social', 'topbar', 'homepage', 'footer'])
+            ->orWhereIn('group', ['general', 'contact', 'social', 'topbar', 'homepage', 'footer', 'seo'])
             ->get()
             ->mapWithKeys(function ($setting) {
                 return [$setting->key => $setting->getTypedValue()];
@@ -105,7 +105,7 @@ class PublicController extends BaseController
         $setting = SiteSetting::where('key', $key)
             ->where(function ($q) {
                 $q->where('is_public', true)
-                    ->orWhereIn('group', ['general', 'contact', 'social', 'topbar', 'homepage', 'footer']);
+                    ->orWhereIn('group', ['general', 'contact', 'social', 'topbar', 'homepage', 'footer', 'seo']);
             })
             ->first();
 

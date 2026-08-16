@@ -28,6 +28,7 @@ use App\Models\Notification;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
+use App\Models\ProductSerial;
 use App\Models\ProductBrand;
 use App\Models\Review;
 use App\Models\Service;
@@ -733,7 +734,14 @@ class AdminController extends BaseController
             'items.*.item_sku'   => 'nullable|string|max:100',
             'items.*.quantity'   => 'required|integer|min:1',
             'items.*.unit_price' => 'required|numeric|min:0',
+            'items.*.cost_price' => 'nullable|numeric|min:0',
+            'items.*.warranty_value' => 'nullable|integer|min:0',
+            'items.*.warranty_unit'  => 'nullable|in:day,week,month,year',
             'items.*.notes'      => 'nullable|string|max:500',
+            // Which specific in-stock unit(s) of the product are being sold — optional, since
+            // not every product is individually serialized.
+            'items.*.serials'    => 'nullable|array',
+            'items.*.serials.*'  => 'nullable|string|max:191',
         ]);
 
         $admin = $request->user();
@@ -812,7 +820,11 @@ class AdminController extends BaseController
                 // 'custom' items are stored as item_type 'product' with no product_id
                 $itemType = $item['item_type'] === 'custom' ? 'product' : $item['item_type'];
 
-                OrderItem::create([
+                $product = ($itemType === 'product' && !empty($item['product_id']))
+                    ? Product::find($item['product_id'])
+                    : null;
+
+                $newItem = OrderItem::create([
                     'order_id'    => $order->id,
                     'item_type'   => $itemType,
                     'product_id'  => $item['product_id'] ?? null,
@@ -821,6 +833,15 @@ class AdminController extends BaseController
                     'item_sku'    => $item['item_sku'] ?? null,
                     'quantity'    => $item['quantity'],
                     'unit_price'  => $item['unit_price'],
+                    // Admin can override the cost per line in the order form; otherwise snapshot
+                    // the product's current cost at the moment of sale so this order's margin
+                    // stays accurate even if the product is repriced later.
+                    'cost_price'  => $item['cost_price'] ?? $product?->current_cost ?? 0,
+                    // The customer-facing warranty for this sale — defaults from the product's
+                    // own warranty, but can be overridden per line (e.g. an extended-warranty
+                    // upsell, or a display unit sold "as-is" with none).
+                    'warranty_value' => $item['warranty_value'] ?? $product?->warranty_value,
+                    'warranty_unit'  => $item['warranty_unit'] ?? $product?->warranty_unit,
                     'total_price' => $item['unit_price'] * $item['quantity'],
                     'notes'       => $item['notes'] ?? null,
                 ]);
@@ -828,12 +849,11 @@ class AdminController extends BaseController
                 // Sale reduces stock; cancel/refund restore it (see restockOrderItems), so this
                 // side must actually run for that restock to mean anything instead of inflating
                 // stock above reality. 'custom' charges have no product_id — nothing to decrement.
-                if ($itemType === 'product' && !empty($item['product_id'])) {
-                    $product = Product::find($item['product_id']);
-                    if ($product) {
-                        InventoryLog::logChange($product, 'sale', $item['quantity'], $order, 'Manual order created by admin', $admin);
-                        $product->decrementStock($item['quantity']);
-                    }
+                if ($product) {
+                    InventoryLog::logChange($product, 'sale', $item['quantity'], $order, 'Manual order created by admin', $admin);
+                    $product->decrementStock($item['quantity']);
+
+                    $this->attachSerialsToOrderItem($newItem, $item['product_id'], $item['serials'] ?? [], $admin->id);
                 }
             }
 
@@ -896,6 +916,11 @@ class AdminController extends BaseController
         // Filter by customer
         if ($request->has('customer_id')) {
             $query->where('customer_id', $request->customer_id);
+        }
+
+        // Filter by whether a Purchase Order has been linked to source stock for this order
+        if ($request->has('has_purchase_order')) {
+            $query->{$request->boolean('has_purchase_order') ? 'whereHas' : 'whereDoesntHave'}('purchaseOrders');
         }
 
         // Date range
@@ -1662,6 +1687,7 @@ class AdminController extends BaseController
             'items.product',
             'items.service',
             'items.costs',
+            'items.serials',
             'paymentNotices',
             'review',
             'division',
@@ -1670,6 +1696,7 @@ class AdminController extends BaseController
             'tickets',
             'serviceIntake.items',
             'creator:id,name',
+            'purchaseOrders.items:id,purchase_order_id,product_id',
         ])->findOrFail($id);
 
         return $this->success(new OrderResource($order));
@@ -1733,7 +1760,12 @@ class AdminController extends BaseController
                 'items.*.item_sku'   => 'nullable|string|max:100',
                 'items.*.quantity'   => 'required|integer|min:1',
                 'items.*.unit_price' => 'required|numeric|min:0',
+                'items.*.cost_price' => 'nullable|numeric|min:0',
+                'items.*.warranty_value' => 'nullable|integer|min:0',
+                'items.*.warranty_unit'  => 'nullable|in:day,week,month,year',
                 'items.*.notes'      => 'nullable|string|max:500',
+                'items.*.serials'    => 'nullable|array',
+                'items.*.serials.*'  => 'nullable|string|max:191',
             ];
         }
 
@@ -1803,12 +1835,17 @@ class AdminController extends BaseController
                     if ($oldItem->item_type === 'product' && $oldItem->product) {
                         InventoryLog::logChange($oldItem->product, 'return', $oldItem->quantity, $order, 'Order edited by admin — item replaced', $admin);
                         $oldItem->product->incrementStock($oldItem->quantity);
+                        $this->releaseSerialsForOrderItem($oldItem);
                     }
                 }
 
                 $order->items()->delete();
                 foreach ($data['items'] as $item) {
                     $itemType = $item['item_type'] === 'custom' ? 'product' : $item['item_type'];
+                    $product = ($itemType === 'product' && !empty($item['product_id']))
+                        ? Product::find($item['product_id'])
+                        : null;
+
                     $newItem = OrderItem::create([
                         'order_id'    => $order->id,
                         'item_type'   => $itemType,
@@ -1818,16 +1855,17 @@ class AdminController extends BaseController
                         'item_sku'    => $item['item_sku'] ?? null,
                         'quantity'    => $item['quantity'],
                         'unit_price'  => $item['unit_price'],
+                        'cost_price'  => $item['cost_price'] ?? $product?->current_cost ?? 0,
+                        'warranty_value' => $item['warranty_value'] ?? $product?->warranty_value,
+                        'warranty_unit'  => $item['warranty_unit'] ?? $product?->warranty_unit,
                         'total_price' => $item['unit_price'] * $item['quantity'],
                         'notes'       => $item['notes'] ?? null,
                     ]);
 
-                    if ($itemType === 'product' && !empty($item['product_id'])) {
-                        $product = Product::find($item['product_id']);
-                        if ($product) {
-                            InventoryLog::logChange($product, 'sale', $item['quantity'], $order, 'Order edited by admin', $admin);
-                            $product->decrementStock($item['quantity']);
-                        }
+                    if ($product) {
+                        InventoryLog::logChange($product, 'sale', $item['quantity'], $order, 'Order edited by admin', $admin);
+                        $product->decrementStock($item['quantity']);
+                        $this->attachSerialsToOrderItem($newItem, $item['product_id'], $item['serials'] ?? [], $admin->id);
                     }
 
                     $key = $itemType . '|' . ($item['product_id'] ?? null) . '|' . ($item['service_id'] ?? null) . '|' . $item['item_name'];
@@ -1886,8 +1924,70 @@ class AdminController extends BaseController
                     $admin
                 );
                 $item->product->incrementStock($item->quantity);
+                $this->releaseSerialsForOrderItem($item);
             }
         }
+    }
+
+    /**
+     * Mark the given serial numbers of a product as sold under this order item. A serial that
+     * doesn't exist yet for this product is recorded now rather than rejected — product_serials
+     * is an identity layer on top of stock_qty (the real source of truth for available quantity),
+     * not a gate on it, so this covers legacy stock or any unit whose serial was never captured
+     * at receiving time. Throws only when the serial exists but is already sold/otherwise
+     * unavailable — caught by the calling method's transaction, which rolls back cleanly rather
+     * than leaving the order half-created.
+     */
+    private function attachSerialsToOrderItem(OrderItem $item, int $productId, array $serials, ?int $addedBy = null): void
+    {
+        $serials = array_values(array_filter(array_map('trim', $serials)));
+
+        if (empty($serials)) {
+            // No serials were explicitly named for this line. Leaving it at that silently means
+            // every serial for this product keeps claiming to be `in_stock` even though the
+            // caller has already decremented the product's *aggregate* stock count for this sale
+            // — the two drift out of sync, and (worse) a since-sold unit can still pass every
+            // "is this available to return to the supplier" check on the purchase-order side,
+            // since that only ever looks at per-serial status. Confirmed in production: a manual
+            // order sold a serialized product with no serial picked, and the untouched serial
+            // was later returned to the supplier while still legitimately out with that customer.
+            // Best-effort auto-pick the oldest in-stock serial(s) instead — same fallback
+            // PurchaseOrderController::returnToSupplier() already uses when nothing specific was
+            // named. A shortfall isn't an error here: some stock legitimately predates serial
+            // tracking (backfilled manually), so this product may not be fully serialized.
+            $available = ProductSerial::where('product_id', $productId)->where('status', 'in_stock')
+                ->oldest('id')->take($item->quantity)->get();
+            foreach ($available as $record) {
+                $record->update(['status' => 'sold', 'order_item_id' => $item->id]);
+            }
+            return;
+        }
+
+        foreach ($serials as $serial) {
+            $record = ProductSerial::where('product_id', $productId)->where('serial_number', $serial)->first();
+
+            if ($record && $record->status !== 'in_stock') {
+                throw new \RuntimeException("Serial number \"{$serial}\" has already been sold and can't be used again.");
+            }
+
+            if ($record) {
+                $record->update(['status' => 'sold', 'order_item_id' => $item->id]);
+            } else {
+                ProductSerial::create([
+                    'product_id' => $productId,
+                    'serial_number' => $serial,
+                    'status' => 'sold',
+                    'order_item_id' => $item->id,
+                    'added_by' => $addedBy,
+                ]);
+            }
+        }
+    }
+
+    /** Reverts every serial sold under this order item back to in-stock — the inverse of attachSerialsToOrderItem(). */
+    private function releaseSerialsForOrderItem(OrderItem $item): void
+    {
+        ProductSerial::where('order_item_id', $item->id)->update(['status' => 'in_stock', 'order_item_id' => null]);
     }
 
     /**
@@ -1968,6 +2068,9 @@ class AdminController extends BaseController
                 "/orders/{$order->id}"
             );
         }
+        // SMS for a status change is sent manually — see orderSendStatusSms() — not
+        // automatically here, same reasoning as delivery/due SMS: the admin decides whether and
+        // when the customer should be texted about it, not every status click.
 
         // Notify vendor
         if ($order->vendorProfile && $order->vendorProfile->user) {
@@ -1982,6 +2085,124 @@ class AdminController extends BaseController
         }
 
         return $this->success(new OrderResource($order->fresh()), 'Order status updated');
+    }
+
+    /**
+     * Manually notify the customer their order has been delivered. Deliberately a standalone
+     * button rather than tied to any order_status transition — there's no 'delivered' status in
+     * this system, and delivery is a real-world event only the admin actually knows happened.
+     */
+    public function orderSendDeliveredSms(Request $request, int $id, \App\Services\SmsService $sms): JsonResponse
+    {
+        $order = Order::findOrFail($id);
+        $admin = $request->user();
+
+        if (!$order->customer_phone) {
+            return $this->error('This order has no customer phone number to send to.', 422);
+        }
+
+        if (!$sms->shouldSendOrderUpdates()) {
+            return $this->error('Order SMS is currently disabled — enable it under SMS Center > Order & Billing.', 422);
+        }
+
+        $ok = $sms->sendOrderDelivered($order->customer_phone, $order->order_number, $order->id);
+
+        if (!$ok) {
+            return $this->error('Failed to send the delivery SMS. Check the SMS log for details.', 422);
+        }
+
+        AuditLog::log($admin, 'send_order_delivered_sms', 'Order', $order->id, null, [
+            'phone' => $order->customer_phone,
+        ], "Delivery SMS sent for order #{$order->order_number}");
+
+        return $this->success(null, 'Delivery SMS sent.');
+    }
+
+    /**
+     * Manually notify the customer about the order's current status. Not tied to the status
+     * update itself — an admin can change status several times before deciding it's worth
+     * texting about, or never at all.
+     */
+    public function orderSendStatusSms(Request $request, int $id, \App\Services\SmsService $sms): JsonResponse
+    {
+        $order = Order::findOrFail($id);
+        $admin = $request->user();
+
+        if (!$order->customer_phone) {
+            return $this->error('This order has no customer phone number to send to.', 422);
+        }
+
+        if (!$sms->shouldSendOrderUpdates()) {
+            return $this->error('Order SMS is currently disabled — enable it under SMS Center > Order & Billing.', 422);
+        }
+
+        $ok = $sms->sendOrderStatusChanged($order->customer_phone, $order->order_number, $order->order_status, $order->id);
+
+        if (!$ok) {
+            return $this->error('Failed to send the status SMS. Check the SMS log for details.', 422);
+        }
+
+        AuditLog::log($admin, 'send_order_status_sms', 'Order', $order->id, null, [
+            'phone' => $order->customer_phone, 'status' => $order->order_status,
+        ], "Status SMS sent for order #{$order->order_number}");
+
+        return $this->success(null, 'Status SMS sent.');
+    }
+
+    /** Manually remind the customer about an outstanding balance on this order. */
+    public function orderSendDueSms(Request $request, int $id, \App\Services\SmsService $sms): JsonResponse
+    {
+        $order = Order::findOrFail($id);
+        $admin = $request->user();
+
+        if (!$order->customer_phone) {
+            return $this->error('This order has no customer phone number to send to.', 422);
+        }
+
+        if ($order->outstanding_receivable <= 0) {
+            return $this->error('This order has no outstanding balance.', 422);
+        }
+
+        if (!$sms->shouldSendOrderUpdates()) {
+            return $this->error('Order SMS is currently disabled — enable it under SMS Center > Order & Billing.', 422);
+        }
+
+        $ok = $sms->sendPaymentDueReminder($order->customer_phone, $order->order_number, number_format($order->outstanding_receivable, 2), $order->id);
+
+        if (!$ok) {
+            return $this->error('Failed to send the due SMS. Check the SMS log for details.', 422);
+        }
+
+        AuditLog::log($admin, 'send_order_due_sms', 'Order', $order->id, null, [
+            'phone' => $order->customer_phone, 'amount_due' => $order->outstanding_receivable,
+        ], "Due SMS sent for order #{$order->order_number}");
+
+        return $this->success(null, 'Due SMS sent.');
+    }
+
+    /**
+     * Renders the exact text one of the manual order SMS buttons would send, without sending it
+     * — powers the confirmation modal's preview so an admin can see what a customer will receive
+     * before committing to it. Reuses the same SmsService build*Message() helpers the real send
+     * calls, so the preview can never drift from what actually goes out.
+     */
+    public function orderPreviewSms(Request $request, int $id, \App\Services\SmsService $sms): JsonResponse
+    {
+        $request->validate(['type' => 'required|in:status,delivered,due']);
+
+        $order = Order::findOrFail($id);
+
+        if (!$order->customer_phone) {
+            return $this->error('This order has no customer phone number to send to.', 422);
+        }
+
+        $message = match ($request->type) {
+            'status'    => $sms->buildOrderStatusMessage($order->order_number, $order->order_status),
+            'delivered' => $sms->buildOrderDeliveredMessage($order->order_number),
+            'due'       => $sms->buildPaymentDueMessage($order->order_number, number_format($order->outstanding_receivable, 2)),
+        };
+
+        return $this->success(['phone' => $order->customer_phone, 'message' => $message]);
     }
 
     /**
@@ -2920,6 +3141,7 @@ class AdminController extends BaseController
             'attributeValues.attribute',
             'attributeValues.attributeValue',
             'creator:id,name',
+            'serials' => fn ($q) => $q->latest(),
         ])->findOrFail($id);
 
         return $this->success(new ProductResource($product));
@@ -2944,7 +3166,7 @@ class AdminController extends BaseController
             'stock_qty' => 'required|integer|min:0',
             'low_stock_threshold' => 'nullable|integer|min:0',
             'always_in_stock' => 'nullable',
-            'average_cost' => 'nullable|numeric|min:0',
+            'current_cost' => 'nullable|numeric|min:0',
             'unit' => 'nullable|string|max:50',
             'image' => 'nullable|image|max:4096',
             'gallery' => 'nullable|array',
@@ -2954,6 +3176,8 @@ class AdminController extends BaseController
             'brand' => 'nullable|string|max:255', // Deprecated, use brand_id
             'model' => 'nullable|string|max:255',
             'warranty' => 'nullable|string|max:255',
+            'warranty_value' => 'nullable|integer|min:0',
+            'warranty_unit' => 'nullable|in:day,week,month,year',
             'is_active' => 'nullable',
             'is_draft' => 'nullable',
             'is_featured' => 'nullable',
@@ -2965,8 +3189,8 @@ class AdminController extends BaseController
         $data = $request->only([
             'vendor_profile_id', 'category_id', 'brand_id', 'sku', 'name', 'name_bn',
             'description', 'short_description', 'price', 'discount_price',
-            'stock_qty', 'low_stock_threshold', 'average_cost', 'unit', 'brand', 'model',
-            'warranty', 'is_active', 'is_featured', 'sort_order',
+            'stock_qty', 'low_stock_threshold', 'current_cost', 'unit', 'brand', 'model',
+            'warranty', 'warranty_value', 'warranty_unit', 'is_active', 'is_featured', 'sort_order',
         ]);
         // New products default to "always in stock" — most items here are effectively
         // made-to-order/replenished-on-demand, so untracked availability is the norm rather
@@ -3039,7 +3263,7 @@ class AdminController extends BaseController
             'stock_qty' => 'sometimes|integer|min:0',
             'low_stock_threshold' => 'nullable|integer|min:0',
             'always_in_stock' => 'nullable',
-            'average_cost' => 'nullable|numeric|min:0',
+            'current_cost' => 'nullable|numeric|min:0',
             'unit' => 'nullable|string|max:50',
             'image' => 'nullable|image|max:4096',
             'gallery' => 'nullable|array',
@@ -3049,6 +3273,8 @@ class AdminController extends BaseController
             'brand' => 'nullable|string|max:255', // Deprecated, use brand_id
             'model' => 'nullable|string|max:255',
             'warranty' => 'nullable|string|max:255',
+            'warranty_value' => 'nullable|integer|min:0',
+            'warranty_unit' => 'nullable|in:day,week,month,year',
             'is_active' => 'nullable',
             'is_featured' => 'nullable',
             'sort_order' => 'nullable|integer',
@@ -3062,8 +3288,8 @@ class AdminController extends BaseController
         $data = $request->only([
             'vendor_profile_id', 'category_id', 'brand_id', 'sku', 'name', 'name_bn',
             'description', 'short_description', 'price', 'discount_price',
-            'stock_qty', 'low_stock_threshold', 'average_cost', 'unit', 'brand', 'model',
-            'warranty', 'is_active', 'is_featured', 'sort_order',
+            'stock_qty', 'low_stock_threshold', 'current_cost', 'unit', 'brand', 'model',
+            'warranty', 'warranty_value', 'warranty_unit', 'is_active', 'is_featured', 'sort_order',
         ]);
 
         // Handle main image upload
@@ -3262,6 +3488,71 @@ class AdminController extends BaseController
         ], 'Product featured status toggled');
 
         return $this->success(new ProductResource($product->fresh(['category', 'vendorProfile', 'brand'])), $product->is_featured ? 'Product marked as featured' : 'Product removed from featured');
+    }
+
+    /**
+     * List a product's serial numbers (used by the order form's "pick a unit" selector, and by
+     * the product edit screen to show what's already recorded).
+     */
+    public function adminProductSerials(int $id): JsonResponse
+    {
+        $product = Product::findOrFail($id);
+
+        // Only in-stock units — this feeds the order form's "pick a unit to sell" selector, so an
+        // already-sold serial must never show up here as pickable again.
+        $serials = $product->availableSerials()->latest()->get(['id', 'serial_number', 'status', 'created_at']);
+
+        return $this->success($serials);
+    }
+
+    /**
+     * Manually attach serial number(s) to a product's existing stock — for backfilling units
+     * that were received before serial tracking existed (no purchase_order_item_id provenance).
+     * Capped at the product's current stock_qty minus serials already recorded as in_stock, so
+     * this can only ever identify units that are genuinely already counted in stock, never inflate
+     * it.
+     */
+    public function adminProductAddSerials(Request $request, int $id): JsonResponse
+    {
+        $product = Product::findOrFail($id);
+        $admin = $request->user();
+
+        $data = $request->validate([
+            'serials' => 'required|array|min:1',
+            'serials.*' => 'required|string|max:191',
+        ]);
+
+        $serials = array_values(array_unique(array_filter(array_map('trim', $data['serials']))));
+        if (empty($serials)) {
+            return $this->error('No valid serial numbers provided.', 422);
+        }
+
+        $alreadyRecorded = $product->availableSerials()->count();
+        $unserializedRoom = max(0, $product->stock_qty - $alreadyRecorded);
+        if (count($serials) > $unserializedRoom) {
+            return $this->error(
+                "Only {$unserializedRoom} unit(s) of this product's stock don't have a serial recorded yet — can't add " . count($serials) . '.',
+                422
+            );
+        }
+
+        foreach ($serials as $serial) {
+            if (ProductSerial::where('product_id', $product->id)->where('serial_number', $serial)->exists()) {
+                return $this->error("Serial number \"{$serial}\" already exists for this product.", 422);
+            }
+        }
+
+        foreach ($serials as $serial) {
+            $product->serials()->create([
+                'serial_number' => $serial,
+                'status' => 'in_stock',
+                'added_by' => $admin->id,
+            ]);
+        }
+
+        AuditLog::log($admin, 'add_product_serials', 'Product', $product->id, null, ['serials' => $serials], 'Serial numbers added to existing stock');
+
+        return $this->success($product->serials()->latest()->get(['id', 'serial_number', 'status', 'created_at']), 'Serial numbers added');
     }
 
     // ========== PRODUCT BRANDS ==========

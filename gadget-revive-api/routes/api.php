@@ -23,6 +23,8 @@ use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\ServiceController;
 use App\Http\Controllers\Api\ExpenseController;
 use App\Http\Controllers\Api\ServiceIntakeController;
+use App\Http\Controllers\Api\SmsCampaignController;
+use App\Http\Controllers\Api\SmsConnectionController;
 use App\Http\Controllers\Api\SupplierController;
 use App\Http\Controllers\Api\TicketController;
 use App\Http\Controllers\Api\InvoiceController;
@@ -52,10 +54,15 @@ Route::prefix('auth')->group(function () {
     Route::post('/register/vendor', [AuthController::class, 'registerVendor']);
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+    Route::post('/resend-reset-otp', [AuthController::class, 'resendResetOtp']);
     Route::post('/reset-password', [AuthController::class, 'resetPassword']);
     Route::post('/verify-email', [AuthController::class, 'verifyEmail']);
     Route::post('/verify-phone', [AuthController::class, 'verifyPhone']);
+    Route::post('/resend-otp', [AuthController::class, 'resendOtp']);
     Route::post('/resend-verification', [AuthController::class, 'resendVerification']);
+    // Public, unauthenticated — captures a registration attempt in progress even if it never
+    // completes (see AuthController::captureLead).
+    Route::post('/capture-lead', [AuthController::class, 'captureLead']);
 });
 
 // Locations (Bangladesh administrative: divisions / districts / areas)
@@ -226,6 +233,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::get('/{id}/download', [InvoiceController::class, 'download']);
             Route::get('/{id}/stream', [InvoiceController::class, 'stream']);
             Route::post('/{id}/send', [InvoiceController::class, 'sendEmail']);
+            Route::get('/{id}/money-receipt/download', [InvoiceController::class, 'moneyReceiptDownload']);
+            Route::get('/{id}/money-receipt/stream', [InvoiceController::class, 'moneyReceiptStream']);
+            Route::get('/{id}/delivery-chalan/download', [InvoiceController::class, 'deliveryChalanDownload']);
+            Route::get('/{id}/delivery-chalan/stream', [InvoiceController::class, 'deliveryChalanStream']);
         });
 
         // Reviews (Customer)
@@ -362,6 +373,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::get('/{id}', [AdminController::class, 'orderShow'])->middleware('permission:view_orders,manage_orders,process_orders');
             Route::put('/{id}', [AdminController::class, 'orderUpdate'])->middleware('permission:view_orders,manage_orders,process_orders,amend_paid_orders');
             Route::put('/{id}/status', [AdminController::class, 'orderUpdateStatus'])->middleware('permission:view_orders,manage_orders,process_orders');
+            Route::post('/{id}/send-delivered-sms', [AdminController::class, 'orderSendDeliveredSms'])->middleware('permission:view_orders,manage_orders,process_orders');
+            Route::post('/{id}/send-status-sms', [AdminController::class, 'orderSendStatusSms'])->middleware('permission:view_orders,manage_orders,process_orders');
+            Route::post('/{id}/send-due-sms', [AdminController::class, 'orderSendDueSms'])->middleware('permission:view_orders,manage_orders,process_orders');
+            Route::get('/{id}/sms-preview', [AdminController::class, 'orderPreviewSms'])->middleware('permission:view_orders,manage_orders,process_orders');
             Route::post('/{id}/refund', [AdminController::class, 'orderRefund'])->middleware('permission:view_orders,manage_orders,process_orders,refund_orders');
             Route::post('/{id}/record-payment', [AdminController::class, 'orderRecordPayment'])->middleware('permission:view_orders,manage_orders,process_orders');
             Route::post('/{id}/correct-payment', [AdminController::class, 'orderCorrectPayment'])->middleware('permission:view_orders,manage_orders,process_orders,correct_payment_amounts');
@@ -373,9 +388,15 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::get('/{id}/download', [InvoiceController::class, 'download'])->middleware('permission:view_orders,manage_orders,process_orders');
             Route::get('/{id}/stream', [InvoiceController::class, 'stream'])->middleware('permission:view_orders,manage_orders,process_orders');
             Route::post('/{id}/send', [InvoiceController::class, 'sendEmail'])->middleware('permission:view_orders,manage_orders,process_orders');
+            Route::get('/{id}/money-receipt/download', [InvoiceController::class, 'moneyReceiptDownload'])->middleware('permission:view_orders,manage_orders,process_orders');
+            Route::get('/{id}/money-receipt/stream', [InvoiceController::class, 'moneyReceiptStream'])->middleware('permission:view_orders,manage_orders,process_orders');
+            Route::get('/{id}/delivery-chalan/download', [InvoiceController::class, 'deliveryChalanDownload'])->middleware('permission:view_orders,manage_orders,process_orders');
+            Route::get('/{id}/delivery-chalan/stream', [InvoiceController::class, 'deliveryChalanStream'])->middleware('permission:view_orders,manage_orders,process_orders');
             Route::get('/custom/{id}/download', [InvoiceController::class, 'customDownload'])->middleware('permission:view_orders,manage_orders,process_orders');
             Route::get('/{orderId}/custom', [InvoiceController::class, 'customIndex'])->middleware('permission:view_orders,manage_orders,process_orders');
             Route::post('/{orderId}/custom', [InvoiceController::class, 'customStore'])->middleware('permission:view_orders,manage_orders,process_orders,create_custom_invoices');
+            Route::post('/custom/{id}/send-sms', [InvoiceController::class, 'customSendSms'])->middleware('permission:view_orders,manage_orders,process_orders,create_custom_invoices');
+            Route::get('/custom/{id}/sms-preview', [InvoiceController::class, 'customPreviewSms'])->middleware('permission:view_orders,manage_orders,process_orders,create_custom_invoices');
         });
 
         // Service Intakes (device received → receipt → convert to order) — old 5-way OR kept
@@ -546,6 +567,24 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::post('/api-keys/regenerate', [AdminController::class, 'settingsRegenerateApiKey'])->middleware('permission:manage_settings,regenerate_api_keys');
         });
 
+        // SMS — Settings > SMS tab only builds/tests connections (below); which connection each
+        // purpose (OTP, order updates, campaigns) actually uses, plus message templates, is
+        // configured on the dedicated SMS Center page instead (same permission either way).
+        Route::prefix('sms')->middleware('permission:manage_settings')->group(function () {
+            Route::get('/connections', [SmsConnectionController::class, 'index']);
+            Route::post('/connections', [SmsConnectionController::class, 'store']);
+            Route::put('/connections/{id}', [SmsConnectionController::class, 'update']);
+            Route::delete('/connections/{id}', [SmsConnectionController::class, 'destroy']);
+            Route::post('/connections/test', [SmsConnectionController::class, 'test']);
+            Route::get('/connections/{id}/balance', [SmsConnectionController::class, 'balance']);
+            Route::get('/logs', [SmsConnectionController::class, 'logs']);
+            Route::get('/usage', [SmsConnectionController::class, 'usage']);
+
+            Route::get('/campaigns', [SmsCampaignController::class, 'index']);
+            Route::post('/campaigns', [SmsCampaignController::class, 'store']);
+            Route::get('/campaigns/recipients-count', [SmsCampaignController::class, 'recipientsCount']);
+        });
+
         // Products Management (Admin) — manage_products stays as a full-module master key on
         // every route. create/edit/delete_products and manage_inventory now actually mean only
         // their own action (previously bundled into one OR covering all 9 routes, so e.g.
@@ -561,6 +600,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::delete('/{id}', [AdminController::class, 'adminProductDelete'])->middleware('permission:manage_products,delete_products');
             Route::put('/{id}/toggle-status', [AdminController::class, 'adminProductToggleStatus'])->middleware('permission:manage_products,toggle_product_status');
             Route::put('/{id}/toggle-featured', [AdminController::class, 'adminProductToggleFeatured'])->middleware('permission:manage_products,toggle_product_featured');
+            Route::get('/{id}/serials', [AdminController::class, 'adminProductSerials'])->middleware('permission:manage_products,view_products,manage_inventory');
+            Route::post('/{id}/serials', [AdminController::class, 'adminProductAddSerials'])->middleware('permission:manage_products,edit_products,manage_inventory');
         });
 
         // Product Brands Management (Admin) — grouped under "Categories" in the sidebar; read
@@ -648,14 +689,21 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::prefix('purchases')->group(function () {
             Route::get('/', [PurchaseOrderController::class, 'index'])->middleware('permission:manage_purchases,view_purchases,manage_suppliers');
             Route::post('/', [PurchaseOrderController::class, 'store'])->middleware('permission:manage_purchases,view_purchases,manage_suppliers');
+            // Must come before the /{id} wildcard below, or "product-history"/"serial-history" would be parsed as an id.
+            Route::get('/product-history', [PurchaseOrderController::class, 'productHistory'])->middleware('permission:manage_purchases,view_purchases,manage_suppliers,view_purchase_history');
+            Route::get('/serial-history', [PurchaseOrderController::class, 'serialHistory'])->middleware('permission:manage_purchases,view_purchases,manage_suppliers,view_purchase_history');
             Route::get('/{id}', [PurchaseOrderController::class, 'show'])->middleware('permission:manage_purchases,view_purchases,manage_suppliers');
             Route::put('/{id}', [PurchaseOrderController::class, 'update'])->middleware('permission:manage_purchases,view_purchases,manage_suppliers');
             Route::delete('/{id}', [PurchaseOrderController::class, 'destroy'])->middleware('permission:manage_purchases,view_purchases,manage_suppliers');
             Route::post('/{id}/mark-ordered', [PurchaseOrderController::class, 'markOrdered'])->middleware('permission:manage_purchases,view_purchases,manage_suppliers,mark_purchase_orders');
             Route::post('/{id}/receive', [PurchaseOrderController::class, 'receive'])->middleware('permission:manage_purchases,view_purchases,manage_suppliers,receive_purchase_orders');
+            Route::post('/{id}/return', [PurchaseOrderController::class, 'returnToSupplier'])->middleware('permission:manage_purchases,view_purchases,manage_suppliers,receive_purchase_orders');
+            Route::post('/{id}/restock-return', [PurchaseOrderController::class, 'restockReturn'])->middleware('permission:manage_purchases,view_purchases,manage_suppliers,receive_purchase_orders');
+            Route::post('/{id}/correct-receipt', [PurchaseOrderController::class, 'correctReceipt'])->middleware('permission:manage_purchases,correct_purchase_receipts');
             Route::post('/{id}/pay', [PurchaseOrderController::class, 'pay'])->middleware('permission:manage_purchases,pay_purchase_orders');
             Route::post('/{id}/cancel', [PurchaseOrderController::class, 'cancel'])->middleware('permission:manage_purchases,view_purchases,manage_suppliers,cancel_purchase_orders');
             Route::get('/{id}/download', [PurchaseOrderController::class, 'downloadPdf'])->middleware('permission:manage_purchases,view_purchases,manage_suppliers');
+            Route::get('/{id}/payment-voucher/download', [PurchaseOrderController::class, 'paymentVoucherDownload'])->middleware('permission:manage_purchases,view_purchases,manage_suppliers');
         });
 
         // Investors & Investments — old 4-way OR kept valid everywhere; processing a return

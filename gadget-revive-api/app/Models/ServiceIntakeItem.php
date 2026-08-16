@@ -19,6 +19,7 @@ class ServiceIntakeItem extends Model
         'condition_notes',
         'quantity',
         'estimated_price',
+        'status',
     ];
 
     protected $casts = [

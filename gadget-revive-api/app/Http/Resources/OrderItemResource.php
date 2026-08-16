@@ -19,6 +19,9 @@ class OrderItemResource extends JsonResource
             'item_sku' => $this->item_sku,
             'quantity' => $this->quantity,
             'unit_price' => (float) $this->unit_price,
+            'cost_price' => $this->cost_price !== null ? (float) $this->cost_price : null,
+            'warranty_value' => $this->warranty_value,
+            'warranty_unit' => $this->warranty_unit,
             'total_price' => (float) $this->total_price,
             'notes' => $this->notes,
             'total_cost' => $this->total_cost,
@@ -33,6 +36,11 @@ class OrderItemResource extends JsonResource
             ])),
             'product' => $this->when($this->item_type === 'product', new ProductResource($this->product)),
             'service' => $this->when($this->item_type === 'service', new ServiceResource($this->service)),
+            'serials' => $this->whenLoaded('serials', fn () => $this->serials->map(fn ($s) => [
+                'id' => $s->id,
+                'serial_number' => $s->serial_number,
+                'status' => $s->status,
+            ])),
         ];
     }
 }

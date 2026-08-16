@@ -12,6 +12,7 @@ use App\Models\PaymentNotice;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\User;
+use App\Services\SmsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -229,7 +230,7 @@ class GuestController extends BaseController
      * POST /guest/orders
      * Place a guest order without authentication.
      */
-    public function placeOrder(Request $request): JsonResponse
+    public function placeOrder(Request $request, SmsService $sms): JsonResponse
     {
         $request->validate([
             'session_id'       => 'required|string|max:64',
@@ -319,6 +320,7 @@ class GuestController extends BaseController
                     'item_sku'   => $cartItem->item_type === 'product' ? $item->sku : ($item->code ?? null),
                     'quantity'   => $cartItem->quantity,
                     'unit_price' => $cartItem->unit_price,
+                    'cost_price' => $cartItem->item_type === 'product' ? ($item->current_cost ?? 0) : null,
                     'total_price' => $cartItem->unit_price * $cartItem->quantity,
                     'notes'      => $cartItem->notes,
                 ]);
@@ -340,6 +342,10 @@ class GuestController extends BaseController
             }
 
             DB::commit();
+
+            if ($sms->shouldSendOrderUpdates()) {
+                $sms->sendOrderPlaced($order->customer_phone, $order->order_number, $order->id);
+            }
 
             $order->load(['items.product', 'items.service', 'paymentNotices']);
 

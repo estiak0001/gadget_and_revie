@@ -11,7 +11,7 @@
 
         body {
             font-family: 'DejaVu Sans', Arial, sans-serif;
-            font-size: 15.5px;
+            font-size: 17px;
             line-height: 1.6;
             color: #000000;
             background-color: #ffffff;
@@ -21,6 +21,7 @@
         table.items tr,
         .estimate-section,
         .signature-section,
+        .closing-block,
         .invoice-footer { page-break-inside: avoid; }
 
         .page-bg { background: #ffffff; min-height: 100%; padding: 0; }
@@ -46,17 +47,17 @@
         .brand-text-cell { display: table-cell; vertical-align: middle; }
         .brand-name { font-size: 27px; font-weight: 900; color: #ffffff; letter-spacing: 0.5px; line-height: 1.15; }
         .brand-motto {
-            font-size: 11px; color: #c7c7c7; font-weight: 400; letter-spacing: 2px;
+            font-size: 12.5px; color: #c7c7c7; font-weight: 400; letter-spacing: 2px;
             text-transform: uppercase; margin-top: 4px;
         }
 
-        .company-contact { font-size: 12px; color: #e2e2e2; line-height: 1.75; }
-        .company-contact .cc-name { font-size: 14px; font-weight: 700; color: #ffffff; margin-bottom: 3px; }
+        .company-contact { font-size: 13.5px; color: #e2e2e2; line-height: 1.75; }
+        .company-contact .cc-name { font-size: 15.5px; font-weight: 700; color: #ffffff; margin-bottom: 3px; }
 
         /* ── META STRIPE ─────────────────────────────── */
         .meta-stripe { background: #f3f4f6; padding: 8px 32px; display: table; width: 100%; }
         .stripe-cell {
-            display: table-cell; vertical-align: middle; color: #000000; font-size: 13px;
+            display: table-cell; vertical-align: middle; color: #000000; font-size: 14.5px;
             font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; width: 34%;
         }
         .stripe-cell.center { text-align: center; width: 32%; }
@@ -64,7 +65,7 @@
         .stripe-cell .lbl { color: #000000; font-weight: 400; }
         .doc-pill {
             display: inline-block; background: #111111; color: #ffffff; padding: 6px 24px;
-            border-radius: 14px; font-size: 14px; font-weight: 900; letter-spacing: 2px;
+            border-radius: 14px; font-size: 15.5px; font-weight: 900; letter-spacing: 2px;
         }
 
         /* ── BODY ────────────────────────────────────── */
@@ -75,11 +76,11 @@
         .party-cell { display: table-cell; width: 50%; vertical-align: top; }
         .party-cell-right { display: table-cell; width: 50%; vertical-align: top; padding-left: 5%; }
         .party-label {
-            font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px;
+            font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px;
             color: #000000; padding-bottom: 4px; margin-bottom: 6px;
         }
-        .party-name { font-size: 17px; font-weight: 700; color: #000000; margin-bottom: 4px; }
-        .party-detail { font-size: 14px; color: #000000; margin-bottom: 2px; line-height: 1.4; }
+        .party-name { font-size: 18.5px; font-weight: 700; color: #000000; margin-bottom: 4px; }
+        .party-detail { font-size: 15.5px; color: #000000; margin-bottom: 2px; line-height: 1.4; }
         .party-detail strong { color: #000000; }
 
         /* ── META INFO GRID ──────────────────────────── */
@@ -93,14 +94,14 @@
             padding: 4px 8px;
         }
         .meta-key {
-            font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px;
+            font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px;
             color: #000000; margin-bottom: 2px;
         }
-        .meta-value { font-size: 16px; font-weight: 700; color: #000000; }
+        .meta-value { font-size: 17.5px; font-weight: 700; color: #000000; }
 
         /* ── SECTION HEADING ─────────────────────────── */
         .section-heading {
-            font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px;
+            font-size: 14.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px;
             color: #000000; margin-bottom: 6px;
         }
 
@@ -109,19 +110,19 @@
         table.items { width: 100%; border-collapse: collapse; border: 1px solid #000000; }
         table.items thead tr { background: #eceef1; }
         table.items thead th {
-            padding: 7px 8px; font-size: 12.5px; font-weight: 700; text-transform: uppercase;
+            padding: 7px 8px; font-size: 14px; font-weight: 700; text-transform: uppercase;
             letter-spacing: 0.8px; color: #000000; text-align: left; border: 1px solid #000000;
         }
         table.items thead th.r { text-align: right; }
         table.items thead th.c { text-align: center; }
         table.items tbody tr { border-bottom: 1px solid #000000; }
         table.items tbody tr:nth-child(even) { background: #f6f6f6; }
-        table.items tbody td { padding: 6px 8px; font-size: 14px; color: #000000; vertical-align: top; line-height: 1.35; border: 1px solid #000000; }
+        table.items tbody td { padding: 6px 8px; font-size: 15.5px; color: #000000; vertical-align: top; line-height: 1.35; border: 1px solid #000000; }
         table.items tbody td.c { text-align: center; }
         table.items tbody td.bold { font-weight: 700; color: #000000; }
-        .item-sub { font-size: 12px; color: #000000; margin-top: 2px; line-height: 1.35; }
+        .item-sub { font-size: 13.5px; color: #000000; margin-top: 2px; line-height: 1.35; }
         .item-sub strong { color: #000000; }
-        .serial-cell { font-family: 'DejaVu Sans Mono', monospace; font-size: 13px; color: #000000; }
+        .serial-cell { font-family: 'DejaVu Sans Mono', monospace; font-size: 14.5px; color: #000000; }
 
         /* ── ESTIMATE BOX ────────────────────────────── */
         .estimate-section { display: table; width: 100%; margin-bottom: 12px; }
@@ -130,41 +131,61 @@
         .estimate-row {
             display: table; width: 100%; padding: 3px 4px;
         }
-        .estimate-lbl { display: table-cell; font-size: 14px; color: #000000; }
-        .estimate-val { display: table-cell; text-align: right; font-size: 14px; font-weight: 600; color: #000000; }
+        .estimate-lbl { display: table-cell; font-size: 15.5px; color: #000000; }
+        .estimate-val { display: table-cell; text-align: right; font-size: 15.5px; font-weight: 600; color: #000000; }
         .estimate-total-row { border-top: 1.5px solid #9ca3af; padding: 4px 8px 2px; display: table; width: 100%; }
         .estimate-total-lbl {
-            display: table-cell; font-size: 16px; font-weight: 700; color: #000000;
+            display: table-cell; font-size: 17.5px; font-weight: 700; color: #000000;
             text-transform: uppercase; letter-spacing: 0.5px; vertical-align: middle;
         }
         .estimate-total-val { display: table-cell; text-align: right; font-size: 24px; font-weight: 900; color: #000000; vertical-align: middle; }
-        .estimate-note { font-size: 10.5px; color: #000000; margin-top: 5px; font-style: italic; text-align: right; }
+        .estimate-note { font-size: 12px; color: #000000; margin-top: 5px; font-style: italic; text-align: right; }
 
         /* ── NOTES ───────────────────────────────────── */
         .notes-section {
             background: #f6f6f6; border-radius: 5px; padding: 8px 14px; margin-bottom: 12px;
         }
         .notes-title {
-            font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+            font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
             color: #000000; margin-bottom: 5px;
         }
-        .notes-text { font-size: 14px; color: #000000; line-height: 1.5; }
+        .notes-text { font-size: 15.5px; color: #000000; line-height: 1.5; }
 
         /* ── SIGNATURE SECTION ───────────────────────── */
-        .signature-section { display: table; width: 100%; margin: 20px 0 10px; }
-        .sig-cell { display: table-cell; width: 33.33%; vertical-align: bottom; text-align: center; padding: 24px 14px 0; }
+        .signature-section { display: table; width: 100%; margin: 40px 0 10px; }
+        .sig-cell { display: table-cell; width: 33.33%; vertical-align: bottom; text-align: center; padding: 80px 14px 0; }
         .sig-line { border-top: 1px dotted #000000; margin: 0 auto 10px; height: 1px; }
         .sig-label {
-            font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #000000;
+            font-size: 16.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #000000;
         }
 
         /* ── TERMS BANNER ────────────────────────────── */
         .terms-banner {
             background: #f3f4f6; color: #000000; text-align: center;
-            font-size: 15px; font-weight: 700;
+            font-size: 18.5px; font-weight: 700;
             letter-spacing: 0.3px; padding: 8px 16px; border-radius: 4px; margin-bottom: 8px;
         }
-        .terms-text { font-size: 14px; color: #000000; line-height: 1.5; text-align: justify; margin-bottom: 10px; }
+        .terms-text { font-size: 15.5px; color: #000000; line-height: 1.5; text-align: justify; margin-bottom: 10px; }
+
+        /* ── CORNER LOGO WATERMARK ───────────────────── */
+        /* A large, faint brand mark anchored to the bottom-right corner of every page — doubles
+           as the "background shape" accent: a soft round tint sits behind the logo itself so it
+           reads as one designed corner piece rather than a plain stamped image. Bleeds slightly
+           past the page edge so it feels like a corner flourish, not a sticker. */
+        .corner-mark { position: fixed; bottom: -18mm; right: -18mm; width: 100mm; height: 100mm; pointer-events: none; }
+        .corner-mark .shape {
+            position: absolute; bottom: 0; right: 0; width: 100mm; height: 100mm;
+            border-radius: 50%; background: #111827; opacity: 0.035;
+        }
+        .corner-mark img { position: absolute; bottom: 24mm; right: 24mm; width: 62mm; height: auto; opacity: 0.09; }
+
+        /* ── PAGE NUMBER ─────────────────────────────── */
+        /* Not done in CSS: DomPDF has no working `counter(pages)` (grand total) — it only
+           resolves the per-page counter, not the total, so it silently rendered "0". "Page X of Y"
+           is instead drawn directly onto the canvas after render, via Canvas::page_text() in
+           ServiceIntakeController@buildReceiptPdf — DomPDF's actual supported mechanism for
+           this. It's placed in the page's outer @page margin strip below the fixed footer, an
+           area no HTML content ever occupies, so it can't collide with anything here. */
 
         /* ── FOOTER ──────────────────────────────────── */
         /* Fixed to the page bottom (DomPDF positions `fixed` elements relative to the page's
@@ -176,18 +197,26 @@
         }
         .footer-left { display: table-cell; vertical-align: middle; width: 60%; }
         .footer-right { display: table-cell; vertical-align: middle; text-align: right; width: 40%; }
-        .footer-brand { font-size: 14.5px; font-weight: 700; color: #000000; margin-bottom: 3px; }
-        .footer-sub { font-size: 13px; color: #000000; line-height: 1.7; }
+        .footer-brand { font-size: 16px; font-weight: 700; color: #000000; margin-bottom: 3px; }
+        .footer-sub { font-size: 14.5px; color: #000000; line-height: 1.7; }
         .footer-ref-label {
-            font-size: 11.5px; color: #000000; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 3px;
+            font-size: 13px; color: #000000; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 3px;
         }
-        .footer-ref-code { font-size: 14.5px; font-weight: 700; color: #000000; letter-spacing: 1px; }
-        .footer-timestamp { font-size: 12px; color: #000000; margin-top: 4px; }
-        .legal { text-align: center; font-size: 12px; color: #000000; margin-top: 8px; font-style: italic; }
+        .footer-ref-code { font-size: 16px; font-weight: 700; color: #000000; letter-spacing: 1px; }
+        .footer-timestamp { font-size: 13.5px; color: #000000; margin-top: 4px; }
+        .legal { text-align: center; font-size: 13.5px; color: #000000; margin-top: 8px; font-style: italic; }
     </style>
 </head>
 <body>
 <div class="page-bg">
+
+    @php $cornerLogo = $settings['logo_black'] ?? $settings['logo_white'] ?? null; @endphp
+    @if($cornerLogo)
+    <div class="corner-mark">
+        <div class="shape"></div>
+        <img src="{{ $cornerLogo }}" alt="">
+    </div>
+    @endif
 
     @php
         $branch = $intake->branchLocation;
@@ -251,6 +280,9 @@
             <div class="party-cell">
                 <div class="party-label">Received From (Customer)</div>
                 <div class="party-name">{{ $intake->customer_name ?? 'Walk-in Customer' }}</div>
+                @if($intake->customer?->user_code)
+                <div class="party-detail"><strong>Customer ID:</strong> {{ $intake->customer->user_code }}</div>
+                @endif
                 @if($intake->customer_phone)
                 <div class="party-detail"><strong>Mobile:</strong> {{ $intake->customer_phone }}</div>
                 @endif
@@ -279,6 +311,14 @@
                 @endif
                 @if($companyPhone)
                 <div class="party-detail"><strong>Mobile:</strong> {{ $companyPhone }}</div>
+                @endif
+                @if($intake->creator)
+                <div class="party-detail">
+                    <strong>Received By:</strong> {{ $intake->creator->name }}
+                    @if($intake->creator->user_code)
+                        ({{ $intake->creator->user_code }})
+                    @endif
+                </div>
                 @endif
             </div>
         </div>
@@ -374,25 +414,30 @@
         </div>
         @endif
 
-        {{-- SIGNATURE SECTION --}}
-        <div class="signature-section">
-            <div class="sig-cell">
-                <div class="sig-line"></div>
-                <div class="sig-label">Client Signature</div>
+        {{-- SIGNATURE + TERMS — grouped as one unbreakable block (see .closing-block, page-break-inside:
+             avoid above) so a multi-page receipt never splits the signature lines from the terms text
+             across the page boundary; if it doesn't fit in the remaining space on this page, the whole
+             block moves to the next page together, landing right above the footer there instead. --}}
+        <div class="closing-block">
+            <div class="signature-section">
+                <div class="sig-cell">
+                    <div class="sig-line"></div>
+                    <div class="sig-label">Client Signature</div>
+                </div>
+                <div class="sig-cell">
+                    <div class="sig-line"></div>
+                    <div class="sig-label">Authorized Signature</div>
+                </div>
+                <div class="sig-cell">
+                    <div class="sig-line"></div>
+                    <div class="sig-label">Delivery Date</div>
+                </div>
             </div>
-            <div class="sig-cell">
-                <div class="sig-line"></div>
-                <div class="sig-label">Authorized Signature</div>
-            </div>
-            <div class="sig-cell">
-                <div class="sig-line"></div>
-                <div class="sig-label">Delivery Date</div>
-            </div>
-        </div>
 
-        {{-- TERMS --}}
-        <div class="terms-banner">Please read the Terms &amp; Conditions below before you receive your product.</div>
-        <div class="terms-text">{{ $settings['terms'] ?? '' }}</div>
+            {{-- TERMS --}}
+            <div class="terms-banner">Please read the Terms &amp; Conditions below before you receive your product.</div>
+            <div class="terms-text">{{ $settings['terms'] ?? '' }}</div>
+        </div>
 
         {{-- FOOTER — fixed to the page bottom, see .page-footer-fixed --}}
         <div class="page-footer-fixed">

@@ -79,7 +79,7 @@ class InventoryLog extends Model
         ?User $user = null
     ): self {
         $quantityBefore = $product->stock_qty;
-        $quantityAfter = $type === 'deduction' || $type === 'sale' 
+        $quantityAfter = in_array($type, ['deduction', 'sale', 'return_to_supplier'], true)
             ? $quantityBefore - abs($quantityChange)
             : $quantityBefore + abs($quantityChange);
 

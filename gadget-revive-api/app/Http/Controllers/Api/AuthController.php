@@ -10,8 +10,6 @@ use App\Models\User;
 use App\Services\AuthService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Password;
-use Illuminate\Support\Str;
 
 class AuthController extends BaseController
 {
@@ -154,6 +152,31 @@ class AuthController extends BaseController
         ], 'Phone verified successfully. Welcome!');
     }
 
+    public function resendOtp(Request $request): JsonResponse
+    {
+        $request->validate([
+            'phone' => 'required|string|exists:users,phone',
+        ]);
+
+        $user = User::where('phone', $request->phone)->first();
+
+        if ($user->isVerified()) {
+            return $this->error('Phone is already verified', 400);
+        }
+
+        $result = $this->authService->resendPhoneOtp($user);
+
+        if (!$result['ok']) {
+            return $this->error(
+                "Please wait before requesting another code (available in {$result['retry_after']}s).",
+                429,
+                ['retry_after' => $result['retry_after']]
+            );
+        }
+
+        return $this->success(null, 'A new verification code has been sent.');
+    }
+
     public function resendVerification(Request $request): JsonResponse
     {
         $request->validate([
@@ -175,39 +198,72 @@ class AuthController extends BaseController
         return $this->success(null, 'Verification email sent');
     }
 
+    /**
+     * Password reset step 1 — send an OTP to the account's phone. Phone-based rather than the
+     * previous email-link flow: this app is phone-primary throughout and email is optional on
+     * the account, so phone/SMS is the only reset channel every customer actually has.
+     */
     public function forgotPassword(Request $request): JsonResponse
     {
+        if (!$this->authService->isOtpVerificationEnabled()) {
+            return $this->error('Password reset is currently unavailable. Please contact support.', 422);
+        }
+
         $request->validate([
-            'email' => 'required|email|exists:users,email',
+            'phone' => 'required|string|exists:users,phone',
         ]);
 
-        // TODO: Send password reset email
-        // For now, we'll use Laravel's built-in password reset
-        $status = Password::sendResetLink($request->only('email'));
+        $user = User::where('phone', $request->phone)->first();
 
-        return $status === Password::RESET_LINK_SENT
-            ? $this->success(null, 'Password reset link sent to your email')
-            : $this->error('Unable to send password reset link', 500);
+        $this->authService->sendPasswordResetOtp($user);
+
+        return $this->success(null, 'A password reset code has been sent to your phone.');
     }
 
+    public function resendResetOtp(Request $request): JsonResponse
+    {
+        if (!$this->authService->isOtpVerificationEnabled()) {
+            return $this->error('Password reset is currently unavailable. Please contact support.', 422);
+        }
+
+        $request->validate([
+            'phone' => 'required|string|exists:users,phone',
+        ]);
+
+        $user = User::where('phone', $request->phone)->first();
+        $result = $this->authService->resendPasswordResetOtp($user);
+
+        if (!$result['ok']) {
+            return $this->error(
+                "Please wait before requesting another code (available in {$result['retry_after']}s).",
+                429,
+                ['retry_after' => $result['retry_after']]
+            );
+        }
+
+        return $this->success(null, 'A new reset code has been sent.');
+    }
+
+    /** Password reset step 2 — verify the OTP and set the new password in one call. */
     public function resetPassword(Request $request): JsonResponse
     {
+        if (!$this->authService->isOtpVerificationEnabled()) {
+            return $this->error('Password reset is currently unavailable. Please contact support.', 422);
+        }
+
         $request->validate([
-            'token' => 'required|string',
-            'email' => 'required|email|exists:users,email',
+            'phone' => 'required|string|exists:users,phone',
+            'otp' => 'required|string|size:6',
             'password' => 'required|string|min:8|confirmed',
         ]);
 
-        $status = Password::reset(
-            $request->only('email', 'password', 'password_confirmation', 'token'),
-            function (User $user, string $password) {
-                $this->authService->resetPassword($user, $password);
-            }
-        );
+        $user = User::where('phone', $request->phone)->first();
 
-        return $status === Password::PASSWORD_RESET
-            ? $this->success(null, 'Password reset successfully')
-            : $this->error('Invalid or expired reset token', 400);
+        if (!$this->authService->resetPasswordWithOtp($user, $request->otp, $request->password)) {
+            return $this->error('Invalid or expired reset code', 400);
+        }
+
+        return $this->success(null, 'Password reset successfully. Please sign in with your new password.');
     }
 
     public function updateProfile(Request $request): JsonResponse
@@ -248,5 +304,30 @@ class AuthController extends BaseController
         return $this->success([
             'token' => $token,
         ], 'Password changed successfully');
+    }
+
+    /**
+     * Captures whatever's been typed into the registration form (phone number is the only field
+     * that actually matters) the moment it looks like a real attempt — independent of whether
+     * registration is ever completed or errors out. Public, unauthenticated, and deliberately
+     * never fails loudly: this is a side-channel for lead recovery, not part of the registration
+     * flow itself, so a bad/incomplete payload just gets validated away rather than surfaced as
+     * an error the storefront would need to handle.
+     */
+    public function captureLead(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'phone' => 'required|string|min:6|max:20',
+            'name'  => 'nullable|string|max:255',
+            'email' => 'nullable|email|max:255',
+        ]);
+
+        $this->authService->captureRegistrationLead(
+            $validated['phone'],
+            $validated['name'] ?? null,
+            $validated['email'] ?? null
+        );
+
+        return $this->success(null, 'ok');
     }
 }

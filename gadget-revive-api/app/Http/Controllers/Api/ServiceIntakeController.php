@@ -3,12 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Models\AuditLog;
+use App\Models\Notification;
 use App\Models\Order;
 use App\Models\OrderItem;
-use App\Models\PaymentNotice;
 use App\Models\ServiceIntake;
 use App\Models\ServiceIntakeItem;
+use App\Models\User;
 use App\Traits\ResolvesBrandingSettings;
+use App\Traits\StampsPdfPageNumbers;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,7 +19,7 @@ use Illuminate\Support\Facades\DB;
 
 class ServiceIntakeController extends BaseController
 {
-    use ResolvesBrandingSettings;
+    use ResolvesBrandingSettings, StampsPdfPageNumbers;
 
     private const RELATIONS = [
         'items.service',
@@ -32,7 +34,7 @@ class ServiceIntakeController extends BaseController
 
     public function index(Request $request): JsonResponse
     {
-        $query = ServiceIntake::with(['items', 'customer', 'branchLocation', 'order']);
+        $query = ServiceIntake::with(['items', 'customer', 'branchLocation', 'order', 'creator']);
 
         if ($request->filled('status')) {
             $query->where('status', $request->status);
@@ -125,6 +127,7 @@ class ServiceIntakeController extends BaseController
         }
 
         $data = $this->validateIntake($request);
+        $oldData = $intake->toArray();
 
         try {
             DB::beginTransaction();
@@ -151,6 +154,8 @@ class ServiceIntakeController extends BaseController
             $intake->items()->delete();
             $this->syncItems($intake, $data['items']);
 
+            AuditLog::log($request->user(), 'update_service_intake', 'ServiceIntake', $intake->id, $oldData, $intake->fresh()->toArray(), 'Service intake updated');
+
             DB::commit();
 
             return $this->success($intake->fresh(self::RELATIONS), 'Service intake updated successfully.');
@@ -172,12 +177,18 @@ class ServiceIntakeController extends BaseController
             'status' => 'required|in:received,in_progress,ready,converted,delivered,cancelled',
         ]);
 
+        $oldStatus = $intake->status;
+
         $update = ['status' => $request->status];
         if ($request->status === 'delivered' && !$intake->delivered_at) {
             $update['delivered_at'] = now();
         }
 
         $intake->update($update);
+
+        AuditLog::log($request->user(), 'update_service_intake_status', 'ServiceIntake', $intake->id,
+            ['status' => $oldStatus], ['status' => $intake->status],
+            "Status changed from {$oldStatus} to {$intake->status}");
 
         return $this->success($intake->fresh(self::RELATIONS), 'Status updated successfully.');
     }
@@ -217,77 +228,194 @@ class ServiceIntakeController extends BaseController
         }
 
         $validated = $request->validate([
-            'payment_method' => 'required|in:bkash,nagad,cash,bank_transfer',
-            'payment_status' => 'nullable|in:pending,awaiting_confirmation,paid,failed,refunded',
-            'order_status'   => 'nullable|in:pending,accepted,in_progress,awaiting_payment,completed',
+            'customer_id'      => 'nullable|exists:users,id',
+            'customer_name'    => 'nullable|string|max:255',
+            'customer_phone'   => 'nullable|string|max:20',
+            'customer_email'   => 'nullable|email|max:255',
+            'customer_address' => 'nullable|string|max:500',
+            'division_id'      => 'nullable|exists:divisions,id',
+            'district_id'      => 'nullable|exists:districts,id',
+            'area_id'          => 'nullable|exists:areas,id',
+            'payment_method'   => 'required|string|max:50',
+            'payment_status'   => 'required|in:pending,awaiting_confirmation,partially_paid,paid,failed',
+            'paid_amount'      => 'required_if:payment_status,partially_paid|nullable|numeric|min:0.01',
+            'order_status'     => 'required|in:pending,accepted,confirmed,in_progress,processing,awaiting_payment,completed',
+            'discount'         => 'nullable|numeric|min:0',
+            'shipping'         => 'nullable|numeric|min:0',
+            'tax'              => 'nullable|numeric|min:0',
+            'admin_notes'      => 'nullable|string|max:1000',
+            'customer_notes'   => 'nullable|string|max:1000',
+            'items'                => 'required|array|min:1',
+            'items.*.id'           => 'required|integer',
+            'items.*.include'      => 'required|boolean',
+            'items.*.unit_price'   => 'nullable|numeric|min:0',
+            'items.*.quantity'     => 'nullable|integer|min:1',
         ]);
+
+        $admin = $request->user();
+        $itemsById = $intake->items->keyBy('id');
+
+        // Every item on the intake must be accounted for exactly once — either included in the
+        // order or explicitly returned to the customer. This is what lets a partial conversion
+        // (2 items in, 1 sold, 1 handed back) be recorded unambiguously.
+        $requestItemIds = collect($validated['items'])->pluck('id');
+        if ($requestItemIds->unique()->count() !== $itemsById->count()
+            || $requestItemIds->unique()->diff($itemsById->keys())->isNotEmpty()) {
+            return $this->error('The submitted item list does not match this intake\'s items.', 422);
+        }
+
+        $includedRows = collect($validated['items'])->filter(fn ($row) => $row['include']);
+        if ($includedRows->isEmpty()) {
+            return $this->error('At least one item must be included to convert this intake to an order.', 422);
+        }
+
+        foreach ($includedRows as $row) {
+            if (!isset($row['unit_price']) || $row['unit_price'] === null || $row['unit_price'] === '') {
+                $itemName = $itemsById[$row['id']]->item_name;
+                return $this->error("A price is required for every item included in the order (missing for \"{$itemName}\").", 422);
+            }
+        }
 
         try {
             DB::beginTransaction();
 
-            $subtotal = $intake->items->sum(function ($item) {
-                return (float) ($item->estimated_price ?? 0) * (int) $item->quantity;
-            });
-            $total = $subtotal > 0 ? $subtotal : (float) ($intake->estimated_cost ?? 0);
+            // Resolve the customer exactly like a manual order does: an explicitly picked
+            // existing customer, or find-by-phone/email-else-create from the typed details
+            // (which default to whatever the intake itself already captured at drop-off).
+            $customerName    = $validated['customer_name']    ?? $intake->customer_name;
+            $customerPhone   = $validated['customer_phone']   ?? $intake->customer_phone;
+            $customerEmail   = $validated['customer_email']   ?? $intake->customer_email;
+            $customerAddress = $validated['customer_address'] ?? $intake->customer_address;
+
+            $customerId = $validated['customer_id'] ?? null;
+
+            if ($customerId) {
+                $customer = User::find($customerId);
+                if ($customer) {
+                    $customerName  = $customerName  ?: $customer->name;
+                    $customerPhone = $customerPhone ?: $customer->phone;
+                    $customerEmail = $customerEmail ?: $customer->email;
+                }
+            } else {
+                $customer = User::findOrCreateCustomer($customerName, $customerPhone, $customerEmail);
+                $customerId = $customer?->id;
+            }
+
+            $subtotal = 0;
+            $itemsPayload = [];
+            foreach ($includedRows as $row) {
+                $item = $itemsById[$row['id']];
+                $qty  = (int) ($row['quantity'] ?? $item->quantity);
+                $unit = (float) $row['unit_price'];
+                $subtotal += $unit * $qty;
+                $itemsPayload[] = ['item' => $item, 'qty' => $qty, 'unit' => $unit];
+            }
+
+            $discount = (float) ($validated['discount'] ?? 0);
+            $shipping = (float) ($validated['shipping'] ?? 0);
+            $tax      = (float) ($validated['tax'] ?? 0);
+            $total    = $subtotal - $discount + $shipping + $tax;
+
+            $adminNotes = "Converted from service receipt {$intake->receipt_number}.";
+            if (!empty($validated['admin_notes'])) {
+                $adminNotes .= "\n{$validated['admin_notes']}";
+            } elseif ($intake->admin_notes) {
+                $adminNotes .= "\n{$intake->admin_notes}";
+            }
 
             $order = Order::create([
-                'customer_id'      => $intake->customer_id,
-                'subtotal'         => $total,
-                'tax'              => 0,
-                'shipping'         => 0,
-                'discount'         => 0,
-                'total'            => $total,
+                'customer_id'      => $customerId,
+                'customer_name'    => $customerName,
+                'customer_phone'   => $customerPhone,
+                'customer_email'   => $customerEmail,
+                'customer_address' => $customerAddress,
+                'division_id'      => $validated['division_id'] ?? $intake->division_id,
+                'district_id'      => $validated['district_id'] ?? $intake->district_id,
+                'area_id'          => $validated['area_id']     ?? $intake->area_id,
                 'payment_method'   => $validated['payment_method'],
-                'payment_status'   => $validated['payment_status'] ?? 'pending',
-                'order_status'     => $validated['order_status'] ?? 'in_progress',
-                'customer_name'    => $intake->customer_name,
-                'customer_phone'   => $intake->customer_phone,
-                'customer_email'   => $intake->customer_email,
-                'customer_address' => $intake->customer_address,
-                'division_id'      => $intake->division_id,
-                'district_id'      => $intake->district_id,
-                'area_id'          => $intake->area_id,
-                'customer_notes'   => $intake->notes,
-                'admin_notes'      => "Converted from service receipt {$intake->receipt_number}." . ($intake->admin_notes ? "\n{$intake->admin_notes}" : ''),
+                'payment_status'   => $validated['payment_status'],
+                'order_status'     => $validated['order_status'],
+                'subtotal'         => $subtotal,
+                'discount'         => $discount,
+                'shipping'         => $shipping,
+                'tax'              => $tax,
+                'total'            => $total,
+                'admin_notes'      => $adminNotes,
+                'customer_notes'   => $validated['customer_notes'] ?? $intake->notes,
+                'created_by'       => $admin->id,
             ]);
 
-            foreach ($intake->items as $item) {
-                $unit = (float) ($item->estimated_price ?? 0);
+            // Set status timestamps, same rule as a manual order.
+            $timestamps = [];
+            if (in_array($validated['order_status'], ['accepted', 'confirmed', 'in_progress', 'processing', 'awaiting_payment', 'completed'])) {
+                $timestamps['accepted_at'] = now();
+            }
+            if ($validated['order_status'] === 'completed') {
+                $timestamps['completed_at'] = now();
+            }
+            if ($timestamps) {
+                $order->update($timestamps);
+            }
+
+            foreach ($itemsPayload as $p) {
+                $item = $p['item'];
                 OrderItem::create([
                     'order_id'    => $order->id,
                     'item_type'   => 'service',
                     'service_id'  => $item->service_id,
                     'item_name'   => $item->item_name,
                     'item_sku'    => $item->serial_number,
-                    'quantity'    => $item->quantity,
-                    'unit_price'  => $unit,
-                    'total_price' => $unit * (int) $item->quantity,
+                    'quantity'    => $p['qty'],
+                    'unit_price'  => $p['unit'],
+                    'total_price' => $p['unit'] * $p['qty'],
                     'notes'       => $item->problem_reported,
                 ]);
+                $item->update(['status' => 'converted']);
             }
 
-            PaymentNotice::create([
-                'order_id'           => $order->id,
-                'method'             => $validated['payment_method'],
-                'instructions_shown' => null,
-                'amount'             => $total,
-                'status'             => 'pending',
-            ]);
+            // Anything not included is being handed back to the customer as-is.
+            foreach ($validated['items'] as $row) {
+                if (!$row['include']) {
+                    $itemsById[$row['id']]->update(['status' => 'returned']);
+                }
+            }
 
             $intake->update([
                 'order_id' => $order->id,
                 'status'   => 'converted',
             ]);
 
-            AuditLog::log($request->user(), 'convert_service_intake', 'ServiceIntake', $intake->id, null, [
-                'receipt_number' => $intake->receipt_number,
-                'order_number'   => $order->order_number,
-                'total'          => $total,
+            if ($order->payment_status === 'paid') {
+                $order->recordPayment($order->total, $admin);
+            } elseif ($order->payment_status === 'partially_paid') {
+                $order->recordPayment((float) $validated['paid_amount'], $admin);
+            }
+
+            if ($customerId) {
+                $linkedCustomer = User::find($customerId);
+                if ($linkedCustomer) {
+                    Notification::notify(
+                        $linkedCustomer,
+                        'service_intake_converted',
+                        'Order Created From Service Receipt',
+                        "Your service receipt {$intake->receipt_number} has been converted to order #{$order->order_number}",
+                        ['order_id' => $order->id, 'service_intake_id' => $intake->id],
+                        "/orders/{$order->id}"
+                    );
+                }
+            }
+
+            AuditLog::log($admin, 'convert_service_intake', 'ServiceIntake', $intake->id, null, [
+                'receipt_number'  => $intake->receipt_number,
+                'order_number'    => $order->order_number,
+                'total'           => $total,
+                'items_included'  => $itemsPayload ? count($itemsPayload) : 0,
+                'items_returned'  => $itemsById->count() - count($itemsPayload),
             ], 'Service intake converted to order');
 
             DB::commit();
 
-            $order->load(['items.service', 'paymentNotices']);
+            $order->load(['customer', 'items.product', 'items.service', 'division', 'district', 'area']);
 
             return $this->created([
                 'intake' => $intake->fresh(self::RELATIONS),
@@ -571,7 +699,7 @@ class ServiceIntakeController extends BaseController
 
     private function loadForPdf(int $id): ?ServiceIntake
     {
-        return ServiceIntake::with(['items', 'branchLocation', 'division', 'district', 'area'])->find($id);
+        return ServiceIntake::with(['items', 'branchLocation', 'division', 'district', 'area', 'creator', 'customer'])->find($id);
     }
 
     private function buildReceiptPdf(ServiceIntake $intake): \Barryvdh\DomPDF\PDF
@@ -591,6 +719,8 @@ class ServiceIntakeController extends BaseController
             'isHtml5ParserEnabled' => true,
             'enable_php'           => false,
         ]);
+
+        $this->stampPageNumbers($pdf);
 
         return $pdf;
     }

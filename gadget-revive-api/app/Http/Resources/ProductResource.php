@@ -26,7 +26,7 @@ class ProductResource extends JsonResource
             'stock_qty' => $this->stock_qty,
             'low_stock_threshold' => $this->low_stock_threshold,
             'always_in_stock' => $this->always_in_stock,
-            'average_cost' => $this->average_cost !== null ? (float) $this->average_cost : null,
+            'current_cost' => $this->current_cost !== null ? (float) $this->current_cost : null,
             'is_in_stock' => $this->isInStock(),
             'is_low_stock' => $this->isLowStock(),
             'unit' => $this->unit,
@@ -38,7 +38,9 @@ class ProductResource extends JsonResource
             'brand_name' => $this->whenLoaded('brand', fn() => $this->brand->name),
             'brand_details' => new ProductBrandResource($this->whenLoaded('brand')),
             'model' => $this->model,
-            'warranty' => $this->warranty,
+            'warranty_value' => $this->warranty_value,
+            'warranty_unit' => $this->warranty_unit,
+            'warranty_note' => $this->warranty,
             'is_active' => $this->is_active,
             'is_draft' => $this->is_draft,
             'is_featured' => $this->is_featured,
@@ -71,6 +73,12 @@ class ProductResource extends JsonResource
                     ];
                 });
             }),
+            'serials' => $this->whenLoaded('serials', fn () => $this->serials->map(fn ($s) => [
+                'id' => $s->id,
+                'serial_number' => $s->serial_number,
+                'status' => $s->status,
+                'created_at' => $s->created_at,
+            ])),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

@@ -66,6 +66,7 @@ class GranularPermissionSeeder extends Seeder
             'view_expenses', 'create_expenses', 'edit_expenses', 'delete_expenses',
             // Purchases
             'mark_purchase_orders', 'receive_purchase_orders', 'pay_purchase_orders', 'cancel_purchase_orders',
+            'correct_purchase_receipts', 'view_purchase_history',
             // Investors
             'process_investor_returns',
             // Accounts & Finance

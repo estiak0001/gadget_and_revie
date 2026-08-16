@@ -14,6 +14,7 @@ use App\Models\PaymentNotice;
 use App\Models\Product;
 use App\Models\Service;
 use App\Models\VendorProfile;
+use App\Services\SmsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -81,7 +82,7 @@ class OrderController extends BaseController
         return $this->success(new OrderResource($order));
     }
 
-    public function checkout(Request $request): JsonResponse
+    public function checkout(Request $request, SmsService $sms): JsonResponse
     {
         $request->validate([
             'cart_id' => 'required|exists:carts,id',
@@ -165,6 +166,9 @@ class OrderController extends BaseController
                     'item_sku' => $cartItem->item_type === 'product' ? $item->sku : $item->code,
                     'quantity' => $cartItem->quantity,
                     'unit_price' => $cartItem->unit_price,
+                    // Snapshot the product's cost at the moment of sale so this order's margin
+                    // stays accurate even if the product is repriced later.
+                    'cost_price' => $cartItem->item_type === 'product' ? ($item->current_cost ?? 0) : null,
                     'total_price' => $cartItem->unit_price * $cartItem->quantity,
                     'notes' => $cartItem->notes,
                 ]);
@@ -203,6 +207,10 @@ class OrderController extends BaseController
             // SKIP vendor notification for customer order
 
             DB::commit();
+
+            if ($sms->shouldSendOrderUpdates()) {
+                $sms->sendOrderPlaced($order->customer_phone, $order->order_number, $order->id);
+            }
 
             $order->load([
                 'vendorProfile',

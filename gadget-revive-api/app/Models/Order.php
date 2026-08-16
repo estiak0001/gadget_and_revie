@@ -132,6 +132,12 @@ class Order extends Model
         return $this->hasMany(OrderItem::class);
     }
 
+    /** Purchase Order(s) manually created to source stock for this order. */
+    public function purchaseOrders()
+    {
+        return $this->hasMany(PurchaseOrder::class);
+    }
+
     public function serviceIntake()
     {
         return $this->hasOne(ServiceIntake::class);
@@ -399,12 +405,14 @@ class Order extends Model
         // same reference ('Order', $this->id) as every other entry here, so refund/cancel's
         // JournalEntry::reverseAllFor() reverses this alongside the revenue automatically.
         // Skipped entirely if 0 (product never received via a costed Purchase Order, e.g. an
-        // instant-created or always_in_stock item with no average_cost set) — matches the
-        // skip-if-zero pattern already used by PurchaseOrder::postReceiptJournalEntry().
+        // instant-created or always_in_stock item with no cost set) — matches the skip-if-zero
+        // pattern already used by PurchaseOrder::postReceiptJournalEntry(). Prefers each item's
+        // own stored cost_price (what it actually cost at the time this order was placed) over
+        // the product's current cost, so this entry doesn't drift if the product is repriced later.
         $this->loadMissing('items.product');
         $cogs = round($this->items
             ->where('item_type', 'product')
-            ->sum(fn ($item) => $item->product ? $item->quantity * (float) ($item->product->average_cost ?? 0) : 0), 2);
+            ->sum(fn ($item) => $item->quantity * (float) ($item->cost_price ?? $item->product?->current_cost ?? 0)), 2);
         if ($cogs > 0) {
             $entries[] = JournalEntry::post(now()->toDateString(), 'Order', $this->id, "Order #{$this->order_number} cost of goods sold", [
                 ['account_code' => '5000', 'debit' => $cogs],
