@@ -28,50 +28,40 @@
 
         .page-bg { background: #ffffff; min-height: 100%; padding: 0; }
 
-        /* ── HEADER — brand lockup on the left, a large document title with its own
-               quotation-no/date/valid-until block on the right. Single band, no second
-               "meta stripe" underneath repeating the same numbers. ──────────────── */
+        /* ── HEADER — brand lockup and the document title both centered as one compact stack,
+               with the quotation-no/date/valid-until line centered underneath. Tight padding,
+               single band, no second "meta stripe" underneath repeating the same numbers. ── */
         .doc-header {
-            padding: 24px 32px 18px;
-            display: table;
-            width: 100%;
+            padding: 12px 32px 8px;
+            text-align: center;
             border-bottom: 3px solid #1d4ed8;
         }
-        .doc-header-left  { display: table-cell; vertical-align: top; width: 55%; }
-        .doc-header-right { display: table-cell; vertical-align: top; width: 45%; text-align: right; }
 
-        .brand-row { display: table; }
-        .brand-logo-cell { display: table-cell; vertical-align: middle; padding-right: 14px; }
-        .brand-logo-cell img { height: 50px; width: auto; }
+        .brand-row { display: table; margin: 0 auto; }
+        .brand-logo-cell { display: table-cell; vertical-align: middle; padding-right: 10px; }
+        .brand-logo-cell img { height: 38px; width: auto; }
         .brand-monogram {
-            background: #1d4ed8; color: #ffffff; font-size: 20px; font-weight: 900;
-            width: 50px; height: 50px; border-radius: 8px; text-align: center; line-height: 50px;
+            background: #1d4ed8; color: #ffffff; font-size: 15px; font-weight: 900;
+            width: 38px; height: 38px; border-radius: 7px; text-align: center; line-height: 38px;
             letter-spacing: -1px;
         }
-        .brand-text-cell { display: table-cell; vertical-align: middle; }
-        .brand-name { font-size: 25px; font-weight: 900; color: #000000; letter-spacing: 0.3px; line-height: 1.15; }
+        .brand-text-cell { display: table-cell; vertical-align: middle; text-align: left; }
+        .brand-name { font-size: 19px; font-weight: 900; color: #000000; letter-spacing: 0.3px; line-height: 1.15; }
         .brand-motto {
-            font-size: 11.5px; color: #6b7280; font-weight: 600; letter-spacing: 1.8px;
-            text-transform: uppercase; margin-top: 3px;
+            font-size: 9.5px; color: #6b7280; font-weight: 600; letter-spacing: 1.5px;
+            text-transform: uppercase; margin-top: 1px;
         }
 
         .doc-title {
-            font-size: 36px; font-weight: 900; color: #1d4ed8; letter-spacing: 1.5px;
-            text-transform: uppercase; line-height: 1;
+            font-size: 24px; font-weight: 900; color: #1d4ed8; letter-spacing: 3px;
+            text-transform: uppercase; line-height: 1; margin-top: 5px;
         }
 
-        .doc-meta-table { display: table; margin-left: auto; margin-top: 12px; border-collapse: collapse; }
-        .doc-meta-row { display: table-row; }
-        .doc-meta-label {
-            display: table-cell; text-align: left; font-size: 12px; color: #6b7280;
-            text-transform: uppercase; letter-spacing: 0.6px; white-space: nowrap;
-            padding: 2px 16px 2px 0; vertical-align: middle;
-        }
-        .doc-meta-value {
-            display: table-cell; text-align: right; font-size: 14.5px; font-weight: 700;
-            color: #000000; white-space: nowrap; padding: 2px 0; vertical-align: middle;
-        }
-        .doc-meta-value.accent { color: #1d4ed8; }
+        .doc-meta-inline { margin-top: 5px; font-size: 12px; }
+        .doc-meta-inline .lbl { color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
+        .doc-meta-inline .val { font-weight: 700; color: #000000; }
+        .doc-meta-inline .val.accent { color: #1d4ed8; }
+        .doc-meta-sep { color: #d1d5db; margin: 0 8px; }
 
         /* ── BODY ────────────────────────────────────── */
         .body-wrap { padding: 16px 32px; padding-bottom: 34mm; background: #ffffff; }
@@ -236,43 +226,34 @@
 
 <div class="page-bg">
 
-    {{-- ═══════════════════ HEADER — brand lockup + document title/meta, one band ═══════════════════ --}}
+    {{-- ═══════════════════ HEADER — brand lockup + title, centered as one compact band ═══════════════════ --}}
     <div class="doc-header">
-        <div class="doc-header-left">
-            <div class="brand-row">
-                <div class="brand-logo-cell">
-                    @if(!empty($settings['logo_black']))
-                        <img src="{{ $settings['logo_black'] }}" alt="logo">
-                    @elseif(!empty($settings['logo_white']))
-                        <img src="{{ $settings['logo_white'] }}" alt="logo">
-                    @else
-                        <div class="brand-monogram">GR</div>
-                    @endif
-                </div>
-                <div class="brand-text-cell">
-                    <div class="brand-name">{{ $settings['site_name'] ?? 'Gadget Revive' }}</div>
-                    @if(!empty($settings['site_tagline']))
-                        <div class="brand-motto">{{ $settings['site_tagline'] }}</div>
-                    @endif
-                </div>
+        <div class="brand-row">
+            <div class="brand-logo-cell">
+                @if(!empty($settings['logo_black']))
+                    <img src="{{ $settings['logo_black'] }}" alt="logo">
+                @elseif(!empty($settings['logo_white']))
+                    <img src="{{ $settings['logo_white'] }}" alt="logo">
+                @else
+                    <div class="brand-monogram">GR</div>
+                @endif
+            </div>
+            <div class="brand-text-cell">
+                <div class="brand-name">{{ $settings['site_name'] ?? 'Gadget Revive' }}</div>
+                @if(!empty($settings['site_tagline']))
+                    <div class="brand-motto">{{ $settings['site_tagline'] }}</div>
+                @endif
             </div>
         </div>
-        <div class="doc-header-right">
-            <div class="doc-title">Quotation</div>
-            <div class="doc-meta-table">
-                <div class="doc-meta-row">
-                    <div class="doc-meta-label">Quotation No</div>
-                    <div class="doc-meta-value">{{ $quotation->quotation_number }}</div>
-                </div>
-                <div class="doc-meta-row">
-                    <div class="doc-meta-label">Date</div>
-                    <div class="doc-meta-value">{{ $quotation->quotation_date->format('d M Y') }}</div>
-                </div>
-                <div class="doc-meta-row">
-                    <div class="doc-meta-label">Valid Until</div>
-                    <div class="doc-meta-value accent">{{ $quotation->valid_until ? $quotation->valid_until->format('d M Y') : '—' }}</div>
-                </div>
-            </div>
+
+        <div class="doc-title">Quotation</div>
+
+        <div class="doc-meta-inline">
+            <span class="lbl">Quotation No</span> <span class="val">{{ $quotation->quotation_number }}</span>
+            <span class="doc-meta-sep">|</span>
+            <span class="lbl">Date</span> <span class="val">{{ $quotation->quotation_date->format('d M Y') }}</span>
+            <span class="doc-meta-sep">|</span>
+            <span class="lbl">Valid Until</span> <span class="val accent">{{ $quotation->valid_until ? $quotation->valid_until->format('d M Y') : '—' }}</span>
         </div>
     </div>
 
