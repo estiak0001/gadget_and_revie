@@ -7,7 +7,7 @@ import {
   ChartOfAccount, JournalEntry, TrialBalance, IncomeStatement, BalanceSheet, AccountLedger, CashPosition, CashBook,
   PendingSyncSummary, Investor, Investment, CustomInvoice, ProductSerial, PurchaseProductHistory, PurchaseSerialHistoryEntry,
   SmsLog, SmsConnection, SmsCampaign, SmsBalance, SmsUsageStats,
-  Quotation, QuotationProductSearchResult,
+  Quotation, QuotationProductSearchResult, QuotationTemplate, QuotationTemplateType,
 } from '@/types';
 
 // Query params type
@@ -121,6 +121,15 @@ export const adminService = {
   streamQuotationUrl: (id: number) => `${api.defaults.baseURL}/admin/quotations/${id}/stream`,
   searchQuotationProducts: (search: string) =>
     api.get<ApiResponse<QuotationProductSearchResult[]>>('/admin/quotations/search-products', { params: { search } }),
+
+  // Quotation Templates — reusable saved Notes / Terms & Conditions snippets
+  getQuotationTemplates: (type?: QuotationTemplateType) =>
+    api.get<ApiResponse<QuotationTemplate[]>>('/admin/quotation-templates', { params: type ? { type } : undefined }),
+  createQuotationTemplate: (data: { type: QuotationTemplateType; title: string; content: string; is_default?: boolean }) =>
+    api.post<ApiResponse<QuotationTemplate>>('/admin/quotation-templates', data),
+  updateQuotationTemplate: (id: number, data: { type: QuotationTemplateType; title: string; content: string; is_default?: boolean }) =>
+    api.put<ApiResponse<QuotationTemplate>>(`/admin/quotation-templates/${id}`, data),
+  deleteQuotationTemplate: (id: number) => api.delete(`/admin/quotation-templates/${id}`),
 
   // Service Intakes (device received → receipt → convert to order)
   getServiceIntakes: (params?: ListParams) =>

@@ -3,13 +3,14 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Plus, Trash2, Search, X, PackageSearch, PenLine, Download, Save,
+  Plus, Trash2, Search, X, PackageSearch, PenLine, Download, Save, ListChecks,
 } from 'lucide-react';
 import {
   Card, CardContent, CardHeader, CardTitle, Button, Input, Textarea, SearchableSelect,
   Modal, LoadingSpinner,
 } from '@/components/ui';
-import { Quotation, QuotationItem, QuotationProductSearchResult, User } from '@/types';
+import TemplateManagerModal from './TemplateManagerModal';
+import { Quotation, QuotationItem, QuotationProductSearchResult, QuotationTemplateType, User } from '@/types';
 import { formatCurrency, getErrorMessage } from '@/lib/utils';
 import adminService from '@/lib/adminService';
 import toast from 'react-hot-toast';
@@ -24,8 +25,8 @@ const num = (v: unknown) => Number(v ?? 0) || 0;
 const newKey = () => Math.random().toString(36).slice(2);
 
 const blankRow = (): ItemRow => ({
-  key: newKey(), product_id: null, item_name: '', item_sku: null, description: null,
-  quantity: 1, unit_price: 0, total_price: 0,
+  key: newKey(), product_id: null, item_name: '', item_sku: null, item_sn: null, description: null,
+  quantity: 1, unit_price: 0, total_price: 0, show_details: false,
 });
 
 export default function QuotationForm({ quotation }: { quotation?: Quotation }) {
@@ -55,6 +56,7 @@ export default function QuotationForm({ quotation }: { quotation?: Quotation }) 
   const [terms, setTerms] = useState(quotation?.terms || '');
 
   const [isProductSearchOpen, setIsProductSearchOpen] = useState(false);
+  const [templatePicker, setTemplatePicker] = useState<QuotationTemplateType | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isSavingAndDownloading, setIsSavingAndDownloading] = useState(false);
 
@@ -63,6 +65,21 @@ export default function QuotationForm({ quotation }: { quotation?: Quotation }) 
       const body = res.data as unknown as { data?: User[] };
       setCustomers(Array.isArray(body.data) ? body.data : []);
     }).catch(() => setCustomers([]));
+  }, []);
+
+  // Brand-new quotation only — quietly pre-fill Notes/Terms from whichever saved template (if
+  // any) is marked default, so a repeat boilerplate doesn't have to be picked by hand every time.
+  // Never overwrites anything already typed, and never runs again once editing an existing one.
+  useEffect(() => {
+    if (isEdit) return;
+    adminService.getQuotationTemplates().then((res) => {
+      const templates = res.data.data || [];
+      const defaultNotes = templates.find((t) => t.type === 'notes' && t.is_default);
+      const defaultTerms = templates.find((t) => t.type === 'terms' && t.is_default);
+      if (defaultNotes) setNotes((prev) => prev || defaultNotes.content);
+      if (defaultTerms) setTerms((prev) => prev || defaultTerms.content);
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const customerOptions = customers.map((c) => ({
@@ -89,8 +106,8 @@ export default function QuotationForm({ quotation }: { quotation?: Quotation }) 
       const blankIdx = prev.findIndex((it) => !it.item_name.trim() && !it.product_id);
       const row: ItemRow = {
         key: newKey(), product_id: product.id, item_name: product.name, item_sku: product.sku ?? null,
-        description: null, quantity: 1, unit_price: num(product.current_price),
-        total_price: num(product.current_price),
+        item_sn: null, description: null, quantity: 1, unit_price: num(product.current_price),
+        total_price: num(product.current_price), show_details: false,
       };
       if (blankIdx !== -1) {
         const copy = [...prev];
@@ -120,9 +137,11 @@ export default function QuotationForm({ quotation }: { quotation?: Quotation }) 
         product_id: it.product_id ?? undefined,
         item_name: it.item_name,
         item_sku: it.item_sku ?? undefined,
+        item_sn: it.item_sn ?? undefined,
         description: it.description ?? undefined,
         quantity: num(it.quantity) || 1,
         unit_price: num(it.unit_price),
+        show_details: !!it.show_details,
       })),
       discount: num(discount), shipping: num(shipping), tax: num(tax),
       notes: notes || undefined, terms: terms || undefined,
@@ -268,6 +287,30 @@ export default function QuotationForm({ quotation }: { quotation?: Quotation }) 
                 value={it.description || ''}
                 onChange={(e) => updateItem(it.key, { description: e.target.value })}
               />
+
+              <label className="mt-2 flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none w-fit">
+                <input
+                  type="checkbox"
+                  checked={!!it.show_details}
+                  onChange={(e) => updateItem(it.key, { show_details: e.target.checked })}
+                  className="rounded border-gray-300"
+                />
+                Add SKU / Serial No. (shown on the PDF only if checked)
+              </label>
+              {it.show_details && (
+                <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <Input
+                    placeholder="SKU (optional)"
+                    value={it.item_sku || ''}
+                    onChange={(e) => updateItem(it.key, { item_sku: e.target.value })}
+                  />
+                  <Input
+                    placeholder="Serial No. (optional)"
+                    value={it.item_sn || ''}
+                    onChange={(e) => updateItem(it.key, { item_sn: e.target.value })}
+                  />
+                </div>
+              )}
             </div>
           ))}
           {subtotal > 0 && (
@@ -297,8 +340,37 @@ export default function QuotationForm({ quotation }: { quotation?: Quotation }) 
       {/* Notes + terms */}
       <Card>
         <CardContent className="space-y-4 pt-6">
-          <Textarea label="Notes (shown on the quotation)" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
-          <Textarea label="Terms & Conditions" rows={3} value={terms} onChange={(e) => setTerms(e.target.value)} placeholder="e.g. 50% advance payment required. Prices valid for the period stated above." />
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-sm font-medium text-gray-700">Notes (shown on the quotation)</label>
+              <button
+                type="button"
+                onClick={() => setTemplatePicker('notes')}
+                className="flex items-center gap-1 text-xs font-medium text-primary-600 hover:text-primary-700"
+              >
+                <ListChecks className="w-3.5 h-3.5" /> Templates
+              </button>
+            </div>
+            <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-sm font-medium text-gray-700">Terms &amp; Conditions</label>
+              <button
+                type="button"
+                onClick={() => setTemplatePicker('terms')}
+                className="flex items-center gap-1 text-xs font-medium text-primary-600 hover:text-primary-700"
+              >
+                <ListChecks className="w-3.5 h-3.5" /> Templates
+              </button>
+            </div>
+            <Textarea
+              rows={3}
+              value={terms}
+              onChange={(e) => setTerms(e.target.value)}
+              placeholder="e.g. 50% advance payment required. Prices valid for the period stated above."
+            />
+          </div>
         </CardContent>
       </Card>
 
@@ -314,6 +386,14 @@ export default function QuotationForm({ quotation }: { quotation?: Quotation }) 
 
       {isProductSearchOpen && (
         <ProductSearchModal onSelect={addCatalogProduct} onClose={() => setIsProductSearchOpen(false)} />
+      )}
+
+      {templatePicker && (
+        <TemplateManagerModal
+          type={templatePicker}
+          onApply={(content) => (templatePicker === 'notes' ? setNotes(content) : setTerms(content))}
+          onClose={() => setTemplatePicker(null)}
+        />
       )}
     </div>
   );

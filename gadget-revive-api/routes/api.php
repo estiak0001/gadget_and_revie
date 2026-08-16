@@ -29,6 +29,7 @@ use App\Http\Controllers\Api\SupplierController;
 use App\Http\Controllers\Api\TicketController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\QuotationController;
+use App\Http\Controllers\Api\QuotationTemplateController;
 use App\Http\Controllers\Api\UploadController;
 use App\Http\Controllers\Api\VendorController;
 use App\Http\Controllers\Api\VendorDashboardController;
@@ -413,6 +414,15 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::put('/{id}', [QuotationController::class, 'update'])->middleware('permission:manage_quotations');
             Route::put('/{id}/status', [QuotationController::class, 'updateStatus'])->middleware('permission:manage_quotations');
             Route::delete('/{id}', [QuotationController::class, 'destroy'])->middleware('permission:manage_quotations');
+        });
+
+        // Quotation Templates — reusable saved Notes / Terms & Conditions snippets, picked from
+        // within the quotation form; same read/write permission split as quotations themselves.
+        Route::prefix('quotation-templates')->group(function () {
+            Route::get('/', [QuotationTemplateController::class, 'index'])->middleware('permission:view_quotations,manage_quotations');
+            Route::post('/', [QuotationTemplateController::class, 'store'])->middleware('permission:manage_quotations');
+            Route::put('/{id}', [QuotationTemplateController::class, 'update'])->middleware('permission:manage_quotations');
+            Route::delete('/{id}', [QuotationTemplateController::class, 'destroy'])->middleware('permission:manage_quotations');
         });
 
         // Service Intakes (device received → receipt → convert to order) — old 5-way OR kept

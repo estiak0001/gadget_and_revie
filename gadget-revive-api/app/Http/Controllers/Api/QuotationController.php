@@ -60,9 +60,11 @@ class QuotationController extends BaseController
             'items.*.product_id'    => 'nullable|exists:products,id',
             'items.*.item_name'     => 'required|string|max:255',
             'items.*.item_sku'      => 'nullable|string|max:100',
+            'items.*.item_sn'       => 'nullable|string|max:100',
             'items.*.description'   => 'nullable|string|max:500',
             'items.*.quantity'      => 'required|integer|min:1',
             'items.*.unit_price'    => 'required|numeric|min:0',
+            'items.*.show_details'  => 'nullable|boolean',
             'discount' => 'nullable|numeric|min:0',
             'shipping' => 'nullable|numeric|min:0',
             'tax'      => 'nullable|numeric|min:0',
@@ -80,13 +82,17 @@ class QuotationController extends BaseController
     private function buildItemsAndTotals(array $data): array
     {
         $items = collect($data['items'])->map(fn ($item) => [
-            'product_id'  => $item['product_id'] ?? null,
-            'item_name'   => $item['item_name'],
-            'item_sku'    => $item['item_sku'] ?? null,
-            'description' => $item['description'] ?? null,
-            'quantity'    => (int) $item['quantity'],
-            'unit_price'  => (float) $item['unit_price'],
-            'total_price' => round($item['quantity'] * $item['unit_price'], 2),
+            'product_id'   => $item['product_id'] ?? null,
+            'item_name'    => $item['item_name'],
+            'item_sku'     => $item['item_sku'] ?? null,
+            'item_sn'      => $item['item_sn'] ?? null,
+            'description'  => $item['description'] ?? null,
+            'quantity'     => (int) $item['quantity'],
+            'unit_price'   => (float) $item['unit_price'],
+            'total_price'  => round($item['quantity'] * $item['unit_price'], 2),
+            // Controls whether SKU / S/N / "Catalog Item" badge print on the PDF for this row —
+            // off by default so the printed item list stays to just the name/description.
+            'show_details' => (bool) ($item['show_details'] ?? false),
         ])->all();
 
         $subtotal = round(collect($items)->sum('total_price'), 2);

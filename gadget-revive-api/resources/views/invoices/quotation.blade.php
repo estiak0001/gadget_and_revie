@@ -70,17 +70,6 @@
             border-radius: 14px; font-size: 15.5px; font-weight: 900; letter-spacing: 2px;
         }
 
-        /* Status badge — small colored pill next to the quotation number */
-        .status-pill {
-            display: inline-block; padding: 3px 12px; border-radius: 10px; font-size: 12px;
-            font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; margin-left: 8px;
-        }
-        .status-draft    { background: #e5e7eb; color: #374151; }
-        .status-sent     { background: #dbeafe; color: #1d4ed8; }
-        .status-accepted { background: #d1fae5; color: #047857; }
-        .status-rejected { background: #fee2e2; color: #b91c1c; }
-        .status-expired  { background: #fef3c7; color: #92400e; }
-
         /* ── BODY ────────────────────────────────────── */
         .body-wrap { padding: 16px 32px; padding-bottom: 34mm; background: #ffffff; }
 
@@ -216,8 +205,6 @@
 
     @php
         $cornerLogo = $settings['logo_black'] ?? $settings['logo_white'] ?? null;
-        $statusLabels = ['draft' => 'Draft', 'sent' => 'Sent', 'accepted' => 'Accepted', 'rejected' => 'Rejected', 'expired' => 'Expired'];
-        $effectiveStatus = $quotation->is_expired ? 'expired' : $quotation->status;
     @endphp
 
     <div class="corner-mark-shape"></div>
@@ -286,7 +273,6 @@
     <div class="meta-stripe">
         <div class="stripe-cell">
             <span class="lbl">Quotation No:</span> {{ $quotation->quotation_number }}
-            <span class="status-pill status-{{ $effectiveStatus }}">{{ $statusLabels[$effectiveStatus] ?? ucfirst($effectiveStatus) }}</span>
         </div>
         <div class="stripe-cell center">
             <span class="doc-pill">QUOTATION</span>
@@ -361,14 +347,23 @@
                         <td>{{ $index + 1 }}</td>
                         <td class="bold">
                             {{ $item['item_name'] }}
-                            @if(!empty($item['item_sku']))
-                            <div class="item-sub"><strong>SKU:</strong> {{ $item['item_sku'] }}</div>
-                            @endif
                             @if(!empty($item['description']))
                             <div class="item-sub">{{ $item['description'] }}</div>
                             @endif
-                            @if(!empty($item['product_id']))
-                            <span class="catalog-tag">Catalog Item</span>
+                            {{-- SKU / Serial No. / catalog badge only print when explicitly opted
+                                 into per item — keeps the default listing to just the item name,
+                                 with room to show identifying codes when the item actually needs
+                                 them (e.g. a specific serialized unit). --}}
+                            @if(!empty($item['show_details']))
+                                @if(!empty($item['item_sku']))
+                                <div class="item-sub"><strong>SKU:</strong> {{ $item['item_sku'] }}</div>
+                                @endif
+                                @if(!empty($item['item_sn']))
+                                <div class="item-sub"><strong>S/N:</strong> {{ $item['item_sn'] }}</div>
+                                @endif
+                                @if(!empty($item['product_id']))
+                                <span class="catalog-tag">Catalog Item</span>
+                                @endif
                             @endif
                         </td>
                         <td class="r">{{ number_format($item['unit_price'], 2) }}</td>
@@ -427,8 +422,14 @@
         </div>
         @endif
 
-        {{-- SIGNATURE + TERMS --}}
+        {{-- TERMS + SIGNATURE — terms first, signature/approval block last so it sits at the very
+             end of the page content, immediately above the fixed footer. --}}
         <div class="closing-block">
+            @if($quotation->terms)
+            <div class="terms-banner">Terms &amp; Conditions</div>
+            <div class="terms-text">{{ $quotation->terms }}</div>
+            @endif
+
             <div class="signature-section">
                 <div class="sig-cell">
                     <div class="sig-line"></div>
@@ -439,11 +440,6 @@
                     <div class="sig-label">Customer Approval</div>
                 </div>
             </div>
-
-            @if($quotation->terms)
-            <div class="terms-banner">Terms &amp; Conditions</div>
-            <div class="terms-text">{{ $quotation->terms }}</div>
-            @endif
         </div>
 
     </div>{{-- /body-wrap --}}

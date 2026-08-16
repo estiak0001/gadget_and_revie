@@ -367,10 +367,27 @@ export interface QuotationItem {
   product_id?: number | null;
   item_name: string;
   item_sku?: string | null;
+  item_sn?: string | null;
   description?: string | null;
   quantity: number;
   unit_price: number;
   total_price: number;
+  /** Whether SKU / Serial No. / "Catalog Item" badge print on the PDF for this row — off by
+   *  default so the printed item list stays to just the name/description. */
+  show_details?: boolean;
+}
+
+export type QuotationTemplateType = 'notes' | 'terms';
+
+export interface QuotationTemplate {
+  id: number;
+  type: QuotationTemplateType;
+  title: string;
+  content: string;
+  is_default: boolean;
+  created_by?: number | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Quotation {
