@@ -33,7 +33,11 @@ export default function QuotationForm({ quotation }: { quotation?: Quotation }) 
   const isEdit = !!quotation;
 
   const [customerMode, setCustomerMode] = useState<'existing' | 'new'>(quotation?.customer_id ? 'existing' : 'new');
-  const [customerId, setCustomerId] = useState(quotation?.customer_id ? String(quotation.customer_id) : '');
+  // Deliberately string | number, not forced to a string — SearchableSelect matches the current
+  // value against each option's `value` with strict equality (===), and customerOptions below
+  // carries numeric ids (c.id), so a coerced string here would never match and the picker would
+  // always render as empty even after a customer was actually selected.
+  const [customerId, setCustomerId] = useState<string | number>(quotation?.customer_id ?? '');
   const [customerName, setCustomerName] = useState(quotation?.customer_name || '');
   const [customerPhone, setCustomerPhone] = useState(quotation?.customer_phone || '');
   const [customerEmail, setCustomerEmail] = useState(quotation?.customer_email || '');
@@ -200,7 +204,7 @@ export default function QuotationForm({ quotation }: { quotation?: Quotation }) 
           {customerMode === 'existing' ? (
             <SearchableSelect
               value={customerId}
-              onChange={(v) => setCustomerId(String(v))}
+              onChange={(v) => setCustomerId(v)}
               placeholder="Search customer by name / phone…"
               options={customerOptions}
               allowClear

@@ -252,11 +252,26 @@ class QuotationController extends BaseController
     {
         $search = $request->get('search', '');
         $products = Product::query()
-            ->when($search, fn ($q) => $q->where('name', 'like', "%{$search}%")->orWhere('sku', 'like', "%{$search}%"))
             ->where('is_active', true)
+            // Grouped into its own closure — an ungrouped orWhere('sku', ...) here would OR
+            // against the *entire* query, not just the name match, silently surfacing inactive
+            // products whenever their SKU happened to match the search term.
+            ->when($search, fn ($q) => $q->where(fn ($sub) => $sub
+                ->where('name', 'like', "%{$search}%")
+                ->orWhere('sku', 'like', "%{$search}%")))
             ->orderBy('name')
             ->limit(20)
-            ->get(['id', 'name', 'sku', 'current_price', 'image']);
+            // current_price is a computed accessor (discount_price ?? price — see
+            // Product::getCurrentPrice()), not a real column, so it can't be selected directly;
+            // pull the columns it's derived from and compute it per row instead.
+            ->get(['id', 'name', 'sku', 'price', 'discount_price', 'image'])
+            ->map(fn (Product $p) => [
+                'id' => $p->id,
+                'name' => $p->name,
+                'sku' => $p->sku,
+                'current_price' => $p->getCurrentPrice(),
+                'image' => $p->image,
+            ]);
 
         return $this->success($products);
     }
