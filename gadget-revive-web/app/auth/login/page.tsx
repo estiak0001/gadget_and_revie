@@ -48,9 +48,49 @@ export default function LoginPage() {
   // OTP screen
   const [otp, setOtp] = useState('');
   const [pendingPhone, setPendingPhone] = useState('');
+  const [resendCooldown, setResendCooldown] = useState(0); // seconds remaining until Resend is enabled
+  const [isResending, setIsResending] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [authError, setAuthError] = useState('');
+
+  // OTP codes are valid for 5 minutes server-side — mirror that here so "Resend" only becomes
+  // clickable once the current code would actually be expired anyway.
+  const OTP_TTL_SECONDS = 5 * 60;
+
+  useEffect(() => {
+    if (screen !== 'otp' || resendCooldown <= 0) return;
+    const timer = setInterval(() => setResendCooldown((s) => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(timer);
+  }, [screen, resendCooldown]);
+
+  const handleResendOtp = async () => {
+    setIsResending(true);
+    const result = await authService.resendOtp(pendingPhone);
+    if (result.ok) {
+      setResendCooldown(OTP_TTL_SECONDS);
+      toast.success(result.message);
+    } else {
+      // Server is the source of truth for how much longer to wait — resync in case our own
+      // timer drifted (e.g. this tab was backgrounded, or the OTP screen was reopened).
+      if (result.retryAfter != null) setResendCooldown(result.retryAfter);
+      toast.error(result.message);
+    }
+    setIsResending(false);
+  };
+
+  // Captures the phone number (the only field that matters) as soon as it looks like a real
+  // attempt — independent of whether registration is ever actually completed. Debounced so this
+  // doesn't fire on every keystroke, and only while actively signing up.
+  useEffect(() => {
+    if (isLogin) return;
+    const digits = formData.phone.replace(/\D/g, '');
+    if (digits.length < 10) return;
+    const timer = setTimeout(() => {
+      authService.captureLead(formData.phone, formData.name || undefined, formData.email || undefined);
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [isLogin, formData.phone, formData.name, formData.email]);
 
   const { setAuth } = useAuthStore();
   const { mergeGuestCart } = useCartStore();
@@ -113,6 +153,7 @@ export default function LoginPage() {
     if (result.otpRequired) {
       // OTP is enabled — show OTP screen
       setPendingPhone(formData.phone);
+      setResendCooldown(OTP_TTL_SECONDS);
       setScreen('otp');
       toast.success('OTP sent to your phone number');
     } else if (result.token && result.user) {
@@ -158,7 +199,28 @@ export default function LoginPage() {
         error.message ||
         'An error occurred. Please try again.';
 
-      if (error.response?.data?.errors) {
+      // Logging in with a not-yet-verified account used to be a dead end — the login form has
+      // no OTP field of its own, so there was no way back to the verification screen short of
+      // registering again. If they logged in with a phone number (not an email, which the OTP
+      // screen can't do anything with), send a fresh code and drop them straight into it.
+      const isUnverifiedPhone = isLogin && error.response?.status === 403
+        && /verify your phone/i.test(msg) && !formData.phoneOrEmail.includes('@');
+
+      if (isUnverifiedPhone) {
+        setPendingPhone(formData.phoneOrEmail);
+        setScreen('otp');
+        // Their original registration code may still be valid — only claim a fresh one went out
+        // when resendOtp actually succeeds; otherwise the existing code (and its real remaining
+        // time) still works fine.
+        const resendResult = await authService.resendOtp(formData.phoneOrEmail);
+        if (resendResult.ok) {
+          setResendCooldown(OTP_TTL_SECONDS);
+          toast('Your phone isn\'t verified yet — we\'ve sent a new code.', { icon: '📱' });
+        } else {
+          if (resendResult.retryAfter != null) setResendCooldown(resendResult.retryAfter);
+          toast('Your phone isn\'t verified yet — enter the code sent earlier, or wait to resend.', { icon: '📱' });
+        }
+      } else if (error.response?.data?.errors) {
         const errors = error.response.data.errors;
         Object.keys(errors).forEach((key) => {
           errors[key].forEach((m: string) => toast.error(m));
@@ -300,6 +362,23 @@ export default function LoginPage() {
                       </>
                     )}
                   </button>
+                </div>
+
+                <div className="text-center text-sm">
+                  {resendCooldown > 0 ? (
+                    <span className="text-gray-400">
+                      Didn&apos;t get it? Resend in {Math.floor(resendCooldown / 60)}:{String(resendCooldown % 60).padStart(2, '0')}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleResendOtp}
+                      disabled={isResending}
+                      className="font-semibold text-gray-900 hover:text-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isResending ? 'Sending...' : 'Resend Code'}
+                    </button>
+                  )}
                 </div>
 
                 <button

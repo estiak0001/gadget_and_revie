@@ -138,7 +138,7 @@ function CategoryView({ category }: { category: ServiceCategory }) {
     <div className="bg-white min-h-screen">
       {/* Hero */}
       <div className="bg-gradient-to-r from-ink to-ink">
-        <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
           {/* Breadcrumb - top left */}
           <Breadcrumb items={breadcrumbItems} darkBg={true} />
 
@@ -166,7 +166,7 @@ function CategoryView({ category }: { category: ServiceCategory }) {
       {/* Subcategory badges */}
       {subcategories.length > 0 && (
         <div className="bg-white border-b border-gray-200">
-          <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-3">
+          <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-3">
             <div className="flex flex-wrap gap-1.5">
               {subcategories.map((sub) => (
                 <Link
@@ -186,7 +186,7 @@ function CategoryView({ category }: { category: ServiceCategory }) {
       )}
 
       {/* Services grid */}
-      <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-bold text-gray-900">
             {category.name}
@@ -381,12 +381,12 @@ function ServiceDetailView({ initialService }: { initialService: Service }) {
     <div className="bg-gray-50 min-h-screen">
       {/* Breadcrumb */}
       <div className="bg-white border-b border-gray-200">
-        <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <Breadcrumb items={breadcrumbItems} />
         </div>
       </div>
 
-      <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid lg:grid-cols-3 gap-5">
           {/* Left Column — Service Details */}
           <div className="lg:col-span-2">

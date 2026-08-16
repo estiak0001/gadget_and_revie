@@ -71,7 +71,7 @@ export default function Footer() {
 
   return (
     <footer className="bg-ink text-gray-400">
-      <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
         {/* ── Top: four evenly-weighted columns ── */}
         <div className="py-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* BRAND */}

@@ -495,7 +495,7 @@ export default function Header() {
 
       {/* ── Top Bar ── */}
       <div className="bg-white border-b border-gray-200">
-        <div className="mx-auto max-w-[1800px] px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center justify-between gap-4">
 
             {/* Logo */}
@@ -628,9 +628,6 @@ export default function Header() {
                               )}
                             </p>
                           </div>
-                          {!(product.is_in_stock ?? product.stock_qty > 0) && (
-                            <span className="text-[10px] text-red-500 font-medium flex-shrink-0">Out of Stock</span>
-                          )}
                         </Link>
                       ))}
                       <div className="p-2 border-t border-gray-100">
@@ -781,7 +778,7 @@ export default function Header() {
 
       {/* ── Bottom Nav ── */}
       <div className="bg-gray-50/80 backdrop-blur-sm border-t border-b border-gray-200 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
-        <div className="mx-auto max-w-[1800px] px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8">
           <div className="hidden lg:flex items-center h-11 gap-0.5 flex-wrap">
             {renderMegaMenu('services', 'Services', '/services', serviceCategories, false)}
             {renderPlainLink('Data Recovery', '/data-recovery')}

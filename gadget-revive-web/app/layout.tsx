@@ -6,6 +6,7 @@ import AuthProvider from "@/components/AuthProvider";
 import { Toaster } from 'react-hot-toast';
 import ConditionalLayout from "@/components/ConditionalLayout";
 import DynamicHead from "@/components/DynamicHead";
+import StaleDeployRecovery from "@/components/StaleDeployRecovery";
 import {
   getSiteSettings,
   resolveLogo,
@@ -166,6 +167,7 @@ export default async function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteSchema) }}
         />
+        <StaleDeployRecovery />
         <AuthProvider>
           <DynamicHead />
           <ConditionalLayout>

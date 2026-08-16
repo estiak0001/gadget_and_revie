@@ -190,7 +190,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 py-4 sm:py-8 pb-28 md:pb-8">
-      <div className="max-w-[1800px] mx-auto px-3 sm:px-6 lg:px-8">
+      <div className="max-w-[1600px] mx-auto px-3 sm:px-6 lg:px-8">
         <div className="flex gap-4">
           {/* Sidebar */}
           <aside className="hidden md:flex md:flex-shrink-0">

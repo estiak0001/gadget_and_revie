@@ -63,7 +63,7 @@ function ServicesContent() {
     <div className="bg-white">
       {/* Hero Section */}
       <div className="bg-gradient-to-r from-ink to-ink">
-        <div className="mx-auto max-w-[1800px] px-4 sm:px-6 lg:px-8 py-6">
+        <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between gap-4">
             {/* Left: Title + Description */}
             <div className="flex-shrink-0">
@@ -93,7 +93,7 @@ function ServicesContent() {
       {/* Root Category Links */}
       {rootCategories.length > 0 && (
         <div className="bg-white border-b border-gray-200">
-          <div className="mx-auto max-w-[1800px] px-4 sm:px-6 lg:px-8 py-3">
+          <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 py-3">
             <div className="flex flex-wrap gap-1.5">
               {rootCategories.map((cat) => (
                 <Link
@@ -110,7 +110,7 @@ function ServicesContent() {
       )}
 
       {/* Services Grid */}
-      <div className="mx-auto max-w-[1800px] px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">
         <div className="mb-4 flex items-center justify-between gap-4 flex-wrap">
           <h3 className="text-lg font-bold text-gray-900 inline-flex items-center">
             {searchQuery ? (
@@ -179,7 +179,7 @@ function ServicesContent() {
 
       {/* Why Choose Us */}
       <div className="bg-gradient-to-b from-gray-50 to-white py-8">
-        <div className="mx-auto max-w-[1800px] px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-6">
             <h2 className="text-xl sm:text-2xl lg:text-2xl font-bold text-gray-900 mb-4 leading-tight">Why Choose Gadget Revive?</h2>
             <p className="text-lg text-gray-600 max-w-2xl mx-auto">Professional repair services with guaranteed quality and customer satisfaction</p>
@@ -206,7 +206,7 @@ function ServicesContent() {
 
       {/* CTA Section */}
       <div className="bg-gradient-to-r from-gray-700 to-ink py-8">
-        <div className="mx-auto max-w-[1800px] px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8">
           <div className="text-center">
             <h2 className="text-xl sm:text-2xl lg:text-2xl font-bold text-white mb-4">Need Help Choosing the Right Service?</h2>
             <p className="text-xl text-gray-200 mb-5 max-w-2xl mx-auto">Our expert team is here to guide you. Contact us for a free consultation!</p>

@@ -7,7 +7,6 @@ import { HeartIcon as HeartSolidIcon } from '@heroicons/react/24/solid';
 import { useWishlistStore } from '@/lib/stores/wishlist-store';
 import { useCartStore } from '@/lib/stores/cart-store';
 import { useCompareStore } from '@/lib/stores/compare-store';
-import { useAuthStore } from '@/lib/stores/auth-store';
 import { getStorageUrl } from '@/lib/api/config';
 import toast from 'react-hot-toast';
 
@@ -20,14 +19,12 @@ export default function WishlistDrawer({ open, onClose }: WishlistDrawerProps) {
     const { items, removeItem, clearWishlist } = useWishlistStore();
     const { addItem: addToCart } = useCartStore();
     const { toggleItem: toggleCompare, isInCompare } = useCompareStore();
-    const { isAuthenticated } = useAuthStore();
     const [mounted, setMounted] = useState(false);
 
     useEffect(() => { setMounted(true); }, []);
 
-    const handleAddToCart = async (productId: number, productName: string, inStock: boolean) => {
-        if (!inStock) { toast.error('This product is out of stock'); return; }
-        if (!isAuthenticated) { toast.error('Please login to add items to cart'); return; }
+    const handleAddToCart = async (productId: number, productName: string) => {
+        // Guests get a session-scoped cart that carries through to guest checkout — no login required.
         try {
             await addToCart('product', productId, 1);
             toast.success(`${productName} added to cart!`);
@@ -111,7 +108,6 @@ export default function WishlistDrawer({ open, onClose }: WishlistDrawerProps) {
                         <div className="divide-y divide-gray-100">
                             {items.map((product) => {
                                 const inCompare = isInCompare(product.id);
-                                const inStock = product.is_in_stock ?? product.stock_qty > 0;
                                 return (
                                     <div key={product.id} className="flex gap-3 p-4 hover:bg-gray-50 transition-colors group">
                                         {/* Image */}
@@ -141,19 +137,13 @@ export default function WishlistDrawer({ open, onClose }: WishlistDrawerProps) {
                                                     <span className="text-xs text-gray-400 line-through">৳{product.price}</span>
                                                 )}
                                             </div>
-                                            <span className={`text-[10px] font-semibold ${inStock ? 'text-green-600' : 'text-red-500'}`}>
-                                                {inStock ? 'In Stock' : 'Out of Stock'}
-                                            </span>
+                                            <span className="text-[10px] font-semibold text-green-600">In Stock</span>
 
                                             {/* Actions */}
                                             <div className="flex items-center gap-2 mt-2">
                                                 <button
-                                                    onClick={() => handleAddToCart(product.id, product.name, inStock)}
-                                                    disabled={!inStock}
-                                                    className={`flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${inStock
-                                                            ? 'bg-ink text-white hover:bg-ink/90'
-                                                            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                                        }`}
+                                                    onClick={() => handleAddToCart(product.id, product.name)}
+                                                    className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all bg-ink text-white hover:bg-ink/90"
                                                 >
                                                     <ShoppingCartIcon className="h-3.5 w-3.5" />
                                                     <span>Add to Cart</span>

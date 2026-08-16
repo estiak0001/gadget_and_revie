@@ -7,13 +7,10 @@ import {
     XMarkIcon,
     ArrowsRightLeftIcon,
     ShoppingCartIcon,
-    CheckCircleIcon,
-    XCircleIcon,
     ChevronUpIcon,
 } from '@heroicons/react/24/outline';
 import { useCompareStore } from '@/lib/stores/compare-store';
 import { useCartStore } from '@/lib/stores/cart-store';
-import { useAuthStore } from '@/lib/stores/auth-store';
 import { getStorageUrl } from '@/lib/api/config';
 import toast from 'react-hot-toast';
 import { Product } from '@/lib/types';
@@ -21,7 +18,6 @@ import { Product } from '@/lib/types';
 export default function CompareDrawer() {
     const { items, removeItem, clearCompare, isOpen, setOpen } = useCompareStore();
     const { addItem: addToCart } = useCartStore();
-    const { isAuthenticated } = useAuthStore();
     const pathname = usePathname();
     const [mounted, setMounted] = useState(false);
     const [modalOpen, setModalOpen] = useState(false);
@@ -67,8 +63,7 @@ export default function CompareDrawer() {
     if (hideOnRoute) return null;
 
     const handleAddToCart = async (product: Product) => {
-        if (!isAuthenticated) { toast.error('Please login to add items to cart'); return; }
-        if (product.stock_qty <= 0) { toast.error('This product is out of stock'); return; }
+        // Guests get a session-scoped cart that carries through to guest checkout — no login required.
         try {
             await addToCart('product', product.id, 1);
             toast.success(`${product.name} added to cart!`);
@@ -86,7 +81,6 @@ export default function CompareDrawer() {
         { label: 'Price', values: items.map((p) => `৳${p.discount_price || p.price}`) },
         { label: 'Original Price', values: items.map((p) => p.discount_price ? `৳${p.price}` : '—') },
         { label: 'Discount', values: items.map((p) => p.discount_price ? `${Math.round(((p.price - p.discount_price) / p.price) * 100)}% OFF` : '—') },
-        { label: 'Stock', values: items.map((p) => (p.is_in_stock ?? p.stock_qty > 0) ? (p.stock_qty > 0 ? `${p.stock_qty} units` : 'In Stock') : 'Out of Stock') },
         { label: 'SKU', values: items.map((p) => p.sku || '—') },
         { label: 'Brand', values: items.map((p) => p.brand_name || p.brand || '—') },
         { label: 'Warranty', values: items.map((p) => (p as any).warranty_period || '—') },
@@ -105,7 +99,7 @@ export default function CompareDrawer() {
                 style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
             >
                 <div className="bg-gradient-to-r from-ink to-ink text-white shadow-lg">
-                    <div className="max-w-[1800px] mx-auto px-2.5 sm:px-4 py-2 sm:py-3">
+                    <div className="max-w-[1600px] mx-auto px-2.5 sm:px-4 py-2 sm:py-3">
                         <div className="flex items-center gap-2 sm:gap-3">
                             {/* Left: items — icon badge on mobile, full label on ≥sm */}
                             <div className="flex items-center gap-1.5 sm:gap-2 flex-1 min-w-0">
@@ -259,14 +253,10 @@ export default function CompareDrawer() {
                                                     </div>
                                                     <button
                                                         onClick={() => handleAddToCart(p)}
-                                                        disabled={!(p.is_in_stock ?? p.stock_qty > 0)}
-                                                        className={`flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[11px] sm:text-sm font-semibold transition-all w-full ${(p.is_in_stock ?? p.stock_qty > 0)
-                                                                ? 'bg-ink text-white hover:bg-ink/90 hover:shadow-lg'
-                                                                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                                            }`}
+                                                        className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[11px] sm:text-sm font-semibold transition-all w-full bg-ink text-white hover:bg-ink/90 hover:shadow-lg"
                                                     >
                                                         <ShoppingCartIcon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                                                        <span className="whitespace-nowrap">{(p.is_in_stock ?? p.stock_qty > 0) ? 'Add to Cart' : 'Out of Stock'}</span>
+                                                        <span className="whitespace-nowrap">Add to Cart</span>
                                                     </button>
                                                 </div>
                                             </th>
@@ -296,19 +286,7 @@ export default function CompareDrawer() {
                                                             className={`p-2 sm:p-4 text-[11px] sm:text-sm text-center transition-colors ${isBest ? 'text-green-700 font-bold' : 'text-gray-700'
                                                                 }`}
                                                         >
-                                                            {val === 'Out of Stock' ? (
-                                                                <span className="flex items-center justify-center gap-1 text-red-500">
-                                                                    <XCircleIcon className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" />
-                                                                    <span>{val}</span>
-                                                                </span>
-                                                            ) : val === 'In Stock' || (typeof val === 'string' && val.includes('units')) ? (
-                                                                <span className="flex items-center justify-center gap-1 text-green-600">
-                                                                    <CheckCircleIcon className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" />
-                                                                    <span>{val}</span>
-                                                                </span>
-                                                            ) : (
-                                                                String(val)
-                                                            )}
+                                                            {String(val)}
                                                         </td>
                                                     );
                                                 })}

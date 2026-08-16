@@ -27,7 +27,7 @@ export default function ProductCategories() {
 
   return (
     <section className="py-8 bg-gradient-to-br from-gray-50 to-white">
-      <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-6">
           <h2 className="text-2xl font-bold text-gray-900 sm:text-xl mb-4">
             Product Categories
@@ -79,15 +79,6 @@ export default function ProductCategories() {
                         </p>
                       )}
                     </div>
-
-                    {/* Product Count */}
-                    {category.products_count !== undefined && (
-                      <div className="relative z-10 mb-4">
-                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-white/20 text-white">
-                          {category.products_count}+ items
-                        </span>
-                      </div>
-                    )}
 
                     {/* Subcategories */}
                     {category.children && category.children.length > 0 && (

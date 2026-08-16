@@ -7,10 +7,8 @@ import type { Product } from '@/lib/types';
 import { resolveIcon } from '@/lib/resolve-icon';
 import OptimizedImage from '@/components/OptimizedImage';
 import { useCartStore } from '@/lib/stores/cart-store';
-import { useAuthStore } from '@/lib/stores/auth-store';
 import { useSettingsStore } from '@/lib/stores/settings-store';
 import { useHomepageStore } from '@/lib/stores/homepage-store';
-import { useRouter } from 'next/navigation';
 import {
   ComputerDesktopIcon,
   CpuChipIcon,
@@ -91,9 +89,7 @@ function stripHtml(html?: string): string {
 }
 
 export default function Home() {
-  const router = useRouter();
   const { addItem: addToCartStore } = useCartStore();
-  const { isAuthenticated } = useAuthStore();
 
   // Shared stores — each API is fetched exactly once regardless of how many
   // components call fetchSettings() / fetchHomepageData().
@@ -209,10 +205,9 @@ export default function Home() {
 
 
   const handleAddToCart = async (product: Product) => {
-    if (!isAuthenticated) {
-      router.push('/auth/login');
-      return;
-    }
+    // Guests get a session-scoped cart (see cart-store.ts / guest.ts) that carries all the way
+    // through to guest checkout — there's no reason to force a login here, and doing so silently
+    // dead-ends every anonymous visitor's "Add to Cart" click at the login screen instead.
     setAddingToCartId(product.id);
     try {
       await addToCartStore('product', product.id, 1);
@@ -263,12 +258,14 @@ export default function Home() {
           </>
         )}
 
-        <div className="relative max-w-[1800px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-6">
+        <div className="relative max-w-[1600px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-6">
           {/* StarTech-Style Promotional Carousel */}
           <div className={`mb-4 sm:mb-5 transform transition-all duration-1000 ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`}>
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-2 sm:gap-3">
-              {/* Main Large Carousel - Left Side (3 columns) */}
-              <div className="lg:col-span-3 relative rounded-xl sm:rounded-xl overflow-hidden aspect-[16/9] sm:aspect-auto sm:h-[300px] md:h-[420px] shadow-md border border-white/10">
+            {/* 10-column split so main/side ratio can move in finer steps than a 4-column grid
+                allows — currently 60/40, main slide narrower and side banners wider. */}
+            <div className="grid grid-cols-1 lg:grid-cols-10 gap-2 sm:gap-3">
+              {/* Main Large Carousel - Left Side (6 of 10 columns = 60%) */}
+              <div className="lg:col-span-6 relative rounded-xl sm:rounded-xl overflow-hidden aspect-[16/9] sm:aspect-auto sm:h-[300px] md:h-[420px] shadow-md border border-white/10">
                 {/* Slides */}
                 {promoSlides.length === 0 && (
                   <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-gray-700 to-ink">
@@ -287,7 +284,7 @@ export default function Home() {
                       }`}
                   >
                     {slide.image ? (
-                      <div className="relative w-full h-full">
+                      <div className="relative w-full h-full bg-ink">
                         <OptimizedImage
                           src={slide.image}
                           alt={slide.title}
@@ -348,13 +345,13 @@ export default function Home() {
                 </button>
               </div>
 
-              {/* Side Banners - Right Side (1 column) */}
-              <div className="lg:col-span-1 grid grid-cols-2 lg:grid-cols-1 lg:grid-rows-2 gap-2 sm:gap-3">
+              {/* Side Banners - Right Side (4 of 10 columns = 40%) */}
+              <div className="lg:col-span-4 grid grid-cols-2 lg:grid-cols-1 lg:grid-rows-2 gap-2 sm:gap-3">
                 {sideBanners.map((banner, index) => (
                   <Link
                     key={banner.id ?? index}
                     href={banner.link_url || '/'}
-                    className="relative rounded-xl sm:rounded-xl overflow-hidden h-[100px] sm:h-[120px] lg:h-auto shadow-md group border border-white/10"
+                    className={`relative rounded-xl sm:rounded-xl overflow-hidden h-[100px] sm:h-[120px] lg:h-auto shadow-md group border border-white/10 ${banner.image ? 'bg-ink' : ''}`}
                     style={banner.image ? undefined : gradientStyle(banner.meta?.gradient_from, banner.meta?.gradient_to)}
                   >
                     {banner.image ? (
@@ -489,7 +486,7 @@ export default function Home() {
 
       {/* Featured Category Section - Dynamic */}
       <section className="py-6 bg-gray-50">
-        <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
           {/* Section Header */}
           <div className="text-center mb-5">
             <h2 className="text-xl lg:text-2xl font-bold text-gray-900 mb-2">
@@ -542,7 +539,7 @@ export default function Home() {
 
       {/* Featured Services Section */}
       <section className="py-6 bg-white">
-        <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
           {/* Section Header */}
           <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-5">
             <div>
@@ -650,7 +647,7 @@ export default function Home() {
 
       {/* Featured Products Section - Modern Compact */}
       <section className="py-6 bg-gray-100">
-        <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
           {/* Section Header - Compact */}
           <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-5">
             <div>
@@ -766,7 +763,7 @@ export default function Home() {
           <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-gradient-to-br from-gray-400/25 via-gray-300/15 to-transparent rounded-full -translate-y-1/2 translate-x-1/4 blur-3xl" />
         )}
 
-        <div className="relative max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        <div className="relative max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 text-center">
           {settingsFetched ? (
             <>
               <div className="inline-flex items-center gap-2 bg-ink px-4 py-2 rounded-full mb-6">

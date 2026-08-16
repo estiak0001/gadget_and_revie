@@ -103,7 +103,6 @@ function ProductsPageInner() {
   // Other filters
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [selectedBrandId, setSelectedBrandId] = useState<number | null>(null);
-  const [inStockOnly, setInStockOnly] = useState(false);
   const [discountOnly, setDiscountOnly] = useState(false);
 
   // Pagination
@@ -116,7 +115,6 @@ function ProductsPageInner() {
     selectedCategoryId !== null,
     selectedBrandId !== null,
     minPrice !== '' || maxPrice !== '',
-    inStockOnly,
     discountOnly,
     searchQuery !== '',
   ].filter(Boolean).length;
@@ -130,7 +128,6 @@ function ProductsPageInner() {
         sort_by: sortBy,
       };
       if (searchQuery) params.search = searchQuery;
-      if (inStockOnly) params.in_stock = true;
       if (discountOnly) params.has_discount = true;
       if (selectedCategoryId) params.category_id = selectedCategoryId;
       if (selectedBrandId) params.brand_id = selectedBrandId;
@@ -146,7 +143,7 @@ function ProductsPageInner() {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, searchQuery, sortBy, inStockOnly, discountOnly, selectedCategoryId, selectedBrandId, minPrice, maxPrice]);
+  }, [currentPage, searchQuery, sortBy, discountOnly, selectedCategoryId, selectedBrandId, minPrice, maxPrice]);
 
   useEffect(() => {
     productService.getCategories().then((cats) => {
@@ -160,7 +157,7 @@ function ProductsPageInner() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, sortBy, inStockOnly, discountOnly, selectedCategoryId, selectedBrandId, minPrice, maxPrice]);
+  }, [searchQuery, sortBy, discountOnly, selectedCategoryId, selectedBrandId, minPrice, maxPrice]);
 
   const handleClearFilters = () => {
     setSearchQuery('');
@@ -169,7 +166,6 @@ function ProductsPageInner() {
     setActivePricePreset(null);
     setSelectedCategoryId(null);
     setSelectedBrandId(null);
-    setInStockOnly(false);
     setDiscountOnly(false);
   };
 
@@ -217,7 +213,7 @@ function ProductsPageInner() {
 
   return (
     <div className="bg-gray-50 min-h-screen">
-      <div className="max-w-[1800px] mx-auto px-3 sm:px-4 lg:px-6 py-5">
+      <div className="max-w-[1600px] mx-auto px-3 sm:px-4 lg:px-6 py-5">
 
         {/* Page Header */}
         <div className="mb-4">
@@ -384,22 +380,9 @@ function ProductsPageInner() {
                   </div>
                 </FilterSection>
 
-                {/* Availability */}
-                <FilterSection title="Availability">
+                {/* Offers */}
+                <FilterSection title="Offers">
                   <label className="flex items-center gap-2 cursor-pointer group">
-                    <div className="relative">
-                      <input
-                        type="checkbox"
-                        checked={inStockOnly}
-                        onChange={(e) => setInStockOnly(e.target.checked)}
-                        className="sr-only peer"
-                      />
-                      <div className="w-8 h-4 bg-gray-200 rounded-full peer peer-checked:bg-emerald-500 transition-colors" />
-                      <div className="absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full shadow transition-all peer-checked:translate-x-4" />
-                    </div>
-                    <span className="text-xs text-gray-700">In Stock Only</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer group mt-2">
                     <div className="relative">
                       <input
                         type="checkbox"
@@ -443,11 +426,6 @@ function ProductsPageInner() {
                         >
                           {cat.parent_id && <span className="text-gray-400 mr-1">↳</span>}
                           {cat.name}
-                          {cat.products_count != null && (
-                            <span className={`ml-1 text-[10px] ${selectedCategoryId === cat.id ? 'text-gray-300' : 'text-gray-400'}`}>
-                              ({cat.products_count})
-                            </span>
-                          )}
                         </button>
                       ))}
                     </div>
@@ -479,11 +457,6 @@ function ProductsPageInner() {
                           }`}
                         >
                           <span>{brand.name}</span>
-                          {brand.products_count != null && (
-                            <span className={`text-[10px] ${selectedBrandId === brand.id ? 'text-gray-300' : 'text-gray-400'}`}>
-                              {brand.products_count}
-                            </span>
-                          )}
                         </button>
                       ))}
                     </div>
@@ -520,12 +493,6 @@ function ProductsPageInner() {
                   <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-50 border border-green-200 text-green-700 rounded-full text-xs font-medium">
                     {minPrice ? `৳${Number(minPrice).toLocaleString()}` : '৳0'} – {maxPrice ? `৳${Number(maxPrice).toLocaleString()}` : '∞'}
                     <button onClick={() => { setMinPrice(''); setMaxPrice(''); setActivePricePreset(null); }}><XMarkIcon className="h-3 w-3" /></button>
-                  </span>
-                )}
-                {inStockOnly && (
-                  <span className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-full text-xs font-medium">
-                    In Stock
-                    <button onClick={() => setInStockOnly(false)}><XMarkIcon className="h-3 w-3" /></button>
                   </span>
                 )}
                 {discountOnly && (
@@ -584,9 +551,6 @@ function ProductsPageInner() {
 
                         {/* Badges */}
                         <div className="absolute top-2 left-2 flex flex-col gap-1">
-                          {!(product.is_in_stock ?? product.stock_qty > 0) && (
-                            <span className="px-2 py-0.5 bg-ink/90 text-white text-[10px] font-bold rounded">OUT OF STOCK</span>
-                          )}
                           {discountPercent(product) > 0 && (
                             <span className="px-2 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded">-{discountPercent(product)}%</span>
                           )}
@@ -626,18 +590,11 @@ function ProductsPageInner() {
                             {product.discount_price && (
                               <div className="text-[10px] text-gray-400 line-through">৳{product.price.toLocaleString()}</div>
                             )}
-                            {(product.is_in_stock ?? product.stock_qty > 0) && (
-                              <div className="text-[10px] text-emerald-600 font-medium">● In Stock</div>
-                            )}
+                            <div className="text-[10px] text-emerald-600 font-medium">● In Stock</div>
                           </div>
                           <button
                             onClick={() => handleAddToCart(product)}
-                            disabled={!(product.is_in_stock ?? product.stock_qty > 0)}
-                            className={`p-2 rounded-lg transition-all flex-shrink-0 ${
-                              (product.is_in_stock ?? product.stock_qty > 0)
-                                ? 'bg-ink text-white hover:bg-ink/90 hover:shadow-md active:scale-95'
-                                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                            }`}
+                            className="p-2 rounded-lg transition-all flex-shrink-0 bg-ink text-white hover:bg-ink/90 hover:shadow-md active:scale-95"
                             title="Add to cart"
                           >
                             <ShoppingCartIcon className="h-4 w-4" />
@@ -698,10 +655,7 @@ function ProductsPageInner() {
                                 <span className="ml-2 text-xs text-gray-400 line-through">৳{product.price.toLocaleString()}</span>
                               )}
                             </div>
-                            {(product.is_in_stock ?? product.stock_qty > 0)
-                              ? <span className="text-xs text-emerald-600 font-medium">In Stock</span>
-                              : <span className="text-xs text-red-500 font-medium">Out of Stock</span>
-                            }
+                            <span className="text-xs text-emerald-600 font-medium">In Stock</span>
                           </div>
                           {product.warranty_period && (
                             <p className="text-[10px] text-gray-400 mt-1">Warranty: {product.warranty_period}</p>
@@ -724,12 +678,7 @@ function ProductsPageInner() {
                           </button>
                           <button
                             onClick={() => handleAddToCart(product)}
-                            disabled={!(product.is_in_stock ?? product.stock_qty > 0)}
-                            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-                              (product.is_in_stock ?? product.stock_qty > 0)
-                                ? 'bg-ink text-white hover:bg-ink/90'
-                                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                            }`}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all bg-ink text-white hover:bg-ink/90"
                           >
                             <ShoppingCartIcon className="h-4 w-4" />
                             <span className="hidden sm:inline">Add to Cart</span>

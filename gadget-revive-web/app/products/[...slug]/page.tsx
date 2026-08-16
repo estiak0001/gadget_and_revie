@@ -7,7 +7,6 @@ import { productService, reviewService } from '@/lib/api';
 import { getStorageUrl } from '@/lib/api/config';
 import { Product, ProductCategory, ProductBrand, Review, CategoryFilterAttribute } from '@/lib/types';
 import { useCartStore } from '@/lib/stores/cart-store';
-import { useAuthStore } from '@/lib/stores/auth-store';
 import { useWishlistStore } from '@/lib/stores/wishlist-store';
 import { useCompareStore } from '@/lib/stores/compare-store';
 import Breadcrumb from '@/components/Breadcrumb';
@@ -28,6 +27,7 @@ import {
   ShareIcon,
   MagnifyingGlassPlusIcon,
   ArrowsRightLeftIcon,
+  CheckIcon,
 } from '@heroicons/react/24/outline';
 import { HeartIcon as HeartSolidIcon, StarIcon as StarSolidIcon } from '@heroicons/react/24/solid';
 import toast from 'react-hot-toast';
@@ -142,7 +142,6 @@ export default function ProductsSlugPage() {
 function CategoryView({ category }: { category: ProductCategory }) {
   const router = useRouter();
   const { addItem } = useCartStore();
-  const { isAuthenticated } = useAuthStore();
   const { toggleItem: toggleWishlist, isInWishlist } = useWishlistStore();
   const { toggleItem: toggleCompare, isInCompare } = useCompareStore();
 
@@ -153,7 +152,6 @@ function CategoryView({ category }: { category: ProductCategory }) {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [showFilters, setShowFilters] = useState(false);
   const [isMobileCat, setIsMobileCat] = useState(false);
-  const [inStockOnly, setInStockOnly] = useState(false);
   const [wishlist, setWishlist] = useState<number[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -185,7 +183,6 @@ function CategoryView({ category }: { category: ProductCategory }) {
         category_id: category.id,
       };
       if (searchQuery) params.search = searchQuery;
-      if (inStockOnly) params.in_stock = true;
       if (flatSelectedValueIds.length > 0) {
         params.attribute_values = flatSelectedValueIds;
       }
@@ -207,7 +204,7 @@ function CategoryView({ category }: { category: ProductCategory }) {
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [category.id, currentPage, searchQuery, sortBy, inStockOnly, selectedFiltersKey, minPrice, maxPrice, brandsKey]);
+  }, [category.id, currentPage, searchQuery, sortBy, selectedFiltersKey, minPrice, maxPrice, brandsKey]);
 
   // Load filter attributes and brands whenever the viewed category changes
   useEffect(() => {
@@ -238,7 +235,7 @@ function CategoryView({ category }: { category: ProductCategory }) {
   }, [category.id]);
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
-  useEffect(() => { setCurrentPage(1); }, [searchQuery, sortBy, inStockOnly, selectedFiltersKey, minPrice, maxPrice, brandsKey]);
+  useEffect(() => { setCurrentPage(1); }, [searchQuery, sortBy, selectedFiltersKey, minPrice, maxPrice, brandsKey]);
 
   // Initialize filter visibility and mobile detection
   useEffect(() => {
@@ -267,7 +264,6 @@ function CategoryView({ category }: { category: ProductCategory }) {
 
   const clearAllFilters = () => {
     setSearchQuery('');
-    setInStockOnly(false);
     setMinPrice('');
     setMaxPrice('');
     setSelectedBrandIds([]);
@@ -281,7 +277,7 @@ function CategoryView({ category }: { category: ProductCategory }) {
   };
 
   const handleAddToCart = async (product: Product) => {
-    if (!isAuthenticated) { toast.error('Please login to add items to cart'); return; }
+    // Guests get a session-scoped cart that carries through to guest checkout — no login required.
     try {
       await addItem('product', product.id, 1);
       toast.success(`${product.name} added to cart!`);
@@ -318,7 +314,7 @@ function CategoryView({ category }: { category: ProductCategory }) {
 
   return (
     <div className="bg-gray-50 min-h-screen">
-      <div className="max-w-[1800px] mx-auto px-3 sm:px-4 lg:px-6 py-4">
+      <div className="max-w-[1600px] mx-auto px-3 sm:px-4 lg:px-6 py-4">
         {/* Breadcrumb */}
         <div className="mb-4">
           <Breadcrumb items={breadcrumbItems} />
@@ -341,9 +337,6 @@ function CategoryView({ category }: { category: ProductCategory }) {
                     className="px-3 py-1.5 rounded-full text-sm font-medium bg-white border-2 border-gray-200 text-gray-700 hover:border-ink hover:bg-ink/90 hover:text-white transition-all shadow-sm"
                   >
                     {sub.name}
-                    {sub.products_count != null && sub.products_count > 0 && (
-                      <span className="ml-1.5 opacity-60">({sub.products_count})</span>
-                    )}
                   </Link>
                 ))}
               </div>
@@ -470,19 +463,6 @@ function CategoryView({ category }: { category: ProductCategory }) {
                   </div>
                 </div>
 
-                {/* Stock */}
-                <div className="pb-3 border-b border-gray-100">
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={inStockOnly}
-                      onChange={(e) => setInStockOnly(e.target.checked)}
-                      className="w-3.5 h-3.5 text-gray-800 border-gray-300 rounded"
-                    />
-                    <span className="text-xs text-gray-600">In Stock Only</span>
-                  </label>
-                </div>
-
                 {/* Price Range */}
                 <div className="pb-3 border-b border-gray-100">
                   <p className="text-xs font-semibold text-gray-900 mb-2">Price Range</p>
@@ -526,9 +506,6 @@ function CategoryView({ category }: { category: ProductCategory }) {
                             />
                             <span className="text-gray-600 truncate">{brand.name}</span>
                           </span>
-                          {brand.products_count != null && (
-                            <span className="text-gray-400 text-[10px]">({brand.products_count})</span>
-                          )}
                         </label>
                       ))}
                     </div>
@@ -579,9 +556,6 @@ function CategoryView({ category }: { category: ProductCategory }) {
                                       className="w-3.5 h-3.5 text-gray-800 border-gray-300 rounded"
                                     />
                                     <span className="text-gray-600 truncate">{v.value}</span>
-                                  </span>
-                                  <span className="text-gray-400 text-[10px]">
-                                    ({v.products_count})
                                   </span>
                                 </label>
                               );
@@ -658,7 +632,7 @@ function CategoryView({ category }: { category: ProductCategory }) {
                           >
                             <ArrowsRightLeftIcon className="h-4 w-4" />
                           </button>
-                          <button onClick={() => handleAddToCart(p)} disabled={!(p.is_in_stock ?? p.stock_qty > 0)} className={`p-2 rounded ${(p.is_in_stock ?? p.stock_qty > 0) ? 'bg-ink text-white hover:bg-ink/90' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>
+                          <button onClick={() => handleAddToCart(p)} className="p-2 rounded bg-ink text-white hover:bg-ink/90">
                             <ShoppingCartIcon className="h-4 w-4" />
                           </button>
                         </div>
@@ -721,11 +695,6 @@ function ProductCard({ product: p, onWishlist, onCompare, onAddToCart, isWishlis
             <ArrowsRightLeftIcon className="h-4 w-4" />
           </button>
         </div>
-        {!(p.is_in_stock ?? p.stock_qty > 0) && (
-          <div className="absolute top-2 left-2">
-            <span className="px-2 py-0.5 bg-ink text-white text-xs font-medium rounded">Out of Stock</span>
-          </div>
-        )}
       </div>
       <div className="p-3">
         {p.discount_price && (
@@ -742,12 +711,11 @@ function ProductCard({ product: p, onWishlist, onCompare, onAddToCart, isWishlis
         <div className="flex items-end justify-between">
           <div>
             <div className="text-lg font-bold text-gray-900">৳{p.discount_price || p.price}</div>
-            {(p.is_in_stock ?? p.stock_qty > 0) && <div className="text-[10px] text-green-600">In Stock</div>}
+            <div className="text-[10px] text-green-600">In Stock</div>
           </div>
           <button
             onClick={() => onAddToCart(p)}
-            disabled={!(p.is_in_stock ?? p.stock_qty > 0)}
-            className={`p-2 rounded transition-all ${(p.is_in_stock ?? p.stock_qty > 0) ? 'bg-ink text-white hover:bg-ink/90' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}
+            className="p-2 rounded transition-all bg-ink text-white hover:bg-ink/90"
           >
             <ShoppingCartIcon className="h-4 w-4" />
           </button>
@@ -763,12 +731,14 @@ function ProductCard({ product: p, onWishlist, onCompare, onAddToCart, isWishlis
 function ProductDetailView({ product: initialProduct }: { product: Product }) {
   const router = useRouter();
   const { addItem } = useCartStore();
-  const { isAuthenticated } = useAuthStore();
 
   const [product] = useState<Product>(initialProduct);
   const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [quantity, setQuantity] = useState(1);
+  // Drives the Add to Cart icon swap (cart -> check, briefly) so the click has a visible payoff
+  // beyond the toast — helpful on mobile where the toast can go unnoticed near the top of screen.
+  const [justAdded, setJustAdded] = useState(false);
   const [selectedImage, setSelectedImage] = useState(0);
   const [activeTab, setActiveTab] = useState('description');
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
@@ -834,13 +804,17 @@ function ProductDetailView({ product: initialProduct }: { product: Product }) {
   if (productImages.length === 0) productImages.push('/images/placeholder.jpg');
 
   const handleAddToCart = async () => {
-    if (!isAuthenticated) { router.push('/auth/login'); return; }
-    try { await addItem('product', product.id, quantity); toast.success(`${quantity} × ${product.name} added to cart!`); }
+    // Guests get a session-scoped cart that carries through to guest checkout — no login required.
+    try {
+      await addItem('product', product.id, quantity);
+      toast.success(`${quantity} × ${product.name} added to cart!`);
+      setJustAdded(true);
+      setTimeout(() => setJustAdded(false), 1500);
+    }
     catch { toast.error('Failed to add to cart'); }
   };
 
   const handleBuyNow = async () => {
-    if (!isAuthenticated) { router.push('/auth/login'); return; }
     try { await addItem('product', product.id, quantity); router.push('/checkout'); }
     catch { toast.error('Failed to add to cart'); }
   };
@@ -876,22 +850,21 @@ function ProductDetailView({ product: initialProduct }: { product: Product }) {
 
   const brandName = product.brand_name || product.brand_details?.name || product.brand || '';
   const avgRating = reviews.length > 0 ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length : 0;
-  // always_in_stock lets a made-to-order/untracked product show as available regardless of the
-  // physical stock_qty count — prefer the API's own computed is_in_stock, which already accounts
-  // for that override, over re-deriving it from stock_qty alone.
-  const inStock = product.is_in_stock ?? product.stock_qty > 0;
-  const maxOrderQty = product.always_in_stock ? 99 : product.stock_qty;
+  // The storefront never shows real stock status or blocks ordering on it — everything presents
+  // as available and orderable, regardless of the actual stock_qty count.
+  const inStock = true;
+  const maxOrderQty = 99;
 
   return (
     <div className="bg-gray-50 min-h-screen">
       {/* Breadcrumb */}
       <div className="bg-white border-b border-gray-200">
-        <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <Breadcrumb items={breadcrumbItems} />
         </div>
       </div>
 
-      <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className={relatedProducts.length > 0 ? 'flex flex-col lg:flex-row gap-4 mb-6' : 'mb-6'}>
           {/* Similar Products sidebar (desktop) — spans the full height of the content column beside it, no internal scroll */}
           {relatedProducts.length > 0 && (
@@ -933,11 +906,8 @@ function ProductDetailView({ product: initialProduct }: { product: Product }) {
                     alt={product.name}
                     className="w-full h-full object-contain p-3"
                   />
-                  {!inStock && (
-                    <span className="absolute top-3 left-3 px-3 py-1 bg-ink text-white text-xs font-semibold rounded-full">Out of Stock</span>
-                  )}
                   {product.discount_price && (
-                    <span className="absolute top-3 left-3 mt-5 px-3 py-1 bg-red-500 text-white text-xs font-semibold rounded-full">
+                    <span className="absolute top-3 left-3 px-3 py-1 bg-red-500 text-white text-xs font-semibold rounded-full">
                       -{Math.round(((product.price - product.discount_price) / product.price) * 100)}% OFF
                     </span>
                   )}
@@ -977,8 +947,8 @@ function ProductDetailView({ product: initialProduct }: { product: Product }) {
 
                 {/* Info badges: stock, code, brand, model, warranty */}
                 <div className="flex flex-wrap items-center gap-2 mb-2.5">
-                  <span className={`inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-md border ${inStock ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
-                    Stock: {inStock ? 'In Stock' : 'Out of Stock'}
+                  <span className="inline-flex items-center text-xs font-semibold px-2.5 py-1 rounded-md border bg-green-50 border-green-200 text-green-700">
+                    Stock: In Stock
                   </span>
                   {product.sku && (
                     <span className="inline-flex items-center text-xs font-medium px-2.5 py-1 rounded-md border border-blue-200 bg-blue-50 text-blue-700">
@@ -1038,22 +1008,49 @@ function ProductDetailView({ product: initialProduct }: { product: Product }) {
                   )}
                 </div>
 
-                {/* Quantity + Actions — single row */}
-                <div className="flex flex-wrap items-center gap-2.5 mb-3">
-                  {inStock && (
-                    <div className="flex items-center border-2 border-gray-300 rounded-lg">
-                      <button onClick={() => setQuantity((q) => Math.max(1, q - 1))} className="px-3 py-2 text-gray-600 hover:bg-gray-50">-</button>
-                      <span className="px-4 py-2 font-semibold text-gray-900 border-x-2 border-gray-300">{quantity}</span>
-                      <button onClick={() => setQuantity((q) => Math.min(maxOrderQty, q + 1))} className="px-3 py-2 text-gray-600 hover:bg-gray-50">+</button>
+                {/* Quantity */}
+                {inStock && (
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="text-sm font-medium text-gray-700">Quantity</span>
+                    <div className="flex items-center border-2 border-gray-200 rounded-lg overflow-hidden">
+                      <button onClick={() => setQuantity((q) => Math.max(1, q - 1))} className="w-9 h-10 flex items-center justify-center text-gray-600 hover:bg-gray-100 transition-colors">−</button>
+                      <span className="w-11 h-10 flex items-center justify-center font-semibold text-gray-900 border-x-2 border-gray-200">{quantity}</span>
+                      <button onClick={() => setQuantity((q) => Math.min(maxOrderQty, q + 1))} className="w-9 h-10 flex items-center justify-center text-gray-600 hover:bg-gray-100 transition-colors">+</button>
                     </div>
-                  )}
-                  <button onClick={handleAddToCart} disabled={!inStock} className={`flex-1 min-w-[140px] px-5 py-2.5 font-bold text-sm sm:text-base rounded-xl border-2 transition-all ${inStock ? 'border-ink text-gray-900 hover:bg-gray-100' : 'border-gray-200 text-gray-400 cursor-not-allowed'}`}>
-                    <ShoppingCartIcon className="h-5 w-5 inline mr-1.5" />Add to Cart
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="flex items-stretch gap-2 mb-3">
+                  <button
+                    onClick={handleAddToCart}
+                    disabled={!inStock}
+                    className={`group flex-1 h-11 flex items-center justify-center gap-1.5 whitespace-nowrap font-semibold text-sm rounded-xl shadow-sm transition-all duration-200 ${
+                      !inStock
+                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                        : justAdded
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-ink text-white hover:bg-ink/90 hover:shadow-md active:scale-[0.97]'
+                    }`}
+                  >
+                    <span className="relative h-4 w-4 shrink-0">
+                      <ShoppingCartIcon
+                        className={`absolute inset-0 h-4 w-4 transition-all duration-200 ${justAdded ? 'opacity-0 scale-50' : 'opacity-100 scale-100 group-hover:-translate-y-0.5 group-hover:scale-110'}`}
+                      />
+                      <CheckIcon
+                        className={`absolute inset-0 h-4 w-4 transition-all duration-200 ${justAdded ? 'opacity-100 scale-100' : 'opacity-0 scale-50'}`}
+                      />
+                    </span>
+                    {justAdded ? 'Added!' : 'Add to Cart'}
                   </button>
-                  <button onClick={handleBuyNow} disabled={!inStock} className={`flex-1 min-w-[120px] px-5 py-2.5 font-bold text-sm sm:text-base rounded-xl transition-all ${inStock ? 'bg-gradient-to-r from-ink to-ink text-white hover:shadow-lg' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
+                  <button
+                    onClick={handleBuyNow}
+                    disabled={!inStock}
+                    className={`flex-1 h-11 flex items-center justify-center whitespace-nowrap font-semibold text-sm rounded-xl border-2 transition-all duration-200 ${inStock ? 'border-ink text-ink hover:bg-ink hover:text-white active:scale-[0.97]' : 'border-gray-200 text-gray-400 cursor-not-allowed'}`}
+                  >
                     Buy Now
                   </button>
-                  <button onClick={handleToggleWishlist} aria-label="Wishlist" className={`p-2.5 rounded-xl border-2 transition-all ${isWishlisted ? 'border-rose-500 bg-rose-50 text-rose-600' : 'border-gray-200 text-gray-600 hover:border-rose-400 hover:bg-rose-50 hover:text-rose-600'}`}>
+                  <button onClick={handleToggleWishlist} aria-label="Wishlist" className={`shrink-0 flex items-center justify-center p-2.5 rounded-xl border-2 transition-all ${isWishlisted ? 'border-rose-500 bg-rose-50 text-rose-600' : 'border-gray-200 text-gray-600 hover:border-rose-400 hover:bg-rose-50 hover:text-rose-600'}`}>
                     {isWishlisted ? <HeartSolidIcon className="h-5 w-5 text-rose-500" /> : <HeartIcon className="h-5 w-5" />}
                   </button>
                   <button onClick={handleToggleCompare} aria-label="Compare" className={`p-2.5 rounded-xl border-2 transition-all ${isCompared ? 'border-violet-600 bg-violet-50 text-violet-700' : 'border-gray-200 text-gray-600 hover:border-violet-500 hover:bg-violet-50 hover:text-violet-700'}`}>

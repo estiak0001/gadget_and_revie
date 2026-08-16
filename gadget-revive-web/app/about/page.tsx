@@ -177,7 +177,7 @@ export default function AboutPage() {
     return (
       <div className="bg-white">
         <section className="relative bg-gradient-to-br from-ink via-black to-ink overflow-hidden">
-          <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-7 lg:py-6 relative">
+          <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-7 lg:py-6 relative">
             <div className="mx-auto max-w-3xl text-center">
               <div className="mx-auto h-8 w-48 bg-white/10 rounded-full animate-pulse mb-6" />
               <div className="mx-auto h-10 w-3/4 bg-white/10 rounded animate-pulse mb-4" />
@@ -185,7 +185,7 @@ export default function AboutPage() {
             </div>
           </div>
         </section>
-        <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8">
           {[0, 1, 2].map((i) => (
             <div key={i} className="h-40 bg-gray-100 rounded-xl animate-pulse" />
           ))}
@@ -211,7 +211,7 @@ export default function AboutPage() {
         <div className="absolute inset-0 bg-[url('/images/circuit-pattern.svg')] opacity-5"></div>
         <div className="hidden md:block absolute top-0 right-0 w-96 h-96 bg-white/5 rounded-full blur-3xl"></div>
         <div className="hidden md:block absolute bottom-0 left-0 w-72 h-72 bg-white/5 rounded-full blur-3xl"></div>
-        <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-7 lg:py-6 relative">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-7 lg:py-6 relative">
           <div className="text-center">
             <div className="inline-flex items-center px-4 py-2 rounded-full bg-white/10 border border-white/20 mb-6">
               <Icon name={hero.badge_icon} className="h-5 w-5 text-gray-300 mr-2" />
@@ -242,7 +242,7 @@ export default function AboutPage() {
 
       {/* Story Section */}
       <section className="py-6 sm:py-7 lg:py-6">
-        <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid md:grid-cols-2 gap-5 lg:gap-6 items-center">
             <div>
               <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-ink text-white mb-4">
@@ -308,7 +308,7 @@ export default function AboutPage() {
 
       {/* Values Section */}
       <section className="py-8 bg-gray-50">
-        <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-6">
             <h2 className="text-2xl font-bold text-gray-900 mb-3">{values.title}</h2>
             <p className="text-gray-600 max-w-xl mx-auto">{values.subtitle}</p>
@@ -332,7 +332,7 @@ export default function AboutPage() {
 
       {/* Mission & Vision */}
       <section className="py-8">
-        <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid md:grid-cols-2 gap-5">
             {/* Mission */}
             <div className="bg-ink rounded-xl p-8 text-white">
@@ -356,7 +356,7 @@ export default function AboutPage() {
 
       {/* Team Section */}
       <section className="py-8 bg-gray-50">
-        <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-6">
             <h2 className="text-2xl font-bold text-gray-900 mb-3">{team.title}</h2>
             <p className="text-gray-600 max-w-xl mx-auto">{team.subtitle}</p>

@@ -239,7 +239,7 @@ export default function CheckoutPage() {
     <div className="bg-gray-50 min-h-screen">
       {/* Header */}
       <div className="bg-white border-b border-gray-200">
-        <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <h1 className="text-2xl font-bold text-gray-900">Checkout</h1>
           <p className="text-gray-600 mt-1">Complete your purchase</p>
           {!isAuthenticated && (
@@ -257,7 +257,7 @@ export default function CheckoutPage() {
         </div>
       </div>
 
-      <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid lg:grid-cols-3 gap-5">
           {/* Left Column - Form */}
           <div className="lg:col-span-2 space-y-6">

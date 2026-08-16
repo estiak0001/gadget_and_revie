@@ -50,7 +50,7 @@ export default function LocationsPage() {
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-ink text-white">
-        <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <Link
             href="/"
             className="inline-flex items-center gap-2 text-gray-400 hover:text-white text-sm mb-6 transition-colors"
@@ -74,7 +74,7 @@ export default function LocationsPage() {
       </div>
 
       {/* Main Content */}
-      <div className="max-w-[1800px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Featured / Main Branch */}
         {featured && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 md:p-8 mb-5">

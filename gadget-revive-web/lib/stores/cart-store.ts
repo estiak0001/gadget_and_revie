@@ -135,16 +135,28 @@ export const useCartStore = create<CartState>()(
         try {
           set({ isLoading: true });
 
-          // Always try the guest API first (works for both guest + auth users
-          // at the frontend level — the auth check is on the checkout side).
-          // For logged-in users, we use the auth API instead.
+          // A token *existing* in localStorage isn't the same as it still being valid — it may
+          // have been revoked server-side (logout elsewhere, password reset/change, expiry) while
+          // this tab sat open. Treating its mere presence as "authenticated" and only then
+          // discovering it's dead would 401 on the authenticated cart endpoint, which the global
+          // axios interceptor turns into a hard redirect to /auth/login — from the shopper's side
+          // that reads as "Add to Cart kicks me to login" even though nothing should require an
+          // account. So a 401 here falls back to the guest cart instead of propagating.
           const token =
             typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
 
           let cart: Cart;
           if (token) {
-            // Authenticated user — use the authenticated cart API
-            cart = await cartService.addItem({ item_type, item_id, quantity, notes });
+            try {
+              cart = await cartService.addItem({ item_type, item_id, quantity, notes });
+            } catch (err: any) {
+              if (err?.response?.status === 401) {
+                if (typeof window !== 'undefined') localStorage.removeItem('auth_token');
+                cart = await guestCartService.addItem(sessionId, { item_type, item_id, quantity, notes });
+              } else {
+                throw err;
+              }
+            }
           } else {
             // Guest user — use the guest cart API
             cart = await guestCartService.addItem(sessionId, {
@@ -173,8 +185,19 @@ export const useCartStore = create<CartState>()(
             typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
 
           if (token) {
-            await cartService.removeItem(itemId);
-            await get().fetchCart(true);
+            try {
+              await cartService.removeItem(itemId);
+              await get().fetchCart(true);
+            } catch (err: any) {
+              if (err?.response?.status === 401) {
+                if (typeof window !== 'undefined') localStorage.removeItem('auth_token');
+                const sessionId = getOrCreateSessionId();
+                await guestCartService.removeItem(sessionId, itemId);
+                await get().fetchCart(false);
+              } else {
+                throw err;
+              }
+            }
           } else {
             const sessionId = getOrCreateSessionId();
             await guestCartService.removeItem(sessionId, itemId);
@@ -198,8 +221,19 @@ export const useCartStore = create<CartState>()(
             typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
 
           if (token) {
-            const cart = await cartService.updateItem(itemId, { quantity, notes });
-            set({ cart });
+            try {
+              const cart = await cartService.updateItem(itemId, { quantity, notes });
+              set({ cart });
+            } catch (err: any) {
+              if (err?.response?.status === 401) {
+                if (typeof window !== 'undefined') localStorage.removeItem('auth_token');
+                const sessionId = getOrCreateSessionId();
+                const cart = await guestCartService.updateItem(sessionId, itemId, { quantity, notes });
+                set({ cart });
+              } else {
+                throw err;
+              }
+            }
           } else {
             const sessionId = getOrCreateSessionId();
             const cart = await guestCartService.updateItem(sessionId, itemId, {
@@ -226,7 +260,17 @@ export const useCartStore = create<CartState>()(
             typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
 
           if (token) {
-            await cartService.clearCart();
+            try {
+              await cartService.clearCart();
+            } catch (err: any) {
+              if (err?.response?.status === 401) {
+                if (typeof window !== 'undefined') localStorage.removeItem('auth_token');
+                const sessionId = getOrCreateSessionId();
+                await guestCartService.clearCart(sessionId);
+              } else {
+                throw err;
+              }
+            }
           } else {
             const sessionId = getOrCreateSessionId();
             await guestCartService.clearCart(sessionId);

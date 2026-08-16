@@ -29,7 +29,7 @@ export default function TopBar() {
 
   return (
     <div className="bg-ink text-gray-300 border-b border-white/10">
-      <div className="mx-auto max-w-[1800px] px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8">
         <div className="flex h-9 items-center justify-between text-xs">
           {/* Left side - Contact Info */}
           <div className="hidden md:flex items-center divide-x divide-gray-700">

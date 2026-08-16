@@ -50,13 +50,18 @@ apiClient.interceptors.response.use(
   (error) => {
     const requestUrl = error.config?.url ?? "";
 
-    // Skip 401 handling for auth endpoints and public endpoints — these should
-    // never trigger a redirect or clear tokens. Public endpoints may 401 when a
-    // stale Bearer token is attached; that's harmless.
+    // Skip 401 handling for auth endpoints, public endpoints, and cart endpoints — these
+    // should never trigger a redirect or clear tokens. Public/guest endpoints may 401 when a
+    // stale Bearer token is attached; that's harmless. Cart is deliberately never supposed to
+    // require an account (guest checkout is fully supported) — a 401 there means the attached
+    // token went stale, which cart-store.ts already recovers from by falling back to the guest
+    // cart itself, so this must not also force a full-page redirect out from under it.
     const isIgnoredEndpoint =
       requestUrl.includes("/auth/") ||
       requestUrl.includes("/public/") ||
-      requestUrl.includes("/categories/");
+      requestUrl.includes("/categories/") ||
+      requestUrl.includes("/cart") ||
+      requestUrl.includes("/guest/");
 
     if (error.response?.status === 401 && !isIgnoredEndpoint) {
       if (typeof window !== "undefined") {

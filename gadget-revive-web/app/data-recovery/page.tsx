@@ -303,7 +303,7 @@ export default function DataRecoveryPage() {
     return (
       <div className="bg-white">
         <div className="relative overflow-hidden bg-gradient-to-br from-ink via-ink to-ink">
-          <div className="relative mx-auto max-w-[1800px] px-6 py-8 sm:py-32 lg:px-8">
+          <div className="relative mx-auto max-w-[1600px] px-6 py-8 sm:py-32 lg:px-8">
             <div className="mx-auto max-w-4xl text-center">
               <div className="mx-auto h-8 w-56 bg-white/10 rounded-full animate-pulse mb-6" />
               <div className="mx-auto h-10 w-3/4 bg-white/10 rounded animate-pulse mb-4" />
@@ -317,7 +317,7 @@ export default function DataRecoveryPage() {
             </div>
           </div>
         </div>
-        <div className="max-w-[1800px] mx-auto px-6 py-6 space-y-8">
+        <div className="max-w-[1600px] mx-auto px-6 py-6 space-y-8">
           {[0, 1, 2].map((i) => (
             <div key={i} className="h-40 bg-gray-100 rounded-xl animate-pulse" />
           ))}
@@ -347,7 +347,7 @@ export default function DataRecoveryPage() {
           }}></div>
         </div>
 
-        <div className="relative mx-auto max-w-[1800px] px-6 py-8 sm:py-32 lg:px-8">
+        <div className="relative mx-auto max-w-[1600px] px-6 py-8 sm:py-32 lg:px-8">
           <div className="mx-auto max-w-4xl text-center">
             <div className="inline-flex items-center gap-2 bg-white/10 border border-white/30 rounded-full px-4 py-2 mb-6">
               <ShieldCheckIcon className="h-5 w-5 text-white" />
@@ -396,7 +396,7 @@ export default function DataRecoveryPage() {
 
       {/* ── Data Loss Scenarios ───────────────────────────────────────────────── */}
       <div className="py-8 bg-gray-50">
-        <div className="mx-auto max-w-[1800px] px-6 lg:px-8">
+        <div className="mx-auto max-w-[1600px] px-6 lg:px-8">
           <div className="text-center mb-6">
             <h2 className="text-xl sm:text-2xl lg:text-2xl font-bold text-gray-900 mb-4">
               {scenarios.title}
@@ -422,7 +422,7 @@ export default function DataRecoveryPage() {
 
       {/* ── Features / Specialized Recovery Services ──────────────────────────── */}
       <div className="py-8 sm:py-32 bg-white">
-        <div className="mx-auto max-w-[1800px] px-6 lg:px-8">
+        <div className="mx-auto max-w-[1600px] px-6 lg:px-8">
           <div className="mx-auto max-w-2xl text-center mb-6">
             <h2 className="text-base font-semibold leading-7 bg-gradient-to-r from-ink to-ink bg-clip-text text-transparent mb-3">
               {features.label}
@@ -463,7 +463,7 @@ export default function DataRecoveryPage() {
 
       {/* ── Emergency Alert ───────────────────────────────────────────────────── */}
       <div className="bg-gradient-to-r from-ink to-ink py-6">
-        <div className="mx-auto max-w-[1800px] px-6">
+        <div className="mx-auto max-w-[1600px] px-6">
           <div className="flex items-center justify-center gap-4 text-white">
             <div className="flex-shrink-0">
               <div className="animate-pulse">
@@ -480,7 +480,7 @@ export default function DataRecoveryPage() {
 
       {/* ── Services / Pricing ────────────────────────────────────────────────── */}
       <div id="services" className="py-8 sm:py-32 bg-gray-50">
-        <div className="mx-auto max-w-[1800px] px-6 lg:px-8">
+        <div className="mx-auto max-w-[1600px] px-6 lg:px-8">
           <div className="mx-auto max-w-2xl text-center mb-6">
             <h2 className="text-xl sm:text-2xl lg:text-2xl font-bold text-gray-900 mb-4 leading-tight">
               {services.title}
@@ -593,7 +593,7 @@ export default function DataRecoveryPage() {
 
       {/* ── Recovery Process ──────────────────────────────────────────────────── */}
       <div id="process" className="py-8 sm:py-32 bg-gradient-to-b from-white to-gray-50">
-        <div className="mx-auto max-w-[1800px] px-6 lg:px-8">
+        <div className="mx-auto max-w-[1600px] px-6 lg:px-8">
           <div className="mx-auto max-w-3xl text-center mb-6">
             <div className="inline-flex items-center gap-2 bg-gradient-to-r from-blue-100 to-purple-100 rounded-full px-4 py-2 mb-4">
               <ClockIcon className="h-5 w-5 text-blue-600" />
@@ -672,7 +672,7 @@ export default function DataRecoveryPage() {
 
       {/* ── Guarantees ────────────────────────────────────────────────────────── */}
       <div className="bg-gradient-to-b from-gray-50 to-white py-8 sm:py-32">
-        <div className="mx-auto max-w-[1800px] px-6 lg:px-8">
+        <div className="mx-auto max-w-[1600px] px-6 lg:px-8">
           <div className="mx-auto max-w-2xl text-center mb-6">
             <h2 className="text-xl sm:text-2xl lg:text-2xl font-bold text-gray-900 mb-4 leading-tight">
               {guarantees.title}
@@ -726,7 +726,7 @@ export default function DataRecoveryPage() {
 
       {/* ── FAQ Section ───────────────────────────────────────────────────────── */}
       <div className="py-8 bg-white">
-        <div className="mx-auto max-w-[1800px] px-6 lg:px-8">
+        <div className="mx-auto max-w-[1600px] px-6 lg:px-8">
           <div className="mx-auto max-w-2xl text-center mb-6">
             <h2 className="text-xl sm:text-2xl lg:text-2xl font-bold text-gray-900 mb-4 leading-tight">
               {faqSection.title}
