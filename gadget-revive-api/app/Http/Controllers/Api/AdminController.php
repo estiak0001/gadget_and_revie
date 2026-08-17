@@ -936,7 +936,13 @@ class AdminController extends BaseController
             $query->where('order_number', 'like', "%{$request->search}%");
         }
 
-        $orders = $query->latest()->paginate($request->get('per_page', 15));
+        // ->through() so every row goes through OrderResource (is_guest, can_be_edited,
+        // can_be_cancelled, etc.) instead of raw model attributes — orderShow() already does
+        // this for the single-order view, but this list endpoint never did, so is_guest (and
+        // everything else only OrderResource computes) was silently absent from every row here.
+        $orders = $query->latest()
+            ->paginate($request->get('per_page', 15))
+            ->through(fn (Order $order) => new OrderResource($order));
 
         return $this->paginated($orders);
     }
