@@ -350,6 +350,14 @@ export const adminService = {
     return api.put('/admin/settings', { settings });
   },
   regenerateApiKey: () => api.post('/admin/settings/api-keys/regenerate'),
+  // Brochure editor — content is stored as one HTML blob under a single
+  // 'brochure' settings group so it round-trips through the generic settings
+  // endpoints without needing dedicated backend routes.
+  getBrochureContent: () => api.get<{ data: Record<string, Record<string, string>> }>('/admin/settings', { params: { group: 'brochure' } }),
+  saveBrochureContent: (html: string) =>
+    api.put('/admin/settings', {
+      settings: [{ key: 'brochure_content', value: html, group: 'brochure', type: 'json' }],
+    }),
   // SMS — Settings > SMS builds/tests connections; OTP/order/campaign config lives on the
   // dedicated SMS Center page instead (both hit the same /admin/sms/* routes below).
   getSmsConnections: () => api.get<ApiResponse<SmsConnection[]>>('/admin/sms/connections'),

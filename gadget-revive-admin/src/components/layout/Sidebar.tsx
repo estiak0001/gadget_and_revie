@@ -32,6 +32,7 @@ import {
   Truck,
   BookOpen,
   MessageSquare,
+  Layers,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/auth';
@@ -266,6 +267,12 @@ const navigation: NavSection[] = [
           { title: 'Districts', href: '/locations/districts' },
           { title: 'Areas', href: '/locations/areas' },
         ],
+      },
+      {
+        title: 'Brochure',
+        href: '/cms/brochure',
+        icon: <Layers className="w-5 h-5" />,
+        permissions: ['manage_cms', 'manage_settings'],
       },
     ],
   },
