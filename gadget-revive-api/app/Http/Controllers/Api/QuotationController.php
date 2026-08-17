@@ -12,6 +12,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Str;
 
 class QuotationController extends BaseController
 {
@@ -61,6 +62,7 @@ class QuotationController extends BaseController
             'items.*.item_name'     => 'required|string|max:255',
             'items.*.item_sku'      => 'nullable|string|max:100',
             'items.*.item_sn'       => 'nullable|string|max:100',
+            'items.*.item_warranty' => 'nullable|string|max:100',
             'items.*.description'   => 'nullable|string|max:500',
             'items.*.quantity'      => 'required|integer|min:1',
             'items.*.unit_price'    => 'required|numeric|min:0',
@@ -86,12 +88,13 @@ class QuotationController extends BaseController
             'item_name'    => $item['item_name'],
             'item_sku'     => $item['item_sku'] ?? null,
             'item_sn'      => $item['item_sn'] ?? null,
+            'item_warranty' => $item['item_warranty'] ?? null,
             'description'  => $item['description'] ?? null,
             'quantity'     => (int) $item['quantity'],
             'unit_price'   => (float) $item['unit_price'],
             'total_price'  => round($item['quantity'] * $item['unit_price'], 2),
-            // Controls whether SKU / S/N / "Catalog Item" badge print on the PDF for this row —
-            // off by default so the printed item list stays to just the name/description.
+            // Controls whether SKU / S/N / Warranty / "Catalog Item" badge print on the PDF for
+            // this row — off by default so the printed item list stays to just the name/description.
             'show_details' => (bool) ($item['show_details'] ?? false),
         ])->all();
 
@@ -270,13 +273,18 @@ class QuotationController extends BaseController
             // current_price is a computed accessor (discount_price ?? price — see
             // Product::getCurrentPrice()), not a real column, so it can't be selected directly;
             // pull the columns it's derived from and compute it per row instead.
-            ->get(['id', 'name', 'sku', 'price', 'discount_price', 'image'])
+            ->get(['id', 'name', 'sku', 'price', 'discount_price', 'image', 'warranty', 'warranty_value', 'warranty_unit'])
             ->map(fn (Product $p) => [
                 'id' => $p->id,
                 'name' => $p->name,
                 'sku' => $p->sku,
                 'current_price' => $p->getCurrentPrice(),
                 'image' => $p->image,
+                // Prefer the free-text warranty note (matches ProductResource's own
+                // warranty_note), fall back to the structured value+unit pair.
+                'warranty' => $p->warranty ?: ($p->warranty_value
+                    ? "{$p->warranty_value} " . Str::plural($p->warranty_unit ?? 'unit', $p->warranty_value)
+                    : null),
             ]);
 
         return $this->success($products);

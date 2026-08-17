@@ -25,8 +25,8 @@ const num = (v: unknown) => Number(v ?? 0) || 0;
 const newKey = () => Math.random().toString(36).slice(2);
 
 const blankRow = (): ItemRow => ({
-  key: newKey(), product_id: null, item_name: '', item_sku: null, item_sn: null, description: null,
-  quantity: 1, unit_price: 0, total_price: 0, show_details: false,
+  key: newKey(), product_id: null, item_name: '', item_sku: null, item_sn: null, item_warranty: null,
+  description: null, quantity: 1, unit_price: 0, total_price: 0, show_details: false,
 });
 
 export default function QuotationForm({ quotation }: { quotation?: Quotation }) {
@@ -106,8 +106,8 @@ export default function QuotationForm({ quotation }: { quotation?: Quotation }) 
       const blankIdx = prev.findIndex((it) => !it.item_name.trim() && !it.product_id);
       const row: ItemRow = {
         key: newKey(), product_id: product.id, item_name: product.name, item_sku: product.sku ?? null,
-        item_sn: null, description: null, quantity: 1, unit_price: num(product.current_price),
-        total_price: num(product.current_price), show_details: false,
+        item_sn: null, item_warranty: product.warranty ?? null, description: null, quantity: 1,
+        unit_price: num(product.current_price), total_price: num(product.current_price), show_details: false,
       };
       if (blankIdx !== -1) {
         const copy = [...prev];
@@ -138,6 +138,7 @@ export default function QuotationForm({ quotation }: { quotation?: Quotation }) 
         item_name: it.item_name,
         item_sku: it.item_sku ?? undefined,
         item_sn: it.item_sn ?? undefined,
+        item_warranty: it.item_warranty ?? undefined,
         description: it.description ?? undefined,
         quantity: num(it.quantity) || 1,
         unit_price: num(it.unit_price),
@@ -295,10 +296,10 @@ export default function QuotationForm({ quotation }: { quotation?: Quotation }) 
                   onChange={(e) => updateItem(it.key, { show_details: e.target.checked })}
                   className="rounded border-gray-300"
                 />
-                Add SKU / Serial No. (shown on the PDF only if checked)
+                Add SKU / Serial No. / Warranty (shown on the PDF only if checked)
               </label>
               {it.show_details && (
-                <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
+                <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2">
                   <Input
                     placeholder="SKU (optional)"
                     value={it.item_sku || ''}
@@ -308,6 +309,11 @@ export default function QuotationForm({ quotation }: { quotation?: Quotation }) 
                     placeholder="Serial No. (optional)"
                     value={it.item_sn || ''}
                     onChange={(e) => updateItem(it.key, { item_sn: e.target.value })}
+                  />
+                  <Input
+                    placeholder="Warranty (optional)"
+                    value={it.item_warranty || ''}
+                    onChange={(e) => updateItem(it.key, { item_warranty: e.target.value })}
                   />
                 </div>
               )}

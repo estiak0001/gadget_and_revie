@@ -28,11 +28,11 @@
 
         .page-bg { background: #ffffff; min-height: 100%; padding: 0; }
 
-        /* ── HEADER — brand lockup and the document title both centered as one compact stack,
-               with the quotation-no/date/valid-until line centered underneath. Tight padding,
-               single band, no second "meta stripe" underneath repeating the same numbers. ── */
+        /* ── HEADER — brand lockup, document title and the quotation-no/date/valid-until line
+               centered as one compact stack. Tight padding, single band, no second
+               "meta stripe" underneath repeating the same numbers. ── */
         .doc-header {
-            padding: 12px 32px 8px;
+            padding: 14px 32px 12px;
             text-align: center;
             border-bottom: 3px solid #1d4ed8;
         }
@@ -252,8 +252,10 @@
             <span class="lbl">Quotation No</span> <span class="val">{{ $quotation->quotation_number }}</span>
             <span class="doc-meta-sep">|</span>
             <span class="lbl">Date</span> <span class="val">{{ $quotation->quotation_date->format('d M Y') }}</span>
+            @if($quotation->valid_until)
             <span class="doc-meta-sep">|</span>
-            <span class="lbl">Valid Until</span> <span class="val accent">{{ $quotation->valid_until ? $quotation->valid_until->format('d M Y') : '—' }}</span>
+            <span class="lbl">Valid Until</span> <span class="val accent">{{ $quotation->valid_until->format('d M Y') }}</span>
+            @endif
         </div>
     </div>
 
@@ -307,16 +309,19 @@
                             @if(!empty($item['description']))
                             <div class="item-sub">{{ $item['description'] }}</div>
                             @endif
-                            {{-- SKU / Serial No. / catalog badge only print when explicitly opted
-                                 into per item — keeps the default listing to just the item name,
-                                 with room to show identifying codes when the item actually needs
-                                 them (e.g. a specific serialized unit). --}}
+                            {{-- SKU / Serial No. / Warranty / catalog badge only print when
+                                 explicitly opted into per item — keeps the default listing to
+                                 just the item name, with room to show identifying codes when the
+                                 item actually needs them (e.g. a specific serialized unit). --}}
                             @if(!empty($item['show_details']))
                                 @if(!empty($item['item_sku']))
                                 <div class="item-sub"><strong>SKU:</strong> {{ $item['item_sku'] }}</div>
                                 @endif
                                 @if(!empty($item['item_sn']))
                                 <div class="item-sub"><strong>S/N:</strong> {{ $item['item_sn'] }}</div>
+                                @endif
+                                @if(!empty($item['item_warranty']))
+                                <div class="item-sub"><strong>Warranty:</strong> {{ $item['item_warranty'] }}</div>
                                 @endif
                                 @if(!empty($item['product_id']))
                                 <span class="catalog-tag">Catalog Item</span>

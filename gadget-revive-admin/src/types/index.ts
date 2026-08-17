@@ -368,12 +368,13 @@ export interface QuotationItem {
   item_name: string;
   item_sku?: string | null;
   item_sn?: string | null;
+  item_warranty?: string | null;
   description?: string | null;
   quantity: number;
   unit_price: number;
   total_price: number;
-  /** Whether SKU / Serial No. / "Catalog Item" badge print on the PDF for this row — off by
-   *  default so the printed item list stays to just the name/description. */
+  /** Whether SKU / Serial No. / Warranty / "Catalog Item" badge print on the PDF for this row —
+   *  off by default so the printed item list stays to just the name/description. */
   show_details?: boolean;
 }
 
@@ -423,6 +424,7 @@ export interface QuotationProductSearchResult {
   sku?: string | null;
   current_price: number;
   image?: string | null;
+  warranty?: string | null;
 }
 
 export interface OrderItem {
