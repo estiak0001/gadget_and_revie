@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { getStorageUrl } from '@/lib/api/config';
-import { SITE_URL } from '@/lib/seo';
+import { getSiteSettings, pickString, SITE_URL } from '@/lib/seo';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 
@@ -119,6 +119,94 @@ export async function generateMetadata(
   return {};
 }
 
-export default function ProductSlugLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+/**
+ * Product + Offer JSON-LD — what actually earns price/availability rich snippets in search
+ * results. `itemCondition` defaults to NewCondition: there's no condition/grade field on the
+ * product model today, and none of the current catalog's names/specs indicate otherwise, so
+ * that's the accurate default rather than a guess. If a `specifications.condition` value is
+ * ever added it's honored first, so this stays correct without another code change.
+ */
+function buildProductSchema(
+  product: Record<string, unknown>,
+  url: string,
+  currency: string,
+): Record<string, unknown> {
+  const name = String(product.name);
+  const rawDesc = (product.short_description as string) || (product.description as string) || '';
+  const description = stripHtml(rawDesc).slice(0, 500) || undefined;
+  const sku = product.sku ? String(product.sku) : undefined;
+  const brandName = (product.brand_name as string)
+    || (product.brand_details as { name?: string } | undefined)?.name
+    || (typeof product.brand === 'string' ? product.brand : undefined);
+  const categoryName = (product.category as { name?: string } | undefined)?.name;
+
+  const images = [
+    product.image as string | undefined,
+    ...(Array.isArray(product.gallery) ? (product.gallery as string[]) : []),
+  ]
+    .filter((img): img is string => !!img)
+    .map((img) => getStorageUrl(img));
+
+  const price = Number(product.current_price ?? product.discount_price ?? product.price ?? 0);
+  const inStock = product.always_in_stock === true || product.is_in_stock !== false;
+
+  const specs = product.specifications as Record<string, unknown> | undefined;
+  const specCondition = specs
+    ? String(specs.condition ?? specs.Condition ?? '').toLowerCase()
+    : '';
+  const itemCondition = specCondition.includes('used')
+    ? 'https://schema.org/UsedCondition'
+    : specCondition.includes('refurb')
+      ? 'https://schema.org/RefurbishedCondition'
+      : 'https://schema.org/NewCondition';
+
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name,
+    ...(description ? { description } : {}),
+    ...(sku ? { sku } : {}),
+    ...(images.length ? { image: images } : {}),
+    ...(brandName ? { brand: { '@type': 'Brand', name: brandName } } : {}),
+    ...(categoryName ? { category: categoryName } : {}),
+    offers: {
+      '@type': 'Offer',
+      url,
+      priceCurrency: currency,
+      price: price.toFixed(2),
+      availability: inStock ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+      itemCondition,
+    },
+  };
+}
+
+export default async function ProductSlugLayout(
+  { children, params }: { children: React.ReactNode; params: Promise<{ slug: string[] }> },
+) {
+  const { slug } = await params;
+  const segments = Array.isArray(slug) ? slug : [slug];
+  const lastSlug = segments[segments.length - 1];
+
+  // Deduped by Next's fetch cache against the identical call generateMetadata already makes
+  // for this same request — this doesn't cost a second network round-trip.
+  const product = await fetchProduct(lastSlug);
+
+  if (!product) {
+    return <>{children}</>;
+  }
+
+  const s = await getSiteSettings();
+  const currency = pickString(s.currency, 'BDT');
+  const url = `${SITE_URL}/products/${segments.join('/')}`;
+  const schema = buildProductSchema(product, url, currency);
+
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+      />
+      {children}
+    </>
+  );
 }
