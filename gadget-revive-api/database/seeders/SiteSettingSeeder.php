@@ -64,6 +64,10 @@ class SiteSettingSeeder extends Seeder
             ['key' => 'meta_keywords', 'value' => 'gadget repair, mobile repair, laptop repair, phone screen replacement, battery replacement, Bangladesh', 'group' => 'seo', 'is_public' => true],
             ['key' => 'google_analytics_id', 'value' => '', 'group' => 'seo', 'is_public' => false],
             ['key' => 'facebook_pixel_id', 'value' => '', 'group' => 'seo', 'is_public' => false],
+            // Google Search Console's HTML-tag verification method — the content value of
+            // <meta name="google-site-verification">. Not a secret (it ends up in page source
+            // either way), kept public like the other SEO fields.
+            ['key' => 'google_site_verification', 'value' => '', 'group' => 'seo', 'is_public' => true],
 
             // Email Settings
             ['key' => 'mail_from_name', 'value' => 'Gadget Revibe', 'group' => 'email', 'is_public' => false],

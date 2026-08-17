@@ -143,6 +143,7 @@ Route::prefix('public')->group(function () {
     Route::get('/data-recovery', [PublicController::class, 'dataRecoveryPage']);
     Route::get('/about', [PublicController::class, 'aboutPage']);
     Route::get('/contact', [PublicController::class, 'contactPage']);
+    Route::get('/pages', [PublicController::class, 'pages']);
     Route::get('/pages/{slug}', [PublicController::class, 'cmsPage']);
     Route::get('/banners', [PublicController::class, 'banners']);
     Route::get('/faqs', [PublicController::class, 'faqs']);

@@ -17,6 +17,19 @@ use Illuminate\Http\Request;
 class PublicController extends BaseController
 {
     /**
+     * Slugs (+ last-updated) of every published CMS page — used to build the storefront
+     * sitemap. Deliberately just the two fields the sitemap needs, not the full page body.
+     */
+    public function pages(): JsonResponse
+    {
+        $pages = CmsPage::where('status', 'published')
+            ->orderBy('slug')
+            ->get(['slug', 'updated_at']);
+
+        return $this->success($pages);
+    }
+
+    /**
      * Get published CMS page by slug
      */
     public function cmsPage(string $slug): JsonResponse

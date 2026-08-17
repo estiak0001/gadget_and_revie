@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import dynamic from "next/dynamic";
 import AuthProvider from "@/components/AuthProvider";
@@ -47,6 +48,9 @@ export async function generateMetadata(): Promise<Metadata> {
   const keywords = pickString(s.meta_keywords);
   const logo = resolveLogo(s.site_logo);
   const favicon = resolveFavicon(s.site_favicon);
+  // Google Search Console's HTML-tag verification method — set from Admin → Settings → SEO,
+  // no redeploy needed once a site owner pastes the code Search Console gives them.
+  const googleSiteVerification = pickString(s.google_site_verification);
 
   return {
     metadataBase: new URL(SITE_URL),
@@ -58,6 +62,7 @@ export async function generateMetadata(): Promise<Metadata> {
     // file convention provides the default (server-rendered) favicon.
     ...(favicon ? { icons: { icon: favicon, apple: favicon } } : {}),
     alternates: { canonical: SITE_URL },
+    ...(googleSiteVerification ? { verification: { google: googleSiteVerification } } : {}),
     openGraph: {
       type: "website",
       siteName,
@@ -102,6 +107,9 @@ export default async function RootLayout({
   const siteName = pickString(s.site_name, "Gadget And Revive");
   const description = pickString(s.meta_description, s.site_description, DEFAULT_DESCRIPTION);
   const logo = resolveLogo(s.site_logo);
+  // Set from Admin → Settings → SEO — a GA4 measurement id ("G-XXXXXXX"), not a secret (it's
+  // sent in every client-side page hit either way). No script renders at all until one is set.
+  const gaMeasurementId = pickString(s.google_analytics_id);
 
   const sameAs = [
     s.facebook_url,
@@ -159,6 +167,22 @@ export default async function RootLayout({
       <body
         className={`${inter.variable} ${geistMono.variable} antialiased`}
       >
+        {gaMeasurementId && (
+          <>
+            <Script
+              src={`https://www.googletagmanager.com/gtag/js?id=${gaMeasurementId}`}
+              strategy="afterInteractive"
+            />
+            <Script id="ga4-init" strategy="afterInteractive">
+              {`
+                window.dataLayer = window.dataLayer || [];
+                function gtag(){dataLayer.push(arguments);}
+                gtag('js', new Date());
+                gtag('config', '${gaMeasurementId}');
+              `}
+            </Script>
+          </>
+        )}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema) }}
