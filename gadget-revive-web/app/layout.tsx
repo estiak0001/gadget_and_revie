@@ -123,10 +123,13 @@ export default async function RootLayout({
   const email = pickString(s.contact_email, s.topbar_email, s.footer_email);
 
   // Organization markup is what Google reads for the brand logo shown next to
-  // search results and in the knowledge panel.
+  // search results and in the knowledge panel. Stable @id so other JSON-LD blocks (the
+  // per-location LocalBusiness markup on /locations) can cross-reference this exact node
+  // by id instead of repeating the whole Organization object inline.
   const organizationSchema = {
     "@context": "https://schema.org",
     "@type": "Organization",
+    "@id": `${SITE_URL}/#organization`,
     name: siteName,
     url: SITE_URL,
     logo,
