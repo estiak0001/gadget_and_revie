@@ -66,7 +66,14 @@ class OrderResource extends JsonResource
             'can_be_reviewed' => $this->canBeReviewed(),
             'receipt_available' => $this->receiptAvailable(),
             'invoice_available' => $this->invoiceAvailable(),
-            'is_guest' => is_null($this->customer_id),   // true for guest orders
+            // customer_id is *not* a reliable guest signal — GuestController::placeOrder() runs
+            // every checkout through User::findOrCreateCustomer(), which auto-creates (or reuses)
+            // a customer record purely for order tracking/SMS, so customer_id is set on guest
+            // orders too. created_by is the real signal: OrderController::checkout() (logged-in
+            // self-checkout) and AdminController::orderCreate() (admin placing it on someone's
+            // behalf) both stamp the acting user's id; the guest flow is the only one that never
+            // does, since there's no authenticated actor to stamp.
+            'is_guest' => is_null($this->created_by),
             'accepted_at' => $this->accepted_at,
             'completed_at' => $this->completed_at,
             'cancelled_at' => $this->cancelled_at,
