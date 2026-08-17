@@ -326,6 +326,14 @@ function CategoryView({ category }: { category: ProductCategory }) {
             <span className="text-xs text-gray-500">{totalProducts} items</span>
           </div>
 
+          {/* Category description — real body copy for both shoppers and search engines to
+              match against, not just a product grid. */}
+          {category.description && (
+            <p className="text-sm text-gray-600 leading-relaxed max-w-3xl mb-4 whitespace-pre-line">
+              {category.description}
+            </p>
+          )}
+
           {/* Subcategory badges */}
           {subcategories.length > 0 && (
             <div className="mb-4">

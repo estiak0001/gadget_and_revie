@@ -559,6 +559,8 @@ export interface TicketMessage {
   user?: User;
 }
 
+export type CMSPageType = 'page' | 'faq' | 'terms' | 'privacy' | 'about' | 'contact' | 'guide';
+
 export interface CMSPage {
   id: number;
   title: string;
@@ -567,6 +569,9 @@ export interface CMSPage {
   meta_title?: string;
   meta_description?: string;
   status: 'draft' | 'published';
+  page_type?: CMSPageType;
+  featured_image?: string | null;
+  published_at?: string | null;
   created_at: string;
   updated_at: string;
 }

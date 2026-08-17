@@ -1261,6 +1261,9 @@ class AdminController extends BaseController
         if ($request->has('status')) {
             $query->where('status', $request->status);
         }
+        if ($request->has('page_type')) {
+            $query->where('page_type', $request->page_type);
+        }
 
         $pages = $query->orderBy('title')->paginate($request->get('per_page', 15));
 
@@ -1289,9 +1292,12 @@ class AdminController extends BaseController
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string|max:500',
             'status' => 'in:draft,published',
+            'page_type' => 'nullable|in:page,faq,terms,privacy,about,contact,guide',
+            'featured_image' => 'nullable|string|max:500',
         ]);
 
         $admin = $request->user();
+        $status = $request->status ?? 'draft';
 
         $page = CmsPage::create([
             'title' => $request->title,
@@ -1299,8 +1305,13 @@ class AdminController extends BaseController
             'content' => $request->content,
             'meta_title' => $request->meta_title,
             'meta_description' => $request->meta_description,
-            'status' => $request->status ?? 'draft',
+            'status' => $status,
+            'page_type' => $request->page_type ?? 'page',
+            'featured_image' => $request->featured_image,
             'created_by' => $admin->id,
+            // Never set otherwise (see cmsPageUpdate) — needed for /guides to sort and display
+            // by publish date, and for a published page to have a real "published" timestamp.
+            'published_at' => $status === 'published' ? now() : null,
         ]);
 
         AuditLog::log($admin, 'create_cms_page', 'CmsPage', $page->id, null, $page->toArray(), 'CMS page created');
@@ -1320,13 +1331,24 @@ class AdminController extends BaseController
             'meta_title' => 'nullable|string|max:255',
             'meta_description' => 'nullable|string|max:500',
             'status' => 'in:draft,published',
+            'page_type' => 'nullable|in:page,faq,terms,privacy,about,contact,guide',
+            'featured_image' => 'nullable|string|max:500',
         ]);
 
         $admin = $request->user();
         $page = CmsPage::findOrFail($id);
 
         $oldData = $page->toArray();
-        $page->update($request->only(['title', 'slug', 'content', 'meta_title', 'meta_description', 'status']));
+        $data = $request->only([
+            'title', 'slug', 'content', 'meta_title', 'meta_description', 'status', 'page_type', 'featured_image',
+        ]);
+        // First time this page goes live, stamp it — needed for /guides to sort and display by
+        // publish date. Never overwritten on a later edit, so re-saving an already-published
+        // page doesn't bump its date.
+        if (($data['status'] ?? null) === 'published' && !$page->published_at) {
+            $data['published_at'] = now();
+        }
+        $page->update($data);
 
         AuditLog::log($admin, 'update_cms_page', 'CmsPage', $page->id, $oldData, $page->toArray(), 'CMS page updated');
 

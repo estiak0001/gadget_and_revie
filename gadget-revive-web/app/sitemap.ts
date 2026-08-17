@@ -69,6 +69,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/`, changeFrequency: 'daily', priority: 1 },
     { url: `${SITE_URL}/products`, changeFrequency: 'daily', priority: 0.9 },
     { url: `${SITE_URL}/services`, changeFrequency: 'daily', priority: 0.9 },
+    { url: `${SITE_URL}/guides`, changeFrequency: 'weekly', priority: 0.6 },
     { url: `${SITE_URL}/about`, changeFrequency: 'monthly', priority: 0.5 },
     { url: `${SITE_URL}/contact`, changeFrequency: 'monthly', priority: 0.5 },
     { url: `${SITE_URL}/locations`, changeFrequency: 'monthly', priority: 0.5 },
@@ -89,7 +90,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const productCategoryPaths = flattenCategoryPaths(productCategoriesRaw?.data);
   const serviceCategoryPaths = flattenCategoryPaths(serviceCategoriesRaw?.data);
-  const pages: { slug: string; updated_at?: string }[] = Array.isArray(pagesRaw?.data) ? pagesRaw.data : [];
+  const allPages: { slug: string; page_type?: string; updated_at?: string }[] =
+    Array.isArray(pagesRaw?.data) ? pagesRaw.data : [];
+  // Guides live at /guides/{slug} (their own content hub); everything else — About-alternates,
+  // Privacy, Terms, etc. — stays at /pages/{slug}.
+  const guides = allPages.filter((p) => p.page_type === 'guide');
+  const pages = allPages.filter((p) => p.page_type !== 'guide');
 
   const productEntries: MetadataRoute.Sitemap = products.map((p) => ({
     url: `${SITE_URL}/products/${p.slug}`,
@@ -124,12 +130,20 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.4,
   }));
 
+  const guideEntries: MetadataRoute.Sitemap = guides.map((g) => ({
+    url: `${SITE_URL}/guides/${g.slug}`,
+    lastModified: g.updated_at ? new Date(g.updated_at) : now,
+    changeFrequency: 'monthly',
+    priority: 0.6,
+  }));
+
   return [
     ...staticEntries,
     ...productCategoryEntries,
     ...serviceCategoryEntries,
     ...productEntries,
     ...serviceEntries,
+    ...guideEntries,
     ...pageEntries,
   ];
 }

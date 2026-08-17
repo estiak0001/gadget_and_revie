@@ -9,6 +9,7 @@ import { getBranding } from '@/lib/branding';
 
 const DEFAULT_NAV_LINKS = [
   { name: 'About', href: '/about' },
+  { name: 'Guides', href: '/guides' },
   { name: 'Contact', href: '/contact' },
   { name: 'Locations', href: '/locations' },
   { name: 'Privacy', href: '/privacy' },

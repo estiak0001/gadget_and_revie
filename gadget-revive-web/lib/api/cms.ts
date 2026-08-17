@@ -76,7 +76,19 @@ export interface CmsPage {
   meta_keywords?: string;
   featured_image?: string;
   status: 'published' | 'draft';
+  page_type?: string;
   published_at?: string;
+  updated_at: string;
+}
+
+/** Lighter shape returned by the /public/pages list endpoint — no `content` body. */
+export interface CmsPageSummary {
+  slug: string;
+  title: string;
+  meta_description: string | null;
+  featured_image: string | null;
+  page_type: string;
+  published_at: string | null;
   updated_at: string;
 }
 
@@ -139,6 +151,25 @@ export const cmsService = {
       return json?.data || null;
     } catch {
       return null;
+    }
+  },
+
+  /**
+   * Published buying-guide / repair-advice articles — reuses the same CMS pages system as
+   * every other static page, distinguished only by page_type='guide'. Uses native fetch (not
+   * apiClient) so it works in server components.
+   */
+  getGuides: async (): Promise<CmsPageSummary[]> => {
+    try {
+      const res = await fetch(`${API_BASE}/public/pages?page_type=guide`, {
+        headers: { Accept: 'application/json' },
+        next: { revalidate: 300 },
+      });
+      if (!res.ok) return [];
+      const json = await res.json();
+      return Array.isArray(json?.data) ? json.data : [];
+    } catch {
+      return [];
     }
   },
 

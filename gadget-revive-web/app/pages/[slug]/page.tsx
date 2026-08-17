@@ -1,5 +1,5 @@
 import { Metadata } from 'next';
-import { notFound } from 'next/navigation';
+import { notFound, permanentRedirect } from 'next/navigation';
 import { cmsService } from '@/lib/api/cms';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -33,6 +33,12 @@ export default async function CmsPage({ params }: PageProps) {
 
   if (!page) {
     notFound();
+  }
+
+  // Guides live at /guides/{slug} — permanently redirect so this never becomes a second,
+  // duplicate-content URL for the same article.
+  if (page.page_type === 'guide') {
+    permanentRedirect(`/guides/${slug}`);
   }
 
   const updatedAgo = page.updated_at

@@ -194,6 +194,15 @@ function CategoryView({ category }: { category: ServiceCategory }) {
           </h3>
         </div>
 
+        {/* Category description — real body copy for both shoppers and search engines to
+            match against, not just a service grid. The hero above carries a short one-line
+            subtitle; this is the fuller version. */}
+        {category.description && (
+          <p className="text-sm text-gray-600 leading-relaxed max-w-3xl mb-5 whitespace-pre-line">
+            {category.description}
+          </p>
+        )}
+
         {loading ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-5">
             {[...Array(10)].map((_, i) => (

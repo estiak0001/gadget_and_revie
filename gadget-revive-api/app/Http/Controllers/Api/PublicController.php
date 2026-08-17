@@ -17,14 +17,31 @@ use Illuminate\Http\Request;
 class PublicController extends BaseController
 {
     /**
-     * Slugs (+ last-updated) of every published CMS page — used to build the storefront
-     * sitemap. Deliberately just the two fields the sitemap needs, not the full page body.
+     * Published CMS pages — used both to build the storefront sitemap (every field is
+     * cheap enough to always include; the sitemap only reads slug/page_type/updated_at) and
+     * to power the /guides listing card grid (title/meta_description/featured_image/
+     * published_at), via ?page_type=guide. Never the full page body.
      */
-    public function pages(): JsonResponse
+    public function pages(Request $request): JsonResponse
     {
-        $pages = CmsPage::where('status', 'published')
-            ->orderBy('slug')
-            ->get(['slug', 'updated_at']);
+        $query = CmsPage::where('status', 'published');
+
+        if ($request->filled('page_type')) {
+            $query->where('page_type', $request->page_type);
+        }
+
+        $pages = $query->orderByDesc('published_at')
+            ->orderByDesc('created_at')
+            ->get(['slug', 'title', 'meta_description', 'featured_image', 'page_type', 'published_at', 'updated_at'])
+            ->map(fn (CmsPage $p) => [
+                'slug' => $p->slug,
+                'title' => $p->title,
+                'meta_description' => $p->meta_description,
+                'featured_image' => $p->featured_image ? asset('storage/' . $p->featured_image) : null,
+                'page_type' => $p->page_type,
+                'published_at' => $p->published_at,
+                'updated_at' => $p->updated_at,
+            ]);
 
         return $this->success($pages);
     }

@@ -20,11 +20,18 @@ import {
 import RichTextEditor from '@/components/ui/RichTextEditor';
 import { formatDate, getErrorMessage } from '@/lib/utils';
 import adminService from '@/lib/adminService';
-import { CMSPage, PaginatedResponse } from '@/types';
+import { CMSPage, CMSPageType, PaginatedResponse } from '@/types';
 import toast from 'react-hot-toast';
 import { useForm } from 'react-hook-form';
 
 const WEB_URL = process.env.NEXT_PUBLIC_WEB_URL || 'http://localhost:3000';
+const API_ASSET_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api').replace(/\/api$/, '');
+
+function resolveAssetUrl(value: string): string {
+  if (!value) return '';
+  if (value.startsWith('http://') || value.startsWith('https://')) return value;
+  return `${API_ASSET_BASE}/storage/${value.replace(/^storage\//, '')}`;
+}
 
 interface PageFormData {
   title: string;
@@ -33,6 +40,7 @@ interface PageFormData {
   meta_title?: string;
   meta_description?: string;
   status: string;
+  page_type: CMSPageType;
 }
 
 type ViewMode = 'list' | 'editor';
@@ -49,12 +57,18 @@ export default function CMSPagesPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [copiedSlug, setCopiedSlug] = useState<number | null>(null);
   const [editorContent, setEditorContent] = useState('');
+  const [featuredImage, setFeaturedImage] = useState('');
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<PageFormData>({
-    defaultValues: { status: 'draft' }
+    defaultValues: { status: 'draft', page_type: 'page' }
   });
 
   const watchedSlug = watch('slug');
+  const watchedPageType = watch('page_type');
+  // Guides live at /guides/{slug} on the storefront (their own content hub, separate from the
+  // flat /pages/{slug} bucket used by everything else — About, Privacy, Terms, etc.).
+  const linkBase = watchedPageType === 'guide' ? '/guides' : '/pages';
 
   const fetchPages = useCallback(async () => {
     setIsLoading(true);
@@ -89,11 +103,14 @@ export default function CMSPagesPage() {
       setValue('meta_title', page.meta_title || '');
       setValue('meta_description', page.meta_description || '');
       setValue('status', page.status);
+      setValue('page_type', page.page_type || 'page');
       setEditorContent(page.content || '');
+      setFeaturedImage(page.featured_image || '');
     } else {
       setSelectedPage(null);
-      reset({ title: '', slug: '', content: '', meta_title: '', meta_description: '', status: 'draft' });
+      reset({ title: '', slug: '', content: '', meta_title: '', meta_description: '', status: 'draft', page_type: 'page' });
       setEditorContent('');
+      setFeaturedImage('');
     }
     setViewMode('editor');
   };
@@ -103,12 +120,28 @@ export default function CMSPagesPage() {
     setSelectedPage(null);
     reset();
     setEditorContent('');
+    setFeaturedImage('');
+  };
+
+  const handleFeaturedImageFile = async (file: File) => {
+    setIsUploadingImage(true);
+    try {
+      const response = await adminService.uploadFile(file);
+      const path = response.data?.data?.path as string | undefined;
+      if (!path) throw new Error('Upload did not return a path');
+      setFeaturedImage(path);
+      toast.success('Image uploaded');
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setIsUploadingImage(false);
+    }
   };
 
   const onSubmit = async (data: PageFormData) => {
     setIsSubmitting(true);
     try {
-      const payload = { ...data, content: editorContent };
+      const payload = { ...data, content: editorContent, featured_image: featuredImage || undefined };
       if (selectedPage) {
         await adminService.updatePage(selectedPage.id, payload);
         toast.success('Page updated successfully');
@@ -141,8 +174,11 @@ export default function CMSPagesPage() {
   const generateSlug = (title: string) =>
     title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
+  // Guides live at /guides/{slug} on the storefront; everything else at /pages/{slug}.
+  const pageUrl = (page: CMSPage) => `${WEB_URL}${page.page_type === 'guide' ? '/guides' : '/pages'}/${page.slug}`;
+
   const copyLink = async (page: CMSPage) => {
-    const url = `${WEB_URL}/pages/${page.slug}`;
+    const url = pageUrl(page);
     await navigator.clipboard.writeText(url);
     setCopiedSlug(page.id);
     toast.success('Link copied!');
@@ -171,7 +207,7 @@ export default function CMSPagesPage() {
             <div className="flex items-center gap-2">
               {selectedPage?.status === 'published' && (
                 <a
-                  href={`${WEB_URL}/pages/${selectedPage.slug}`}
+                  href={pageUrl(selectedPage)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 px-3 py-1.5 border border-blue-200 rounded-lg hover:bg-blue-50"
@@ -234,6 +270,19 @@ export default function CMSPagesPage() {
                       { value: 'published', label: 'Published' },
                     ]}
                   />
+                  <Select
+                    label="Content Type"
+                    {...register('page_type')}
+                    options={[
+                      { value: 'page', label: 'Standard Page' },
+                      { value: 'guide', label: 'Guide / Article' },
+                    ]}
+                  />
+                  {watchedPageType === 'guide' && (
+                    <p className="text-xs text-gray-500 -mt-2">
+                      Listed on the storefront&apos;s <code className="text-[11px]">/guides</code> page once published.
+                    </p>
+                  )}
 
                   {/* Publishable link preview */}
                   {watchedSlug && (
@@ -241,11 +290,11 @@ export default function CMSPagesPage() {
                       <label className="block text-xs font-medium text-gray-500 mb-1">Publishable Link</label>
                       <div className="bg-gray-50 border border-gray-200 rounded-lg p-2 flex items-center gap-2">
                         <code className="text-xs text-gray-600 flex-1 break-all">
-                          /pages/{watchedSlug}
+                          {linkBase}/{watchedSlug}
                         </code>
                         <button
                           type="button"
-                          onClick={() => navigator.clipboard.writeText(`${WEB_URL}/pages/${watchedSlug}`)}
+                          onClick={() => navigator.clipboard.writeText(`${WEB_URL}${linkBase}/${watchedSlug}`)}
                           className="flex-shrink-0 p-1 hover:bg-gray-200 rounded"
                           title="Copy link"
                         >
@@ -254,6 +303,51 @@ export default function CMSPagesPage() {
                       </div>
                     </div>
                   )}
+                </CardContent>
+              </Card>
+
+              {/* Featured image */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Featured Image</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg bg-gray-50">
+                    {featuredImage ? (
+                      <div className="flex items-center justify-center bg-white border border-gray-200 rounded-md overflow-hidden h-16 w-24">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={resolveAssetUrl(featuredImage)} alt="preview" className="max-h-full max-w-full object-contain" />
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center bg-white border border-dashed border-gray-300 rounded-md text-gray-400 text-xs h-16 w-24">
+                        No image
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <label className="inline-flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700 cursor-pointer font-medium">
+                        {isUploadingImage ? 'Uploading...' : 'Upload image'}
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          className="hidden"
+                          disabled={isUploadingImage}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleFeaturedImageFile(file);
+                            e.target.value = '';
+                          }}
+                        />
+                      </label>
+                      {featuredImage && (
+                        <button type="button" onClick={() => setFeaturedImage('')} className="block text-xs text-gray-400 hover:text-red-600 mt-1">
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Shown on the guide card grid and as the social-share preview image. Optional for standard pages.
+                  </p>
                 </CardContent>
               </Card>
 
@@ -346,7 +440,10 @@ export default function CMSPagesPage() {
                           <div className="flex items-center gap-2">
                             <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
                             <div>
-                              <p className="text-sm font-medium text-gray-900">{page.title}</p>
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-sm font-medium text-gray-900">{page.title}</p>
+                                {page.page_type === 'guide' && <Badge variant="info" className="text-[10px]">Guide</Badge>}
+                              </div>
                               {page.meta_title && <p className="text-xs text-gray-400">{page.meta_title}</p>}
                             </div>
                           </div>
@@ -354,7 +451,7 @@ export default function CMSPagesPage() {
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
                             <code className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                              /pages/{page.slug}
+                              {page.page_type === 'guide' ? '/guides' : '/pages'}/{page.slug}
                             </code>
                             <button
                               onClick={() => copyLink(page)}
@@ -369,7 +466,7 @@ export default function CMSPagesPage() {
                             </button>
                             {page.status === 'published' && (
                               <a
-                                href={`${WEB_URL}/pages/${page.slug}`}
+                                href={pageUrl(page)}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="p-1 hover:bg-gray-200 rounded transition-colors"

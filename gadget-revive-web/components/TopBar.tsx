@@ -7,6 +7,7 @@ import { useSettingsStore } from '@/lib/stores/settings-store';
 
 const UTILITY_LINKS = [
   { label: 'About', href: '/about' },
+  { label: 'Guides', href: '/guides' },
   { label: 'Contact', href: '/contact' },
   { label: 'Track Order', href: '/orders/track' },
 ];

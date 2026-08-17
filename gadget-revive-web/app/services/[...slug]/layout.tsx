@@ -228,6 +228,13 @@ export default async function ServiceSlugLayout(
     return (
       <>
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }} />
+        {/* CategoryView renders this same text visibly, but only after the client-side fetch
+            in page.tsx resolves — this page is fully client-rendered, so nothing in its body
+            reaches a crawler that doesn't execute JS. This sr-only copy guarantees the body
+            copy is present in the actual server response, not just after hydration. */}
+        {typeof category.description === 'string' && category.description && (
+          <p className="sr-only">{category.description}</p>
+        )}
         {children}
       </>
     );

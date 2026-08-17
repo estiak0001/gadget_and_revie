@@ -43,6 +43,7 @@ const navigation: Array<{
 }> = [
   { name: 'Services', href: '/services', hasMegaMenu: true, menuKey: 'services' },
   { name: 'Data Recovery', href: '/data-recovery' },
+  { name: 'Guides', href: '/guides' },
   { name: 'About', href: '/about' },
   { name: 'Contact', href: '/contact' },
   { name: 'Track Order', href: '/orders/track' },
