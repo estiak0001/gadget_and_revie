@@ -192,7 +192,7 @@ function ServicesContent() {
                     >
                       <div className="relative h-28 bg-gray-50 overflow-hidden flex-shrink-0">
                         {cat.image ? (
-                          <img src={getStorageUrl(cat.image)} alt={cat.name} className="h-full w-full object-contain p-3 group-hover:scale-105 transition-transform duration-300" />
+                          <img src={getStorageUrl(cat.image)} alt={cat.name} className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300" />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center">
                             <CatIcon className="h-9 w-9 text-gray-300" />
