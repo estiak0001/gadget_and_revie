@@ -25,6 +25,12 @@ const nextConfig: NextConfig = {
     imageSizes: [16, 32, 48, 64, 96, 128, 256],
     // Reduce quality slightly for faster mobile loads
     minimumCacheTTL: 60 * 60 * 24 * 30, // 30 days
+    // next/image refuses to serve .svg sources at all unless explicitly opted in (an uploaded
+    // category icon/logo silently fails to render otherwise) — the CSP here locks the served
+    // SVG down to no scripts/sandboxed, since an SVG can otherwise carry embedded <script>.
+    dangerouslyAllowSVG: true,
+    contentDispositionType: "attachment",
+    contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
   },
 
   // Enable gzip/brotli compression

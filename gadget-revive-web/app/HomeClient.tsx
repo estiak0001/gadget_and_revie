@@ -504,17 +504,17 @@ export default function HomeClient() {
             </p>
           </div>
 
-          {/* Categories Grid */}
+          {/* Categories Grid — compact tiles, 4 per row on mobile, up to 8 on desktop */}
           {categoriesLoading ? (
-            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-4 lg:grid-cols-8 gap-4">
+            <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-2 sm:gap-3">
               {[...Array(8)].map((_, i) => (
-                <div key={i} className="h-28 rounded-xl bg-gray-200 animate-pulse" />
+                <div key={i} className="aspect-square rounded-xl bg-gray-200 animate-pulse" />
               ))}
             </div>
           ) : featuredCategories.length === 0 ? (
             <div className="text-center py-6 text-gray-400 text-sm">No featured categories yet.</div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-4 lg:grid-cols-8 gap-4">
+            <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-2 sm:gap-3">
               {featuredCategories.map((category) => {
                 const RenderIcon = resolveIcon(category.icon);
                 // Use the slug-based category path (e.g. /products/desktop-1),
@@ -528,12 +528,23 @@ export default function HomeClient() {
                   <Link
                     key={category.id}
                     href={categoryHref}
-                    className="group flex flex-col items-center justify-center py-6 px-3 bg-white rounded-xl border border-gray-200 hover:border-ink hover:shadow-lg transition-all duration-300"
+                    title={category.description || category.name}
+                    className="group flex flex-col items-center gap-1.5 sm:gap-2 rounded-xl border border-gray-200 bg-white p-2 sm:p-3 text-center transition-all duration-200 hover:-translate-y-0.5 hover:border-ink hover:shadow-md"
                   >
-                    <div className="w-16 h-16 flex items-center justify-center mb-3">
-                      <RenderIcon className="w-12 h-12 text-gray-700 stroke-[1.5] group-hover:text-ink transition-colors duration-300" />
+                    <div className="relative flex h-10 w-10 sm:h-14 sm:w-14 items-center justify-center overflow-hidden rounded-full bg-gray-50 transition-colors group-hover:bg-gray-100">
+                      {category.image ? (
+                        <OptimizedImage
+                          src={category.image}
+                          alt={category.name}
+                          fill
+                          sizes="(min-width: 640px) 56px, 40px"
+                          className="object-cover"
+                        />
+                      ) : (
+                        <RenderIcon className="h-5 w-5 sm:h-7 sm:w-7 text-gray-700 stroke-[1.5] group-hover:text-ink transition-colors duration-300" />
+                      )}
                     </div>
-                    <span className="text-xs text-gray-700 font-medium text-center leading-tight group-hover:text-ink transition-colors duration-300">
+                    <span className="line-clamp-2 text-[11px] sm:text-xs font-medium leading-tight text-gray-700 group-hover:text-ink transition-colors duration-300">
                       {category.name}
                     </span>
                   </Link>

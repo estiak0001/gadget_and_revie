@@ -1028,45 +1028,51 @@ function ProductDetailView({ product: initialProduct }: { product: Product }) {
                   </div>
                 )}
 
-                {/* Actions */}
-                <div className="flex items-stretch gap-2 mb-3">
-                  <button
-                    onClick={handleAddToCart}
-                    disabled={!inStock}
-                    className={`group flex-1 h-11 flex items-center justify-center gap-1.5 whitespace-nowrap font-semibold text-sm rounded-xl shadow-sm transition-all duration-200 ${
-                      !inStock
-                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                        : justAdded
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-ink text-white hover:bg-ink/90 hover:shadow-md active:scale-[0.97]'
-                    }`}
-                  >
-                    <span className="relative h-4 w-4 shrink-0">
-                      <ShoppingCartIcon
-                        className={`absolute inset-0 h-4 w-4 transition-all duration-200 ${justAdded ? 'opacity-0 scale-50' : 'opacity-100 scale-100 group-hover:-translate-y-0.5 group-hover:scale-110'}`}
-                      />
-                      <CheckIcon
-                        className={`absolute inset-0 h-4 w-4 transition-all duration-200 ${justAdded ? 'opacity-100 scale-100' : 'opacity-0 scale-50'}`}
-                      />
-                    </span>
-                    {justAdded ? 'Added!' : 'Add to Cart'}
-                  </button>
-                  <button
-                    onClick={handleBuyNow}
-                    disabled={!inStock}
-                    className={`flex-1 h-11 flex items-center justify-center whitespace-nowrap font-semibold text-sm rounded-xl border-2 transition-all duration-200 ${inStock ? 'border-ink text-ink hover:bg-ink hover:text-white active:scale-[0.97]' : 'border-gray-200 text-gray-400 cursor-not-allowed'}`}
-                  >
-                    Buy Now
-                  </button>
-                  <button onClick={handleToggleWishlist} aria-label="Wishlist" className={`shrink-0 flex items-center justify-center p-2.5 rounded-xl border-2 transition-all ${isWishlisted ? 'border-rose-500 bg-rose-50 text-rose-600' : 'border-gray-200 text-gray-600 hover:border-rose-400 hover:bg-rose-50 hover:text-rose-600'}`}>
-                    {isWishlisted ? <HeartSolidIcon className="h-5 w-5 text-rose-500" /> : <HeartIcon className="h-5 w-5" />}
-                  </button>
-                  <button onClick={handleToggleCompare} aria-label="Compare" className={`p-2.5 rounded-xl border-2 transition-all ${isCompared ? 'border-violet-600 bg-violet-50 text-violet-700' : 'border-gray-200 text-gray-600 hover:border-violet-500 hover:bg-violet-50 hover:text-violet-700'}`}>
-                    <ArrowsRightLeftIcon className="h-5 w-5" />
-                  </button>
-                  <button onClick={handleShare} aria-label="Share" className="p-2.5 rounded-xl border-2 border-gray-200 text-gray-600 hover:border-ink hover:bg-gray-100 transition-all">
-                    <ShareIcon className="h-5 w-5" />
-                  </button>
+                {/* Actions — two groups (primary CTAs, secondary icon actions) that stack on
+                    mobile so 5 buttons never have to squeeze/scroll into one narrow row, and
+                    sit side by side again from sm: up where there's room. */}
+                <div className="flex flex-col sm:flex-row items-stretch gap-2 mb-3">
+                  <div className="flex items-stretch gap-2 flex-1">
+                    <button
+                      onClick={handleAddToCart}
+                      disabled={!inStock}
+                      className={`group flex-1 h-11 flex items-center justify-center gap-1.5 whitespace-nowrap font-semibold text-sm rounded-xl shadow-sm transition-all duration-200 ${
+                        !inStock
+                          ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                          : justAdded
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-ink text-white hover:bg-ink/90 hover:shadow-md active:scale-[0.97]'
+                      }`}
+                    >
+                      <span className="relative h-4 w-4 shrink-0">
+                        <ShoppingCartIcon
+                          className={`absolute inset-0 h-4 w-4 transition-all duration-200 ${justAdded ? 'opacity-0 scale-50' : 'opacity-100 scale-100 group-hover:-translate-y-0.5 group-hover:scale-110'}`}
+                        />
+                        <CheckIcon
+                          className={`absolute inset-0 h-4 w-4 transition-all duration-200 ${justAdded ? 'opacity-100 scale-100' : 'opacity-0 scale-50'}`}
+                        />
+                      </span>
+                      {justAdded ? 'Added!' : 'Add to Cart'}
+                    </button>
+                    <button
+                      onClick={handleBuyNow}
+                      disabled={!inStock}
+                      className={`flex-1 h-11 flex items-center justify-center whitespace-nowrap font-semibold text-sm rounded-xl border-2 transition-all duration-200 ${inStock ? 'border-ink text-ink hover:bg-ink hover:text-white active:scale-[0.97]' : 'border-gray-200 text-gray-400 cursor-not-allowed'}`}
+                    >
+                      Buy Now
+                    </button>
+                  </div>
+                  <div className="flex items-stretch justify-center gap-2">
+                    <button onClick={handleToggleWishlist} aria-label="Wishlist" className={`shrink-0 flex items-center justify-center p-2.5 rounded-xl border-2 transition-all ${isWishlisted ? 'border-rose-500 bg-rose-50 text-rose-600' : 'border-gray-200 text-gray-600 hover:border-rose-400 hover:bg-rose-50 hover:text-rose-600'}`}>
+                      {isWishlisted ? <HeartSolidIcon className="h-5 w-5 text-rose-500" /> : <HeartIcon className="h-5 w-5" />}
+                    </button>
+                    <button onClick={handleToggleCompare} aria-label="Compare" className={`shrink-0 p-2.5 rounded-xl border-2 transition-all ${isCompared ? 'border-violet-600 bg-violet-50 text-violet-700' : 'border-gray-200 text-gray-600 hover:border-violet-500 hover:bg-violet-50 hover:text-violet-700'}`}>
+                      <ArrowsRightLeftIcon className="h-5 w-5" />
+                    </button>
+                    <button onClick={handleShare} aria-label="Share" className="shrink-0 p-2.5 rounded-xl border-2 border-gray-200 text-gray-600 hover:border-ink hover:bg-gray-100 transition-all">
+                      <ShareIcon className="h-5 w-5" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Trust badges */}

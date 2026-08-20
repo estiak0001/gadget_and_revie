@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { Plus, Edit2, Trash2, Search, Package, GripVertical, ChevronRight, Sliders, Eye, EyeOff } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, Package, GripVertical, ChevronRight, Sliders, Eye, EyeOff, Star } from 'lucide-react';
 import * as HeroIcons from '@heroicons/react/24/outline';
 import { AdminLayout } from '@/components/layout';
 import {
@@ -19,11 +19,23 @@ import {
   LoadingSpinner,
   Pagination,
   IconPicker,
+  ImageUpload,
 } from '@/components/ui';
 import { ProductCategory } from '@/types';
 import adminService from '@/lib/adminService';
 import { getErrorMessage } from '@/lib/utils';
 import toast from 'react-hot-toast';
+
+// ProductCategoryResource always re-wraps `image` as asset('storage/' . $value) on the way
+// out, so the column must hold a storage-relative path, not a full URL. ImageUpload's
+// onChange hands back the full public URL from the /upload endpoint — strip it back down to
+// the relative path before it goes in formData, so round-tripping through save/reload doesn't
+// produce a double-wrapped (broken) URL.
+const STORAGE_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api').replace(/\/api$/, '') + '/storage/';
+function toStorageRelativePath(url: string): string {
+  if (!url) return '';
+  return url.startsWith(STORAGE_BASE) ? url.slice(STORAGE_BASE.length) : url;
+}
 
 export default function ProductCategoriesPage() {
   const [categories, setCategories] = useState<ProductCategory[]>([]);
@@ -31,6 +43,7 @@ export default function ProductCategoriesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [topLevelFilter, setTopLevelFilter] = useState('');
+  const [featuredOnly, setFeaturedOnly] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -154,7 +167,7 @@ export default function ProductCategoriesPage() {
       slug: category.slug,
       description: category.description || '',
       icon: category.icon || '',
-      image: category.image || '',
+      image: toStorageRelativePath(category.image || ''),
       is_featured: category.is_featured || false,
       sort_order: category.sort_order || 0,
       is_active: category.is_active ?? true,
@@ -268,9 +281,11 @@ export default function ProductCategoriesPage() {
 
   const filteredCategories = categories.filter(
     c =>
-      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.slug.toLowerCase().includes(searchQuery.toLowerCase())
+      (c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        c.slug.toLowerCase().includes(searchQuery.toLowerCase())) &&
+      (!featuredOnly || c.is_featured)
   );
+  const featuredCount = categories.filter(c => c.is_featured).length;
 
   // Compute level of a category (1, 2, or 3)
   const getCategoryLevel = (category: ProductCategory): number => {
@@ -323,6 +338,14 @@ export default function ProductCategoriesPage() {
               />
             </div>
             <Button onClick={handleSearch}>Search</Button>
+            <Button
+              variant={featuredOnly ? 'primary' : 'outline'}
+              onClick={() => setFeaturedOnly(f => !f)}
+              title="Show only categories marked Featured"
+            >
+              <Star className={`w-4 h-4 mr-2 ${featuredOnly ? 'fill-current' : ''}`} />
+              Featured Only ({featuredCount})
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -330,7 +353,7 @@ export default function ProductCategoriesPage() {
       {/* Categories Table */}
       <Card>
         <CardHeader>
-          <CardTitle>All Categories ({filteredCategories.length})</CardTitle>
+          <CardTitle>{featuredOnly ? 'Featured Categories' : 'All Categories'} ({filteredCategories.length})</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {isLoading ? (
@@ -399,7 +422,12 @@ export default function ProductCategoriesPage() {
                                 })()}
                               </div>
                               <div>
-                                <p className="font-medium">{category.name}</p>
+                                <p className="font-medium flex items-center gap-1.5">
+                                  {category.name}
+                                  {category.is_featured && (
+                                    <Star className="w-3.5 h-3.5 text-amber-500 fill-current" aria-label="Featured" />
+                                  )}
+                                </p>
                                 {category.description && (
                                   <p className="text-xs text-gray-500 truncate max-w-xs">
                                     {category.description}
@@ -628,11 +656,14 @@ export default function ProductCategoriesPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Image URL</label>
-              <Input
-                value={formData.image}
-                onChange={(e) => setFormData({ ...formData, image: e.target.value })}
-                placeholder="https://..."
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Image <span className="text-gray-400 font-normal">(shown instead of the icon, if set)</span>
+              </label>
+              <ImageUpload
+                value={formData.image ? (formData.image.startsWith('http') ? formData.image : STORAGE_BASE + formData.image) : ''}
+                onChange={(url) => setFormData({ ...formData, image: toStorageRelativePath(url) })}
+                onRemove={() => setFormData({ ...formData, image: '' })}
+                placeholder="Click to upload an image or SVG"
               />
             </div>
           </div>
