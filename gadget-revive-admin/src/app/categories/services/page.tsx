@@ -18,11 +18,23 @@ import {
   LoadingSpinner,
   Pagination,
   IconPicker,
+  ImageUpload,
 } from '@/components/ui';
 import { ServiceCategory } from '@/types';
 import adminService from '@/lib/adminService';
 import { getErrorMessage } from '@/lib/utils';
 import toast from 'react-hot-toast';
+
+// ServiceCategoryResource always re-wraps `image` as asset('storage/' . $value) on the way
+// out, so the column must hold a storage-relative path, not a full URL. ImageUpload's
+// onChange hands back the full public URL from the /upload endpoint — strip it back down to
+// the relative path before it goes in formData, so round-tripping through save/reload doesn't
+// produce a double-wrapped (broken) URL.
+const STORAGE_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api').replace(/\/api$/, '') + '/storage/';
+function toStorageRelativePath(url: string): string {
+  if (!url) return '';
+  return url.startsWith(STORAGE_BASE) ? url.slice(STORAGE_BASE.length) : url;
+}
 
 export default function ServiceCategoriesPage() {
   const [categories, setCategories] = useState<ServiceCategory[]>([]);
@@ -153,7 +165,7 @@ export default function ServiceCategoriesPage() {
       slug: category.slug,
       description: category.description || '',
       icon: category.icon || '',
-      image: category.image || '',
+      image: toStorageRelativePath(category.image || ''),
       is_featured: category.is_featured || false,
       sort_order: category.sort_order || 0,
       is_active: category.is_active ?? true,
@@ -616,11 +628,14 @@ export default function ServiceCategoriesPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Image URL</label>
-              <Input
-                value={formData.image}
-                onChange={(e) => setFormData({ ...formData, image: e.target.value })}
-                placeholder="https://..."
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Image <span className="text-gray-400 font-normal">(shown instead of the icon, if set)</span>
+              </label>
+              <ImageUpload
+                value={formData.image ? (formData.image.startsWith('http') ? formData.image : STORAGE_BASE + formData.image) : ''}
+                onChange={(url) => setFormData({ ...formData, image: toStorageRelativePath(url) })}
+                onRemove={() => setFormData({ ...formData, image: '' })}
+                placeholder="Click to upload an image or SVG"
               />
             </div>
           </div>
