@@ -72,22 +72,6 @@ const gradientStyle = (from?: string, to?: string) => ({
   background: `linear-gradient(to bottom right, ${TW_COLORS[from || ''] || '#3b82f6'}, ${TW_COLORS[to || ''] || '#4f46e5'})`,
 });
 
-// Service descriptions come out of a rich-text editor in the admin panel — strip the markup for
-// a plain-text card preview instead of showing literal tags.
-function stripHtml(html?: string): string {
-  if (!html) return '';
-  return html
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#0?39;/g, "'")
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 export default function HomeClient() {
   const { addItem: addToCartStore } = useCartStore();
 
@@ -101,8 +85,6 @@ export default function HomeClient() {
     productsLoading,
     featuredCategories,
     categoriesLoading,
-    featuredServices,
-    servicesLoading,
     mainBranch,
     fetchHomepageData,
   } = useHomepageStore();
@@ -552,114 +534,6 @@ export default function HomeClient() {
                   </Link>
                 );
               })}
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* Featured Services Section */}
-      <section className="py-6 bg-white">
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Section Header */}
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-5">
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-1">
-                Featured Services
-              </h2>
-              <p className="text-gray-500 text-sm">
-                Professional repair services by certified technicians
-              </p>
-            </div>
-            <Link
-              href="/services"
-              className="mt-4 md:mt-0 inline-flex items-center text-sm font-semibold text-gray-700 hover:text-gray-900 transition-colors"
-            >
-              View All Services
-              <ChevronRightIcon className="ml-1 w-4 h-4" />
-            </Link>
-          </div>
-
-          {/* Services Slider — small, uniform-size cards with just the basics plus a short
-              truncated description; auto-slides through every featured service. */}
-          {servicesLoading ? (
-            <div className="flex gap-4 overflow-x-hidden">
-              {[...Array(6)].map((_, i) => (
-                <div key={i} className="flex-shrink-0 w-56 h-44 bg-gray-50 rounded-xl border border-gray-200 p-4 animate-pulse space-y-2">
-                  <div className="h-2.5 bg-gray-100 rounded w-1/3" />
-                  <div className="h-4 bg-gray-100 rounded w-3/4" />
-                  <div className="h-3 bg-gray-100 rounded w-full" />
-                  <div className="h-3 bg-gray-100 rounded w-2/3" />
-                </div>
-              ))}
-            </div>
-          ) : featuredServices.length === 0 ? (
-            <div className="text-center py-6 text-gray-500">
-              No featured services available.
-            </div>
-          ) : (
-            <div className="overflow-hidden py-2 -my-2">
-              <div className="flex gap-4 w-max animate-marquee marquee-pausable">
-                {[...featuredServices, ...featuredServices].map((service, idx) => {
-                const currentPrice = service.current_price ?? service.discount_price ?? service.base_price;
-                const originalPrice = service.discount_price ? service.base_price : null;
-                const discountPct = originalPrice
-                  ? Math.round((1 - currentPrice / originalPrice) * 100)
-                  : null;
-                // Some service names have "Starting Price" redundantly baked into the title
-                // text itself (a content issue, not display data) — strip it here so the
-                // card reads as "Basic Recovery" / "৳2,000" instead of repeating itself.
-                const displayName = service.name.replace(/\s*starting\s*price\s*$/i, '').trim();
-                // Some services have no description filled in yet in the admin panel —
-                // fall back to a plain "..." placeholder rather than leaving a blank gap.
-                const description = stripHtml(service.short_description || service.description) || '...';
-
-                return (
-                  <Link
-                    key={`${service.id}-${idx}`}
-                    href={`/services/${service.slug}`}
-                    className="group flex-shrink-0 w-56 h-44 bg-white rounded-xl border-2 border-gray-200 shadow-sm hover:shadow-lg hover:border-indigo-400 hover:-translate-y-1 transition-all duration-300 p-4 flex flex-col"
-                  >
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <span className="inline-block bg-indigo-50 text-indigo-700 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full truncate">
-                        {service.category?.name || 'Service'}
-                      </span>
-                      {discountPct !== null && (
-                        <span className="flex-shrink-0 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
-                          -{discountPct}%
-                        </span>
-                      )}
-                    </div>
-
-                    <h3 className="text-sm font-bold text-gray-900 line-clamp-1 leading-snug group-hover:text-indigo-700 transition-colors">
-                      {displayName}
-                    </h3>
-
-                    <p className="text-xs text-gray-500 line-clamp-2 mt-1 leading-snug">
-                      {description}
-                    </p>
-
-                    <div className="flex items-center justify-between mt-auto pt-2 border-t border-gray-100">
-                      {service.duration_estimate ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
-                          <ClockIcon className="w-3 h-3" />
-                          {service.duration_estimate}
-                        </span>
-                      ) : <span />}
-                      <div className="flex items-baseline gap-1.5">
-                        <span className="text-base font-extrabold text-green-600">
-                          ৳{Number(currentPrice).toLocaleString()}
-                        </span>
-                        {originalPrice !== null && (
-                          <span className="text-[11px] text-gray-400 line-through">
-                            ৳{Number(originalPrice).toLocaleString()}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </Link>
-                );
-                })}
-              </div>
             </div>
           )}
         </div>

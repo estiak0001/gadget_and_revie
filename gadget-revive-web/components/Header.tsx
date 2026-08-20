@@ -18,13 +18,15 @@ import {
   ChevronRightIcon,
   PlusIcon,
   MinusIcon,
+  WrenchScrewdriverIcon,
+  CircleStackIcon,
 } from '@heroicons/react/24/outline';
 import { useCartStore } from '@/lib/stores/cart-store';
 import { useAuthStore } from '@/lib/stores/auth-store';
 import { useWishlistStore } from '@/lib/stores/wishlist-store';
 import { useSettingsStore } from '@/lib/stores/settings-store';
 import { getBranding } from '@/lib/branding';
-import { productService, serviceService } from '@/lib/api';
+import { productService } from '@/lib/api';
 import { getStorageUrl } from '@/lib/api/config';
 import { Product, ProductCategory, ServiceCategory, ProductBrand } from '@/lib/types';
 import dynamic from 'next/dynamic';
@@ -41,8 +43,9 @@ const navigation: Array<{
   hasMegaMenu?: boolean;
   menuKey?: 'services';
 }> = [
-  { name: 'Services', href: '/services', hasMegaMenu: true, menuKey: 'services' },
-  { name: 'Data Recovery', href: '/data-recovery' },
+  // Services & Data Recovery moved out of the main menu — now a dedicated "Book A
+  // Service" button beside the search box (see the top row) instead of competing for
+  // space with the product-category mega menus.
   { name: 'Guides', href: '/guides' },
   { name: 'About', href: '/about' },
   { name: 'Contact', href: '/contact' },
@@ -105,10 +108,8 @@ export default function Header() {
   const [hoveredL2Id, setHoveredL2Id] = useState<number | null>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [productCategories, setProductCategories] = useState<ProductCategory[]>([]);
-  const [serviceCategories, setServiceCategories] = useState<ServiceCategory[]>([]);
 
   // Mobile accordion
-  const [mobileExpandedMenu, setMobileExpandedMenu] = useState<'services' | null>(null);
   const [mobileExpandedL1, setMobileExpandedL1] = useState<number | null>(null);
   const [mobileExpandedL2, setMobileExpandedL2] = useState<number | null>(null);
 
@@ -136,9 +137,6 @@ export default function Header() {
 
     productService.getCategories()
       .then((cats) => setProductCategories(buildCategoryTree(cats)))
-      .catch(() => {});
-    serviceService.getCategories()
-      .then((cats) => setServiceCategories(buildCategoryTree(cats)))
       .catch(() => {});
 
     return () => window.removeEventListener('scroll', handleScroll);
@@ -668,6 +666,24 @@ export default function Header() {
 
             {/* Right Icons */}
             <div className="flex items-center space-x-1 sm:space-x-3">
+              {/* Book A Service / Data Recovery — the two eye-catching entry points that
+                  replace the old Services & Data Recovery main-menu links; sit right
+                  beside the search box on every screen size. */}
+              <Link
+                href="/services"
+                className="flex items-center gap-1.5 rounded-xl bg-ink px-2.5 sm:px-4 py-2 sm:py-2.5 text-sm font-semibold text-white hover:bg-ink/90 transition-colors flex-shrink-0"
+              >
+                <WrenchScrewdriverIcon className="h-4 w-4" />
+                <span className="hidden sm:inline">Book A Service</span>
+              </Link>
+              <Link
+                href="/data-recovery"
+                className="hidden md:flex items-center gap-1.5 rounded-xl border-2 border-ink px-2.5 sm:px-4 py-2 sm:py-2.5 text-sm font-semibold text-ink hover:bg-ink hover:text-white transition-colors flex-shrink-0"
+              >
+                <CircleStackIcon className="h-4 w-4" />
+                <span>Data Recovery</span>
+              </Link>
+
               <button
                 className="md:hidden p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-all"
                 onClick={() => { setMobileSearchOpen(!mobileSearchOpen); setTimeout(() => mobileInputRef.current?.focus(), 100); }}
@@ -781,8 +797,6 @@ export default function Header() {
       <div className="bg-gray-50/80 backdrop-blur-sm border-t border-b border-gray-200 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
         <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8">
           <div className="hidden lg:flex items-center h-11 gap-0.5 flex-wrap">
-            {renderMegaMenu('services', 'Services', '/services', serviceCategories, false)}
-            {renderPlainLink('Data Recovery', '/data-recovery')}
             {productCategories.map((cat, i) =>
               renderMegaMenu(
                 `cat-${cat.id}`,
@@ -843,64 +857,27 @@ export default function Header() {
 
             {/* Scrollable body */}
             <div className="flex-1 overflow-y-auto">
-              {/* Services navigation */}
-              <div className="divide-y divide-gray-200">
-                {navigation.filter((n) => n.menuKey === 'services').map((item) => {
-                  const isActive = pathname === item.href;
-
-                  if (item.hasMegaMenu && item.menuKey === 'services') {
-                    const cats = serviceCategories;
-                    const isExpanded = mobileExpandedMenu === 'services';
-                    return (
-                      <div key={item.name}>
-                        <div className="flex items-center">
-                          <Link
-                            href={item.href}
-                            className={`flex-1 px-5 py-4 text-[15px] font-medium ${isActive ? 'text-gray-900' : 'text-gray-700 hover:bg-gray-50'}`}
-                            onClick={() => setMobileMenuOpen(false)}
-                          >
-                            {item.name}
-                          </Link>
-                          {cats.length > 0 && (
-                            <button
-                              type="button"
-                              className="flex h-full items-center justify-center px-5 py-4 text-gray-500 hover:bg-gray-50 hover:text-gray-900"
-                              onClick={() => setMobileExpandedMenu(isExpanded ? null : 'services')}
-                              aria-label={isExpanded ? 'Collapse services' : 'Expand services'}
-                            >
-                              {isExpanded ? <MinusIcon className="h-5 w-5" /> : <PlusIcon className="h-5 w-5" />}
-                            </button>
-                          )}
-                        </div>
-                        {isExpanded && cats.length > 0 && (
-                          <div className="bg-gray-50 px-5 py-2">
-                            {cats.map((cat) => (
-                              <Link
-                                key={cat.id}
-                                href={getCategoryUrl(cat, 'services')}
-                                className="block rounded-md px-3 py-2 text-sm font-medium text-gray-700 hover:bg-white hover:text-gray-900"
-                                onClick={() => setMobileMenuOpen(false)}
-                              >
-                                {cat.name}
-                              </Link>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <Link
-                      key={item.name}
-                      href={item.href}
-                      className={`block px-5 py-4 text-[15px] font-medium ${isActive ? 'bg-gray-100 text-gray-900' : 'text-gray-700 hover:bg-gray-50'}`}
-                      onClick={() => setMobileMenuOpen(false)}
-                    >
-                      {item.name}
-                    </Link>
-                  );
-                })}
+              {/* Book A Service / Data Recovery — Services & Data Recovery live behind
+                  these two clear CTAs here instead of competing with the product-category
+                  list below (the desktop header shows the same pair beside the search box,
+                  but there's no room for both on a mobile-width top row). */}
+              <div className="p-3 space-y-2 border-b-8 border-gray-100">
+                <Link
+                  href="/services"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="flex items-center justify-center gap-2 rounded-xl bg-ink px-5 py-3.5 text-[15px] font-semibold text-white hover:bg-ink/90 transition-colors"
+                >
+                  <WrenchScrewdriverIcon className="h-5 w-5" />
+                  Book A Service
+                </Link>
+                <Link
+                  href="/data-recovery"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="flex items-center justify-center gap-2 rounded-xl border-2 border-ink px-5 py-3.5 text-[15px] font-semibold text-ink hover:bg-ink hover:text-white transition-colors"
+                >
+                  <CircleStackIcon className="h-5 w-5" />
+                  Data Recovery
+                </Link>
               </div>
 
               {/* Top-level product categories — flat list, Startech-style */}

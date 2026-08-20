@@ -68,8 +68,13 @@ export const serviceService = {
   /**
    * Get service categories (public) — flat list
    */
-  getCategories: async (): Promise<ServiceCategory[]> => {
-    const response = await apiClient.get('/categories/services');
+  getCategories: async (params?: {
+    parent_only?: boolean;
+    with_stats?: boolean;
+    parent_id?: number;
+    top_level_id?: number;
+  }): Promise<ServiceCategory[]> => {
+    const response = await apiClient.get('/categories/services', { params });
     return response.data.data || [];
   },
 

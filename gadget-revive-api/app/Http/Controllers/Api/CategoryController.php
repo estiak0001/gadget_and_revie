@@ -37,6 +37,23 @@ class CategoryController extends BaseController
 
         $categories = $query->with('parent.parent')->withCount('services')->get();
 
+        // Opt-in: real subtree stats (count + lowest active price) for the storefront's
+        // category-card grids (e.g. the /services landing page), which need "N services,
+        // starting from ৳X" per card without an extra request each. Overwrites the plain
+        // withCount('services') above (direct children only) with the true, recursive subtree
+        // count — the same "flat category" figure used on a single category's own page.
+        if ($request->boolean('with_stats')) {
+            foreach ($categories as $category) {
+                $descendantIds = $category->allDescendantIds();
+                $stats = Service::whereIn('category_id', $descendantIds)
+                    ->active()
+                    ->selectRaw('COUNT(*) as cnt, MIN(COALESCE(discount_price, base_price)) as min_price')
+                    ->first();
+                $category->setAttribute('services_count', (int) $stats->cnt);
+                $category->setAttribute('starting_price', $stats->min_price);
+            }
+        }
+
         return $this->success(ServiceCategoryResource::collection($categories));
     }
 

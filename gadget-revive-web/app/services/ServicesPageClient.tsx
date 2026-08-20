@@ -3,8 +3,11 @@
 import { useState, useEffect, useCallback, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { serviceService } from '@/lib/api';
+import { serviceService, cmsService } from '@/lib/api';
+import { getStorageUrl } from '@/lib/api/config';
+import { pickString } from '@/lib/seo';
 import { Service, ServiceCategory } from '@/lib/types';
+import { resolveIcon } from '@/lib/resolve-icon';
 import ServiceCard from '@/components/ServiceCard';
 import {
   ShieldCheckIcon,
@@ -24,6 +27,14 @@ function ServicesContent() {
   const [totalServices, setTotalServices] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
+  const [phone, setPhone] = useState('');
+
+  useEffect(() => {
+    cmsService.getSettings().then((s) => {
+      // topbar_phone is the real, filled-in number; contact_phone is an unfilled placeholder.
+      setPhone(pickString(s.topbar_phone, s.contact_phone));
+    }).catch(() => {});
+  }, []);
 
   // The search term is driven by the shared top-nav search bar via the URL
   // (?search=), so there is no separate search box on this page.
@@ -52,8 +63,8 @@ function ServicesContent() {
   }, [currentPage, searchQuery]);
 
   useEffect(() => {
-    serviceService.getCategories().then((cats) => {
-      setRootCategories(cats.filter((c) => !c.parent_id));
+    serviceService.getCategories({ parent_only: true, with_stats: true }).then((cats) => {
+      setRootCategories(cats);
     }).catch(() => {});
   }, []);
 
@@ -90,92 +101,121 @@ function ServicesContent() {
         </div>
       </div>
 
-      {/* Root Category Links */}
-      {rootCategories.length > 0 && (
-        <div className="bg-white border-b border-gray-200">
-          <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 py-3">
-            <div className="flex flex-wrap gap-1.5">
-              {rootCategories.map((cat) => (
-                <Link
-                  key={cat.id}
-                  href={`/services/${cat.slug}`}
-                  className="px-3 py-1 rounded-md text-sm font-medium bg-gray-100 border border-gray-200 text-gray-600 hover:bg-ink/90 hover:border-ink hover:text-white transition-colors"
-                >
-                  {cat.name}
-                </Link>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Services Grid */}
-      <div className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mb-4 flex items-center justify-between gap-4 flex-wrap">
-          <h3 className="text-lg font-bold text-gray-900 inline-flex items-center">
-            {searchQuery ? (
-              <>
-                <MagnifyingGlassIcon className="h-5 w-5 text-gray-400 mr-2" />
-                Results for &quot;{searchQuery}&quot;
-              </>
-            ) : (
-              'All Services'
-            )}
-            <span className="ml-2 text-gray-500 text-sm">({totalServices})</span>
-          </h3>
-          {searchQuery && (
+      {searchQuery ? (
+        /* Search results — real matching services, individually, since that's what a search
+           is actually for (unlike plain browsing, see the category-card grid below). */
+        <div className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8">
+          <div className="mb-4 flex items-center justify-between gap-4 flex-wrap">
+            <h3 className="text-lg font-bold text-gray-900 inline-flex items-center">
+              <MagnifyingGlassIcon className="h-5 w-5 text-gray-400 mr-2" />
+              Results for &quot;{searchQuery}&quot;
+              <span className="ml-2 text-gray-500 text-sm">({totalServices})</span>
+            </h3>
             <Link href="/services" className="text-sm font-medium text-gray-600 hover:text-gray-900">
               Clear search
             </Link>
+          </div>
+
+          {loading ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-5">
+              {[...Array(10)].map((_, i) => (
+                <div key={i} className="bg-gray-50 rounded-xl border border-gray-200 shadow-sm overflow-hidden animate-pulse">
+                  <div className="w-full h-32 bg-gray-200" />
+                  <div className="p-4 space-y-2">
+                    <div className="h-3 bg-gray-200 rounded w-1/2" />
+                    <div className="h-4 bg-gray-200 rounded w-3/4" />
+                    <div className="h-5 bg-gray-200 rounded w-1/3 mt-2" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : services.length === 0 ? (
+            <div className="text-center py-8">
+              <div className="text-gray-400 text-2xl mb-4">🔧</div>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">No services found</h3>
+              <p className="text-gray-600">Try a different search term</p>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-5">
+                {services.map((service) => (
+                  <ServiceCard key={service.id} service={service} />
+                ))}
+              </div>
+              {lastPage > 1 && (
+                <div className="flex justify-center mt-6 space-x-2">
+                  {Array.from({ length: lastPage }, (_, i) => i + 1).map((page) => (
+                    <button
+                      key={page}
+                      onClick={() => setCurrentPage(page)}
+                      className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                        page === currentPage
+                          ? 'bg-ink text-white'
+                          : 'bg-white border border-gray-200 text-gray-700 hover:border-gray-500'
+                      }`}
+                    >
+                      {page}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
+      ) : (
+        /* Browse by category — one real card per parent category (image, real "starting from"
+           price, real service count), not a long undifferentiated list of every SKU. */
+        <div className="mx-auto max-w-[1600px] px-4 py-8 sm:py-10 sm:px-6 lg:px-8">
+          <div className="text-center mb-7">
+            <h2 className="text-lg sm:text-xl font-bold text-gray-900">Browse Services by Category</h2>
+            <p className="text-sm text-gray-500 mt-1">Pick a category to see pricing and book online</p>
+          </div>
 
-        {loading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-5">
-            {[...Array(10)].map((_, i) => (
-              <div key={i} className="bg-gray-50 rounded-xl border border-gray-200 shadow-sm overflow-hidden animate-pulse">
-                <div className="w-full h-32 bg-gray-200" />
-                <div className="p-4 space-y-2">
-                  <div className="h-3 bg-gray-200 rounded w-1/2" />
-                  <div className="h-4 bg-gray-200 rounded w-3/4" />
-                  <div className="h-5 bg-gray-200 rounded w-1/3 mt-2" />
-                </div>
-              </div>
-            ))}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+            {rootCategories.length === 0
+              ? [...Array(6)].map((_, i) => (
+                  <div key={i} className="rounded-2xl border border-gray-200 bg-white overflow-hidden animate-pulse">
+                    <div className="h-28 bg-gray-100" />
+                    <div className="p-4 space-y-2">
+                      <div className="h-3 bg-gray-100 rounded w-3/4 mx-auto" />
+                      <div className="h-3 bg-gray-100 rounded w-1/2 mx-auto" />
+                    </div>
+                  </div>
+                ))
+              : rootCategories.map((cat) => {
+                  const CatIcon = resolveIcon(cat.icon);
+                  return (
+                    <Link
+                      key={cat.id}
+                      href={`/services/${cat.slug}`}
+                      className="group flex flex-col rounded-2xl border border-gray-200 bg-white overflow-hidden hover:border-ink hover:shadow-lg transition-all duration-200"
+                    >
+                      <div className="relative h-28 bg-gray-50 overflow-hidden flex-shrink-0">
+                        {cat.image ? (
+                          <img src={getStorageUrl(cat.image)} alt={cat.name} className="h-full w-full object-contain p-3 group-hover:scale-105 transition-transform duration-300" />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center">
+                            <CatIcon className="h-9 w-9 text-gray-300" />
+                          </div>
+                        )}
+                      </div>
+                      <div className="p-4 flex flex-col flex-1 text-center">
+                        <h4 className="font-semibold text-gray-900 text-sm group-hover:text-ink transition-colors">{cat.name}</h4>
+                        {cat.starting_price != null ? (
+                          <p className="text-xs text-gray-500 mt-1">Starts from ৳{Number(cat.starting_price).toLocaleString()}</p>
+                        ) : typeof cat.services_count === 'number' ? (
+                          <p className="text-xs text-gray-500 mt-1">{cat.services_count} service{cat.services_count === 1 ? '' : 's'}</p>
+                        ) : null}
+                        <span className="mt-3 inline-flex items-center justify-center gap-1 rounded-lg bg-ink/5 text-ink text-xs font-semibold py-2 group-hover:bg-ink group-hover:text-white transition-colors">
+                          View Services
+                        </span>
+                      </div>
+                    </Link>
+                  );
+                })}
           </div>
-        ) : services.length === 0 ? (
-          <div className="text-center py-8">
-            <div className="text-gray-400 text-2xl mb-4">🔧</div>
-            <h3 className="text-xl font-bold text-gray-900 mb-2">No services found</h3>
-            <p className="text-gray-600">Try selecting a different category or adjusting your search</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-5">
-            {services.map((service) => (
-              <ServiceCard key={service.id} service={service} />
-            ))}
-          </div>
-        )}
-
-        {/* Pagination */}
-        {lastPage > 1 && (
-          <div className="flex justify-center mt-6 space-x-2">
-            {Array.from({ length: lastPage }, (_, i) => i + 1).map((page) => (
-              <button
-                key={page}
-                onClick={() => setCurrentPage(page)}
-                className={`px-4 py-2 rounded-lg font-medium transition-all ${
-                  page === currentPage
-                    ? 'bg-ink text-white'
-                    : 'bg-white border border-gray-200 text-gray-700 hover:border-gray-500'
-                }`}
-              >
-                {page}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Why Choose Us */}
       <div className="bg-gradient-to-b from-gray-50 to-white py-8">
@@ -211,9 +251,11 @@ function ServicesContent() {
             <h2 className="text-xl sm:text-2xl lg:text-2xl font-bold text-white mb-4">Need Help Choosing the Right Service?</h2>
             <p className="text-xl text-gray-200 mb-5 max-w-2xl mx-auto">Our expert team is here to guide you. Contact us for a free consultation!</p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <a href="tel:+8801711123456" className="inline-flex items-center justify-center gap-2 bg-white text-gray-900 px-8 py-4 rounded-xl font-bold text-lg hover:bg-gray-50 transition-all shadow-md">
-                <PhoneIcon className="h-6 w-6" />Call: +880 1711-123456
-              </a>
+              {phone && (
+                <a href={`tel:${phone}`} className="inline-flex items-center justify-center gap-2 bg-white text-gray-900 px-8 py-4 rounded-xl font-bold text-lg hover:bg-gray-50 transition-all shadow-md">
+                  <PhoneIcon className="h-6 w-6" />Call: {phone}
+                </a>
+              )}
               <Link href="/contact" className="inline-flex items-center justify-center gap-2 bg-white/10 border-2 border-white/30 text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-white/20 transition-all">
                 Visit Our Centers<ArrowRightIcon className="h-5 w-5" />
               </Link>

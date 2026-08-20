@@ -5,7 +5,6 @@
  *   - /api/public/home           (React Strict Mode double-invoke)
  *   - /api/products/featured     (React Strict Mode double-invoke)
  *   - /api/categories/products?is_featured=true  (page.tsx + ProductCategories.tsx)
- *   - /api/services/featured     (React Strict Mode double-invoke)
  *   - /api/branch-locations/featured (React Strict Mode double-invoke)
  *
  * Now every consumer calls fetchHomepageData() and gets the cached result.
@@ -14,9 +13,8 @@
 import { create } from 'zustand';
 import { cmsService, type CmsBanner, type HomepageCmsData } from '@/lib/api/cms';
 import { productService } from '@/lib/api/product';
-import { serviceService } from '@/lib/api/service';
 import { branchLocationService, type BranchLocation } from '@/lib/api/branchLocation';
-import type { Product, ProductCategory, Service } from '@/lib/types';
+import type { Product, ProductCategory } from '@/lib/types';
 
 interface HomepageState {
     // /public/home data
@@ -31,10 +29,6 @@ interface HomepageState {
     // /categories/products?is_featured=true
     featuredCategories: ProductCategory[];
     categoriesLoading: boolean;
-
-    // /services/featured
-    featuredServices: Service[];
-    servicesLoading: boolean;
 
     // /branch-locations/featured
     mainBranch: BranchLocation | null;
@@ -55,8 +49,6 @@ export const useHomepageStore = create<HomepageState>((set, get) => ({
     productsLoading: true,
     featuredCategories: [],
     categoriesLoading: true,
-    featuredServices: [],
-    servicesLoading: true,
     mainBranch: null,
     fetched: false,
     loading: false,
@@ -67,12 +59,11 @@ export const useHomepageStore = create<HomepageState>((set, get) => ({
         set({ loading: true });
 
         // Run all fetches in parallel
-        const [homepageData, featuredProducts, featuredCategories, featuredServices, mainBranch] =
+        const [homepageData, featuredProducts, featuredCategories, mainBranch] =
             await Promise.allSettled([
                 cmsService.getHomepageData(),
                 productService.getFeatured(),
                 productService.getFeaturedCategories(),
-                serviceService.getFeatured(),
                 branchLocationService.getFeatured(),
             ]);
 
@@ -104,8 +95,6 @@ export const useHomepageStore = create<HomepageState>((set, get) => ({
             productsLoading: false,
             featuredCategories: featuredCategories.status === 'fulfilled' ? featuredCategories.value : [],
             categoriesLoading: false,
-            featuredServices: featuredServices.status === 'fulfilled' ? featuredServices.value : [],
-            servicesLoading: false,
             mainBranch: mainBranch.status === 'fulfilled' ? mainBranch.value : null,
             fetched: true,
             loading: false,
