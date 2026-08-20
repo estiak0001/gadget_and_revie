@@ -2226,8 +2226,8 @@ class AdminController extends BaseController
 
         $message = match ($request->type) {
             'status'    => $sms->buildOrderStatusMessage($order->order_number, $order->order_status),
-            'delivered' => $sms->buildOrderDeliveredMessage($order->order_number),
-            'due'       => $sms->buildPaymentDueMessage($order->order_number, number_format($order->outstanding_receivable, 2)),
+            'delivered' => $sms->buildOrderDeliveredMessage($order->order_number, $order->id),
+            'due'       => $sms->buildPaymentDueMessage($order->order_number, number_format($order->outstanding_receivable, 2), $order->id),
         };
 
         return $this->success(['phone' => $order->customer_phone, 'message' => $message]);

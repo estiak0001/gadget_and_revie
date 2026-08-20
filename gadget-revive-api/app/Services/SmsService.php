@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Order;
 use App\Models\SiteSetting;
 use App\Models\SmsConnection;
 use App\Models\SmsLog;
@@ -158,15 +159,19 @@ class SmsService
             return false;
         }
 
-        return $this->sendVia($conn, $phone, $this->buildOrderDeliveredMessage($orderNumber), 'order_delivered', $orderId);
+        return $this->sendVia($conn, $phone, $this->buildOrderDeliveredMessage($orderNumber, $orderId), 'order_delivered', $orderId);
     }
 
-    public function buildOrderDeliveredMessage(string $orderNumber): string
+    public function buildOrderDeliveredMessage(string $orderNumber, ?int $orderId = null): string
     {
-        $template = SiteSetting::get('sms_order_delivered_template', 'Your order #{order} has been delivered. Thank you for shopping with {app}!');
+        $template = SiteSetting::get('sms_order_delivered_template', 'Your {app} order #{order} has been delivered! Download your invoice: {invoice_url} Thank you for shopping with us.');
         $appName = SiteSetting::get('site_name', 'Gadget & Revive');
 
-        return strtr($template, ['{order}' => $orderNumber, '{app}' => $appName]);
+        return strtr($template, [
+            '{order}' => $orderNumber,
+            '{app}' => $appName,
+            '{invoice_url}' => $orderId ? $this->invoiceUrl($orderId) : '',
+        ]);
     }
 
     /** Also manual — sent from a button next to a specific issued custom invoice, not fired
@@ -199,15 +204,35 @@ class SmsService
             return false;
         }
 
-        return $this->sendVia($conn, $phone, $this->buildPaymentDueMessage($orderNumber, $amountDue), 'payment_due', $orderId);
+        return $this->sendVia($conn, $phone, $this->buildPaymentDueMessage($orderNumber, $amountDue, $orderId), 'payment_due', $orderId);
     }
 
-    public function buildPaymentDueMessage(string $orderNumber, string $amountDue): string
+    public function buildPaymentDueMessage(string $orderNumber, string $amountDue, ?int $orderId = null): string
     {
         $appName = SiteSetting::get('site_name', 'Gadget & Revive');
-        $template = SiteSetting::get('sms_payment_due_template', 'Your {app} order #{order} has an outstanding balance of {amount}. Please complete payment to proceed.');
+        $template = SiteSetting::get('sms_payment_due_template', 'Reminder: your {app} order #{order} has an outstanding balance of {amount}. Invoice: {invoice_url} Please complete payment to proceed.');
 
-        return strtr($template, ['{app}' => $appName, '{order}' => $orderNumber, '{amount}' => $amountDue]);
+        return strtr($template, [
+            '{app}' => $appName,
+            '{order}' => $orderNumber,
+            '{amount}' => $amountDue,
+            '{invoice_url}' => $orderId ? $this->invoiceUrl($orderId) : '',
+        ]);
+    }
+
+    /** Short, non-expiring link to InvoiceController::shortDownload() — "any customer can
+     *  download it any time" with no login, short enough to not blow out an SMS into extra
+     *  segments, while still not being guessable the way a plain order-number URL would be
+     *  (the token is the access control). Used by both buildOrderDeliveredMessage() and
+     *  buildPaymentDueMessage(). */
+    private function invoiceUrl(int $orderId): string
+    {
+        $order = Order::find($orderId);
+        if (!$order) {
+            return '';
+        }
+
+        return url('/api/i/' . $order->getOrCreateInvoiceToken());
     }
 
     /** Admin's "Send Test SMS" from a specific connection — bypasses the purpose enabled/connection

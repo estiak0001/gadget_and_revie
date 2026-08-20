@@ -70,6 +70,28 @@ class Order extends Model
         return $this->customer_id !== null && (bool) $this->customer?->is_auto_created;
     }
 
+    /**
+     * The short opaque token backing this order's public invoice link (used in the
+     * {invoice_url} SMS placeholder). Generated once, lazily, and reused after that — the
+     * token itself is the access control (see InvoiceController::shortDownload()), so it's
+     * deliberately not derived from anything guessable like the order number or id.
+     */
+    public function getOrCreateInvoiceToken(): string
+    {
+        if ($this->invoice_token) {
+            return $this->invoice_token;
+        }
+
+        do {
+            $token = \Illuminate\Support\Str::random(8);
+        } while (self::where('invoice_token', $token)->exists());
+
+        $this->invoice_token = $token;
+        $this->saveQuietly();
+
+        return $token;
+    }
+
     protected $casts = [
         'subtotal' => 'decimal:2',
         'tax' => 'decimal:2',

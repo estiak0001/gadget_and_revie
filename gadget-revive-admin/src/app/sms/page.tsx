@@ -387,9 +387,9 @@ function OrderConfigPanel({ connections }: { connections: SmsConnection[] }) {
       setEnabled(cfg.sms_order_enabled === 'true');
       setPlacedTemplate(cfg.sms_order_placed_template || "Thank you! Your order #{order} has been placed successfully. We'll notify you as it progresses.");
       setStatusTemplate(cfg.sms_order_status_template || 'Update: your order #{order} is now {status}.');
-      setDeliveredTemplate(cfg.sms_order_delivered_template || 'Your order #{order} has been delivered. Thank you for shopping with {app}!');
+      setDeliveredTemplate(cfg.sms_order_delivered_template || 'Your {app} order #{order} has been delivered! Download your invoice: {invoice_url} Thank you for shopping with us.');
       setCustomInvoiceTemplate(cfg.sms_custom_invoice_template || 'Your {app} invoice {invoice} — Total: {total}. Thank you!');
-      setDueTemplate(cfg.sms_payment_due_template || 'Your {app} order #{order} has an outstanding balance of {amount}. Please complete payment to proceed.');
+      setDueTemplate(cfg.sms_payment_due_template || 'Reminder: your {app} order #{order} has an outstanding balance of {amount}. Invoice: {invoice_url} Please complete payment to proceed.');
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -459,7 +459,7 @@ function OrderConfigPanel({ connections }: { connections: SmsConnection[] }) {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Order Delivered Template <span className="text-gray-400 font-normal">(sent manually)</span></label>
             <textarea className="w-full border border-gray-300 rounded-lg p-2.5 h-20 resize-none text-sm" value={deliveredTemplate} onChange={(e) => setDeliveredTemplate(e.target.value)} />
-            <p className="text-xs text-gray-500 mt-1">Placeholders: <code>{'{order}'}</code>, <code>{'{app}'}</code></p>
+            <p className="text-xs text-gray-500 mt-1">Placeholders: <code>{'{order}'}</code>, <code>{'{app}'}</code>, <code>{'{invoice_url}'}</code> — a public link, no login required, so the customer can open it straight from the SMS</p>
           </div>
 
           <div>
@@ -471,7 +471,7 @@ function OrderConfigPanel({ connections }: { connections: SmsConnection[] }) {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Payment Due Template <span className="text-gray-400 font-normal">(sent manually)</span></label>
             <textarea className="w-full border border-gray-300 rounded-lg p-2.5 h-20 resize-none text-sm" value={dueTemplate} onChange={(e) => setDueTemplate(e.target.value)} />
-            <p className="text-xs text-gray-500 mt-1">Placeholders: <code>{'{app}'}</code>, <code>{'{order}'}</code>, <code>{'{amount}'}</code></p>
+            <p className="text-xs text-gray-500 mt-1">Placeholders: <code>{'{app}'}</code>, <code>{'{order}'}</code>, <code>{'{amount}'}</code>, <code>{'{invoice_url}'}</code> — a public link, no login required, so the customer can open it straight from the SMS</p>
           </div>
 
           <div className="flex justify-end">

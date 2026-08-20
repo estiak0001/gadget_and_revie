@@ -110,6 +110,32 @@ class InvoiceController extends BaseController
     }
 
     /**
+     * Short, public invoice download link — the {invoice_url} link sent in delivery/payment-due
+     * order SMS. No login required; the token itself (Order::invoice_token) is the access
+     * control, not who's logged in (unlike guestDownload(), which has to gate on
+     * allowsGuestStyleAccess() since an order number alone proves nothing). Works for guest
+     * orders and real registered-customer orders alike.
+     */
+    public function shortDownload(string $token): Response|JsonResponse
+    {
+        $order = Order::with(['items.product', 'items.service', 'items.serials', 'customer', 'division', 'district', 'area'])
+            ->where('invoice_token', $token)
+            ->first();
+
+        if (!$order) {
+            return $this->error('Invoice link not found or no longer valid.', 404);
+        }
+
+        if (!$order->invoiceAvailable()) {
+            return $this->error('Invoice is not available yet. The price for this service order has not been confirmed.', 422);
+        }
+
+        $pdf = $this->generatePdf($order);
+
+        return $pdf->download("Invoice-{$order->order_number}.pdf");
+    }
+
+    /**
      * Guest invoice access by order number (for tracking page).
      */
     public function guestDownload(Request $request): Response|JsonResponse

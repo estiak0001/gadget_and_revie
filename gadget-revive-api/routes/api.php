@@ -152,6 +152,15 @@ Route::prefix('public')->group(function () {
     Route::get('/settings/{key}', [PublicController::class, 'setting']);
 });
 
+// Short, public invoice download link — no login required, kept deliberately short (fits an
+// SMS without eating extra segments). This is the {invoice_url} link included in delivery/
+// payment-due order SMS, so any customer can open it straight from their phone. The token
+// itself is the access control (unguessable, see Order::getOrCreateInvoiceToken()), not who's
+// logged in — unlike guestDownload() below (order-number-only, so restricted to guest-style
+// orders to avoid letting anyone who guesses an order number pull a registered customer's
+// invoice), this works identically for guest orders and real registered-customer orders alike.
+Route::get('/i/{token}', [InvoiceController::class, 'shortDownload']);
+
 // ============================================================================
 // GUEST ROUTES (No Authentication Required — identified by session_id)
 // ============================================================================
