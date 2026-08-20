@@ -2823,7 +2823,10 @@ class AdminController extends BaseController
             'discount_price' => 'nullable|numeric|min:0',
             'estimated_duration' => 'nullable|string|max:100',
             'duration_estimate' => 'nullable|string|max:100',
-            'image' => 'nullable|image|max:4096',
+            // Laravel's `image` rule rejects SVG outright (it requires GD-decodable raster
+            // dimensions, which an XML-based SVG doesn't have) — use mimes so admins can
+            // upload an SVG the same way the category forms already do. max:51200 = 50MB.
+            'image' => 'nullable|file|mimes:jpeg,jpg,png,gif,webp,svg|max:51200',
             'gallery' => 'nullable|array|max:10',
             'gallery.*' => 'image|max:4096',
             'features' => 'nullable|array',
@@ -2893,7 +2896,10 @@ class AdminController extends BaseController
             'discount_price' => 'nullable|numeric|min:0',
             'estimated_duration' => 'nullable|string|max:100',
             'duration_estimate' => 'nullable|string|max:100',
-            'image' => 'nullable|image|max:4096',
+            // Laravel's `image` rule rejects SVG outright (it requires GD-decodable raster
+            // dimensions, which an XML-based SVG doesn't have) — use mimes so admins can
+            // upload an SVG the same way the category forms already do. max:51200 = 50MB.
+            'image' => 'nullable|file|mimes:jpeg,jpg,png,gif,webp,svg|max:51200',
             'gallery' => 'nullable|array|max:10',
             'gallery.*' => 'image|max:4096',
             'features' => 'nullable|array',
@@ -3196,7 +3202,10 @@ class AdminController extends BaseController
             'always_in_stock' => 'nullable',
             'current_cost' => 'nullable|numeric|min:0',
             'unit' => 'nullable|string|max:50',
-            'image' => 'nullable|image|max:4096',
+            // Laravel's `image` rule rejects SVG outright (it requires GD-decodable raster
+            // dimensions, which an XML-based SVG doesn't have) — use mimes so admins can
+            // upload an SVG the same way the category forms already do.
+            'image' => 'nullable|file|mimes:jpeg,jpg,png,gif,webp,svg|max:4096',
             'gallery' => 'nullable|array',
             'gallery.*' => 'image|max:4096',
             'specifications' => 'nullable',
@@ -3293,7 +3302,10 @@ class AdminController extends BaseController
             'always_in_stock' => 'nullable',
             'current_cost' => 'nullable|numeric|min:0',
             'unit' => 'nullable|string|max:50',
-            'image' => 'nullable|image|max:4096',
+            // Laravel's `image` rule rejects SVG outright (it requires GD-decodable raster
+            // dimensions, which an XML-based SVG doesn't have) — use mimes so admins can
+            // upload an SVG the same way the category forms already do.
+            'image' => 'nullable|file|mimes:jpeg,jpg,png,gif,webp,svg|max:4096',
             'gallery' => 'nullable|array',
             'gallery.*' => 'image|max:4096',
             'specifications' => 'nullable',
