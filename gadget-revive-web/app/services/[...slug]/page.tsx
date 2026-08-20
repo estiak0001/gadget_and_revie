@@ -1,14 +1,15 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { serviceService, locationService, orderService, guestCartService } from '@/lib/api';
+import { serviceService, locationService, orderService, guestCartService, cmsService } from '@/lib/api';
 import { getStorageUrl } from '@/lib/api/config';
+import { pickString } from '@/lib/seo';
 import { Service, ServiceCategory, Division, District, Area } from '@/lib/types';
 import { useAuthStore } from '@/lib/stores/auth-store';
 import Breadcrumb from '@/components/Breadcrumb';
-import ServiceCard from '@/components/ServiceCard';
+import { resolveIcon } from '@/lib/resolve-icon';
 import {
   ClockIcon,
   CheckCircleIcon,
@@ -16,8 +17,11 @@ import {
   WrenchScrewdriverIcon,
   ArrowLeftIcon,
   CreditCardIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
+  BoltIcon,
+  UserGroupIcon,
+  TrophyIcon,
+  PhoneIcon,
+  ClipboardDocumentCheckIcon,
 } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
@@ -30,6 +34,24 @@ function buildServiceCategoryPath(category: ServiceCategory): string {
   }
   return '/services/' + category.slug;
 }
+
+// Same trust copy already used sitewide on /services ("Why Choose Gadget Revive?") — reused
+// here rather than invented per-category, since it's real, vetted marketing copy already live.
+const TRUST_ITEMS = [
+  { icon: ShieldCheckIcon, title: '90-Day Warranty' },
+  { icon: BoltIcon, title: 'Same Day Service' },
+  { icon: UserGroupIcon, title: 'Expert Technicians' },
+  { icon: TrophyIcon, title: 'Genuine Parts' },
+];
+
+// Generic booking flow, true for every category (see ServiceDetailView's order form below) —
+// not category-specific claims, just how ordering actually works on this site.
+const HOW_IT_WORKS_STEPS = [
+  { icon: WrenchScrewdriverIcon, title: 'Choose Your Service', description: 'Browse the list below and pick the exact service you need.' },
+  { icon: ClipboardDocumentCheckIcon, title: 'Book & Confirm', description: 'Add your details, address and preferred payment method.' },
+  { icon: ClockIcon, title: 'We Get To Work', description: 'Our technician takes care of it at your convenience.' },
+  { icon: CreditCardIcon, title: "Pay & You're Done", description: 'Pay via bKash, cash, or bank transfer once it’s complete.' },
+];
 
 // ──────────────────────────────────────────────────────────────
 // Main resolver component
@@ -100,11 +122,15 @@ export default function ServicesSlugPage() {
 // CategoryView — lists services under a category
 // ──────────────────────────────────────────────────────────────
 function CategoryView({ category }: { category: ServiceCategory }) {
-  const [services, setServices] = useState<Service[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalServices, setTotalServices] = useState(0);
+  const [phone, setPhone] = useState('');
+
+  useEffect(() => {
+    cmsService.getSettings().then((s) => {
+      // topbar_phone is the real, filled-in number (same one Header/Footer/HomeClient show);
+      // contact_phone is an unfilled placeholder in current site settings — prefer topbar_phone.
+      setPhone(pickString(s.topbar_phone, s.contact_phone));
+    }).catch(() => {});
+  }, []);
 
   // Breadcrumb items
   const breadcrumbItems = [
@@ -115,133 +141,168 @@ function CategoryView({ category }: { category: ServiceCategory }) {
     })),
   ];
 
-  const fetchServices = useCallback(async () => {
-    try {
-      setLoading(true);
-      const params: any = { category_id: category.id, page: currentPage, per_page: 10 };
-      const result = await serviceService.getAll(params);
-      setServices(result.data);
-      setTotalServices(result.meta.total);
-      setTotalPages(result.meta.last_page);
-    } catch {
-      toast.error('Failed to load services');
-    } finally {
-      setLoading(false);
-    }
-  }, [category.id, currentPage]);
-
-  useEffect(() => { fetchServices(); }, [fetchServices]);
-
-  const subcategories = category.children ?? [];
+  const totalServices = category.services_count ?? 0;
+  const tierServices = category.tier_services ?? [];
+  const CategoryIcon = resolveIcon(category.icon);
 
   return (
     <div className="bg-white min-h-screen">
-      {/* Hero */}
+      {/* Hero — category identity, real "starting from" price, and a single Book CTA that
+          jumps straight to the services grid (a category has many bookable services, so there's
+          no one thing to "book" from up here — this just gets shoppers to the list fast). */}
       <div className="bg-gradient-to-r from-ink to-ink">
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          {/* Breadcrumb - top left */}
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
           <Breadcrumb items={breadcrumbItems} darkBg={true} />
 
-          {/* Main Layout Row: Title + Count (mirrors /services hero) */}
-          <div className="flex items-center justify-between gap-4 mt-4">
-            {/* Left: Title + Description */}
-            <div className="flex-shrink-0">
-              <h1 className="text-xl font-bold text-white">{category.name}</h1>
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 mt-5">
+            {/* Left: Title, description, stats, CTA */}
+            <div className="max-w-2xl">
+              <h1 className="text-2xl sm:text-3xl font-bold text-white">{category.name}</h1>
               {category.description && (
-                <p className="text-sm text-gray-300 mt-1">{category.description}</p>
+                <p className="text-sm sm:text-base text-gray-300 mt-2 leading-relaxed">{category.description}</p>
               )}
+
+              <div className="flex flex-wrap items-center gap-2 mt-4">
+                {category.starting_price != null && (
+                  <span className="inline-flex items-center rounded-full bg-white/10 border border-white/20 px-3 py-1 text-xs font-semibold text-white">
+                    Starting from ৳{Number(category.starting_price).toLocaleString()}
+                  </span>
+                )}
+                <span className="inline-flex items-center rounded-full bg-white/10 border border-white/20 px-3 py-1 text-xs font-semibold text-white">
+                  {totalServices}+ Services
+                </span>
+              </div>
+
+              <a
+                href="#services-grid"
+                className="inline-flex items-center gap-2 mt-5 rounded-xl bg-white px-6 py-3 text-sm font-bold text-ink hover:bg-gray-100 transition-colors"
+              >
+                Book A Service
+              </a>
             </div>
 
-            {/* Right: Service Count */}
-            <div className="flex items-center gap-4 flex-shrink-0">
-              <div className="text-right">
-                <div className="text-lg font-bold text-white">{totalServices}+</div>
-                <div className="text-xs text-gray-400">Services</div>
-              </div>
+            {/* Right: category image / icon watermark */}
+            <div className="relative w-full sm:w-72 lg:w-80 aspect-[4/3] flex-shrink-0 rounded-2xl overflow-hidden bg-white/5 border border-white/10">
+              {category.image ? (
+                <img src={getStorageUrl(category.image)} alt={category.name} className="h-full w-full object-contain p-6" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center">
+                  <CategoryIcon className="h-20 w-20 text-white/25" />
+                </div>
+              )}
             </div>
+          </div>
+
+          {/* Trust strip — real, sitewide copy (see TRUST_ITEMS), not per-category claims */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-7 pt-6 border-t border-white/10">
+            {TRUST_ITEMS.map((item) => (
+              <div key={item.title} className="flex items-center gap-2">
+                <item.icon className="h-5 w-5 text-white/70 flex-shrink-0" />
+                <span className="text-xs sm:text-sm text-gray-300 leading-tight">{item.title}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Subcategory badges */}
-      {subcategories.length > 0 && (
-        <div className="bg-white border-b border-gray-200">
-          <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-3">
-            <div className="flex flex-wrap gap-1.5">
-              {subcategories.map((sub) => (
-                <Link
-                  key={sub.id}
-                  href={`${buildServiceCategoryPath(category)}/${sub.slug}`}
-                  className="px-3 py-1 rounded-md text-sm font-medium bg-gray-100 text-gray-600 hover:bg-ink/90 hover:text-white transition-colors"
-                >
-                  {sub.name}
-                  {sub.services_count !== undefined && (
-                    <span className="ml-1 text-xs opacity-70">({sub.services_count})</span>
-                  )}
-                </Link>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Services grid */}
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-bold text-gray-900">
-            {category.name}
-            <span className="ml-2 text-gray-500 text-sm">({totalServices})</span>
-          </h3>
+      {/* Book a service — 3 real services (cheapest/middle/priciest) relabeled as a simple
+          Basic/Minor/Major pricing ladder, centered, instead of the full catalog grid. */}
+      <div id="services-grid" className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10 scroll-mt-4">
+        <div className="text-center mb-7">
+          <h3 className="text-lg sm:text-xl font-bold text-gray-900">Book {category.name}</h3>
+          {totalServices > 0 && (
+            <p className="text-sm text-gray-500 mt-1">{totalServices} service{totalServices === 1 ? '' : 's'} available in this category</p>
+          )}
         </div>
 
-        {/* Category description — real body copy for both shoppers and search engines to
-            match against, not just a service grid. The hero above carries a short one-line
-            subtitle; this is the fuller version. */}
-        {category.description && (
-          <p className="text-sm text-gray-600 leading-relaxed max-w-3xl mb-5 whitespace-pre-line">
-            {category.description}
-          </p>
-        )}
-
-        {loading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-5">
-            {[...Array(10)].map((_, i) => (
-              <div key={i} className="bg-gray-50 rounded-xl border border-gray-200 shadow-sm overflow-hidden animate-pulse">
-                <div className="w-full h-32 bg-gray-200" />
-                <div className="p-4 space-y-2">
-                  <div className="h-3 bg-gray-200 rounded w-1/2" />
-                  <div className="h-4 bg-gray-200 rounded w-3/4" />
-                  <div className="h-5 bg-gray-200 rounded w-1/3 mt-2" />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : services.length === 0 ? (
+        {tierServices.length === 0 ? (
           <div className="text-center py-8">
             <div className="text-gray-400 text-2xl mb-4">🔧</div>
             <h3 className="text-xl font-bold text-gray-900 mb-2">No services found</h3>
-            <p className="text-gray-600">Try browsing a subcategory instead</p>
+            <p className="text-gray-600">Please check back soon</p>
           </div>
         ) : (
-          <>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-5">
-              {services.map((service) => (
-                <ServiceCard key={service.id} service={service} />
-              ))}
-            </div>
-            {totalPages > 1 && (
-              <div className="flex items-center justify-center gap-2 mt-5">
-                <button onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1} className="p-1.5 rounded border border-gray-200 disabled:opacity-50 hover:bg-gray-50">
-                  <ChevronLeftIcon className="h-4 w-4" />
-                </button>
-                <span className="text-sm text-gray-600">Page {currentPage} of {totalPages}</span>
-                <button onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="p-1.5 rounded border border-gray-200 disabled:opacity-50 hover:bg-gray-50">
-                  <ChevronRightIcon className="h-4 w-4" />
-                </button>
-              </div>
-            )}
-          </>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 max-w-4xl mx-auto">
+            {tierServices.map((svc) => (
+              <Link
+                key={svc.id}
+                href={`/services/${svc.slug}`}
+                className="group flex flex-col rounded-2xl border border-gray-200 bg-white overflow-hidden hover:border-ink hover:shadow-lg transition-all duration-200"
+              >
+                <div className="relative h-36 bg-gray-50 overflow-hidden flex-shrink-0">
+                  {svc.image ? (
+                    <img src={getStorageUrl(svc.image)} alt={svc.name} className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center">
+                      <CategoryIcon className="h-10 w-10 text-gray-300" />
+                    </div>
+                  )}
+                  {svc.tier && (
+                    <span className="absolute top-3 left-3 rounded-full bg-ink text-white text-xs font-bold px-3 py-1">{svc.tier}</span>
+                  )}
+                </div>
+                <div className="p-5 flex flex-col flex-1 text-center">
+                  <h4 className="font-semibold text-gray-900 group-hover:text-ink transition-colors">{svc.name}</h4>
+                  {svc.short_description && (
+                    <p className="text-xs text-gray-500 mt-1 line-clamp-2">{svc.short_description}</p>
+                  )}
+                  <div className="mt-3 flex items-center justify-center gap-2">
+                    <span className="text-lg font-bold text-gray-900">৳{Number(svc.price).toLocaleString()}</span>
+                    {svc.duration_estimate && (
+                      <span className="text-xs text-gray-400">• {svc.duration_estimate}</span>
+                    )}
+                  </div>
+                  <span className="mt-4 inline-flex items-center justify-center gap-1 rounded-lg bg-ink/5 text-ink text-sm font-semibold py-2 group-hover:bg-ink group-hover:text-white transition-colors">
+                    Book Now
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
         )}
+
+        {totalServices > tierServices.length && (
+          <p className="text-center text-sm text-gray-500 mt-6">
+            Looking for something else? <Link href="/services" className="font-semibold text-ink hover:underline">Browse all services</Link>
+          </p>
+        )}
+      </div>
+
+      {/* How It Works — the real booking flow (see ServiceDetailView's order form), not
+          category-specific claims, so it holds true on every category page. */}
+      <div className="bg-gray-50 border-t border-gray-200 py-8 sm:py-10">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
+          <h2 className="text-lg sm:text-xl font-bold text-gray-900 text-center mb-6">How It Works</h2>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {HOW_IT_WORKS_STEPS.map((step, i) => (
+              <div key={step.title} className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+                <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-ink/5">
+                  <step.icon className="h-5 w-5 text-ink" />
+                </div>
+                <h3 className="text-sm font-semibold text-gray-900">{i + 1}. {step.title}</h3>
+                <p className="text-xs text-gray-500 mt-1 leading-snug">{step.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* CTA */}
+      <div className="bg-gradient-to-r from-gray-700 to-ink py-8">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <h2 className="text-xl sm:text-2xl font-bold text-white mb-3">Need Help With {category.name}?</h2>
+          <p className="text-gray-200 mb-5 max-w-xl mx-auto">Book online in minutes, or speak to our team for a free consultation.</p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <a href="#services-grid" className="inline-flex items-center justify-center gap-2 bg-white text-gray-900 px-6 py-3 rounded-xl font-bold hover:bg-gray-50 transition-all">
+              Book A Service
+            </a>
+            {phone && (
+              <a href={`tel:${phone}`} className="inline-flex items-center justify-center gap-2 bg-white/10 border-2 border-white/30 text-white px-6 py-3 rounded-xl font-bold hover:bg-white/20 transition-all">
+                <PhoneIcon className="h-5 w-5" />Call: {phone}
+              </a>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -388,10 +449,62 @@ function ServiceDetailView({ initialService }: { initialService: Service }) {
 
   return (
     <div className="bg-gray-50 min-h-screen">
-      {/* Breadcrumb */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <Breadcrumb items={breadcrumbItems} />
+      {/* Hero — same visual language as the category page: dark gradient, breadcrumb, real
+          price/duration, trust strip, single CTA that jumps to the booking card below. */}
+      <div className="bg-gradient-to-r from-ink to-ink">
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
+          <Breadcrumb items={breadcrumbItems} darkBg={true} />
+
+          <div className="mt-5 max-w-2xl">
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              {service.category && (
+                <span className="inline-flex items-center rounded-full bg-white/10 border border-white/20 px-3 py-1 text-xs font-semibold text-white">
+                  {service.category.name}
+                </span>
+              )}
+              {service.is_active ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/15 border border-emerald-400/30 px-3 py-1 text-xs font-semibold text-emerald-300">
+                  <CheckCircleIcon className="h-3.5 w-3.5" />Available Now
+                </span>
+              ) : (
+                <span className="inline-flex items-center rounded-full bg-white/10 border border-white/20 px-3 py-1 text-xs font-semibold text-gray-300">
+                  Currently Unavailable
+                </span>
+              )}
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-white">{service.name}</h1>
+
+            <div className="flex flex-wrap items-center gap-2 mt-4">
+              <span className="inline-flex items-center rounded-full bg-white/10 border border-white/20 px-3 py-1 text-xs font-semibold text-white">
+                ৳{Number(service.discount_price ?? service.base_price).toLocaleString()}
+                {service.discount_price && (
+                  <span className="ml-1.5 text-gray-400 line-through font-normal">৳{Number(service.base_price).toLocaleString()}</span>
+                )}
+              </span>
+              {service.duration_estimate && (
+                <span className="inline-flex items-center rounded-full bg-white/10 border border-white/20 px-3 py-1 text-xs font-semibold text-white">
+                  {service.duration_estimate}
+                </span>
+              )}
+            </div>
+
+            <a
+              href="#booking-card"
+              className="inline-flex items-center gap-2 mt-5 rounded-xl bg-white px-6 py-3 text-sm font-bold text-ink hover:bg-gray-100 transition-colors"
+            >
+              Book This Service
+            </a>
+          </div>
+
+          {/* Trust strip — same real, sitewide copy as the category page */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-7 pt-6 border-t border-white/10">
+            {TRUST_ITEMS.map((item) => (
+              <div key={item.title} className="flex items-center gap-2">
+                <item.icon className="h-5 w-5 text-white/70 flex-shrink-0" />
+                <span className="text-xs sm:text-sm text-gray-300 leading-tight">{item.title}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -399,12 +512,12 @@ function ServiceDetailView({ initialService }: { initialService: Service }) {
         <div className="grid lg:grid-cols-3 gap-5">
           {/* Left Column — Service Details */}
           <div className="lg:col-span-2">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-6">
-              <div className="aspect-video bg-gradient-to-br from-gray-200 to-red-50 flex items-center justify-center overflow-hidden">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+              <div className="aspect-video bg-gray-100 flex items-center justify-center overflow-hidden">
                 {service.image ? (
                   <img src={getStorageUrl(service.image)} alt={service.name} className="w-full h-full object-cover" />
                 ) : (
-                  <WrenchScrewdriverIcon className="h-24 w-24 text-gray-500" />
+                  <WrenchScrewdriverIcon className="h-24 w-24 text-gray-300" />
                 )}
               </div>
 
@@ -418,64 +531,94 @@ function ServiceDetailView({ initialService }: { initialService: Service }) {
                 </div>
               )}
 
-              <div className="p-8">
-                <div className="flex items-center gap-3 mb-4">
-                  {service.category && (
-                    <span className="text-sm font-medium text-gray-900 bg-gray-100 px-3 py-1 rounded-full">{service.category.name}</span>
-                  )}
-                  {service.is_active && (
-                    <span className="text-sm font-medium text-green-600 bg-green-50 px-3 py-1 rounded-full flex items-center gap-1">
-                      <CheckCircleIcon className="h-4 w-4" />Available
-                    </span>
-                  )}
-                </div>
-                <h1 className="text-2xl font-bold text-gray-900 mb-4">{service.name}</h1>
+              <div className="p-6 sm:p-8">
+                <h2 className="text-lg font-bold text-gray-900 mb-3">About This Service</h2>
                 {/* Vendor attribution hidden — vendor feature disabled */}
                 <div className="rich-content text-gray-700" dangerouslySetInnerHTML={{ __html: service.description || '' }} />
 
-                <div className="mt-5 grid md:grid-cols-2 gap-4">
+                {service.features && service.features.length > 0 && (
+                  <div className="mt-6">
+                    <h3 className="text-sm font-bold text-gray-900 mb-3">What&apos;s Included</h3>
+                    <ul className="grid sm:grid-cols-2 gap-2">
+                      {service.features.map((f, i) => (
+                        <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+                          <CheckCircleIcon className="h-4 w-4 text-emerald-500 flex-shrink-0 mt-0.5" />
+                          {f}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <div className="mt-6 grid sm:grid-cols-2 gap-3">
                   {service.duration_estimate && (
                     <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-xl">
-                      <ClockIcon className="h-6 w-6 text-gray-800" />
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-ink/5 flex-shrink-0">
+                        <ClockIcon className="h-5 w-5 text-ink" />
+                      </div>
                       <div>
-                        <p className="text-sm text-gray-600">Estimated Duration</p>
-                        <p className="font-semibold text-gray-900">{service.duration_estimate}</p>
+                        <p className="text-xs text-gray-500">Estimated Duration</p>
+                        <p className="font-semibold text-gray-900 text-sm">{service.duration_estimate}</p>
                       </div>
                     </div>
                   )}
                   <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-xl">
-                    <ShieldCheckIcon className="h-6 w-6 text-gray-800" />
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-ink/5 flex-shrink-0">
+                      <ShieldCheckIcon className="h-5 w-5 text-ink" />
+                    </div>
                     <div>
-                      <p className="text-sm text-gray-600">Warranty</p>
-                      <p className="font-semibold text-gray-900">90 Days</p>
+                      <p className="text-xs text-gray-500">Warranty</p>
+                      <p className="font-semibold text-gray-900 text-sm">90 Days</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-xl">
-                    <WrenchScrewdriverIcon className="h-6 w-6 text-gray-800" />
-                    <div>
-                      <p className="text-sm text-gray-600">Service Code</p>
-                      <p className="font-semibold text-gray-900">{service.code}</p>
+                  {service.code && (
+                    <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-xl">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-ink/5 flex-shrink-0">
+                        <WrenchScrewdriverIcon className="h-5 w-5 text-ink" />
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Service Code</p>
+                        <p className="font-semibold text-gray-900 text-sm">{service.code}</p>
+                      </div>
                     </div>
-                  </div>
+                  )}
                   <div className="flex items-center gap-3 p-4 bg-gray-50 rounded-xl">
-                    <CreditCardIcon className="h-6 w-6 text-gray-800" />
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-ink/5 flex-shrink-0">
+                      <CreditCardIcon className="h-5 w-5 text-ink" />
+                    </div>
                     <div>
-                      <p className="text-sm text-gray-600">Price</p>
-                      <p className="font-semibold text-gray-900">
+                      <p className="text-xs text-gray-500">Price</p>
+                      <p className="font-semibold text-gray-900 text-sm">
                         ৳{Number(service.discount_price ?? service.base_price).toLocaleString()}
+                        {service.discount_price && (
+                          <span className="ml-1.5 text-xs text-gray-400 line-through font-normal">৳{Number(service.base_price).toLocaleString()}</span>
+                        )}
                       </p>
-                      {service.discount_price && (
-                        <p className="text-xs text-gray-400 line-through">৳{Number(service.base_price).toLocaleString()}</p>
-                      )}
                     </div>
                   </div>
                 </div>
               </div>
             </div>
+
+            {/* How It Works — same real booking-flow steps as the category page */}
+            <div className="bg-white rounded-2xl border border-gray-200 p-6 sm:p-8">
+              <h2 className="text-lg font-bold text-gray-900 mb-5">How It Works</h2>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {HOW_IT_WORKS_STEPS.map((step, i) => (
+                  <div key={step.title} className="text-center">
+                    <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-ink/5">
+                      <step.icon className="h-5 w-5 text-ink" />
+                    </div>
+                    <h3 className="text-sm font-semibold text-gray-900">{i + 1}. {step.title}</h3>
+                    <p className="text-xs text-gray-500 mt-1 leading-snug">{step.description}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* Right Column — Booking Card or Order Form */}
-          <div>
+          <div id="booking-card">
             {!showOrderForm ? (
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 sticky top-6">
                 <div className="text-center mb-6">

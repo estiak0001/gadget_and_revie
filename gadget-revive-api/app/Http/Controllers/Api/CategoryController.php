@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Resources\ServiceCategoryResource;
 use App\Http\Resources\ProductCategoryResource;
 use App\Models\AuditLog;
+use App\Models\Service;
 use App\Models\ServiceCategory;
 use App\Models\ProductCategory;
 use Illuminate\Http\JsonResponse;
@@ -58,16 +59,48 @@ class CategoryController extends BaseController
 
     public function serviceCategory(string $slug): JsonResponse
     {
+        // The storefront category page is flat — it shows every service anywhere in this
+        // category's subtree (see ServiceController::index's own descendant-id resolution),
+        // not a tree of sub-category cards to click through. So all this needs is the
+        // category itself (for the hero) plus real stats computed over its whole subtree.
         $category = ServiceCategory::where('slug', $slug)
             ->active()
-            ->with(['parent.parent.parent', 'children' => function ($query) {
-                $query->active()->orderBy('sort_order')
-                    ->with(['children' => function ($q) {
-                        $q->active()->orderBy('sort_order');
-                    }]);
-            }])
-            ->withCount('services')
+            ->with('parent.parent.parent')
             ->firstOrFail();
+
+        $descendantIds = $category->allDescendantIds();
+        $activeServices = Service::whereIn('category_id', $descendantIds)
+            ->active()
+            ->orderByRaw('COALESCE(discount_price, base_price) asc')
+            ->get(['id', 'name', 'slug', 'base_price', 'discount_price', 'duration_estimate', 'image', 'short_description']);
+
+        $category->setAttribute('services_count', $activeServices->count());
+        $category->setAttribute(
+            'starting_price',
+            $activeServices->isEmpty() ? null : ($activeServices->first()->discount_price ?: $activeServices->first()->base_price)
+        );
+
+        // Up to 3 real services picked by price — cheapest, middle, priciest — relabeled as a
+        // simple Basic/Minor/Major pricing ladder so the category page can show 3 clean cards
+        // instead of the full catalog. A heuristic (price order), not an admin-assigned tier —
+        // real services and real prices throughout, nothing fabricated.
+        $tierLabels = ['Basic', 'Minor', 'Major'];
+        $count = $activeServices->count();
+        $picks = match (true) {
+            $count === 0 => [],
+            $count <= 3 => $activeServices->all(),
+            default => [$activeServices->first(), $activeServices->get(intdiv($count - 1, 2)), $activeServices->last()],
+        };
+        $category->setAttribute('tier_services', collect($picks)->values()->map(fn ($svc, $i) => [
+            'tier' => $tierLabels[$i] ?? null,
+            'id' => $svc->id,
+            'name' => $svc->name,
+            'slug' => $svc->slug,
+            'price' => $svc->discount_price ?: $svc->base_price,
+            'duration_estimate' => $svc->duration_estimate,
+            'image' => $svc->image ? asset('storage/' . $svc->image) : null,
+            'short_description' => $svc->short_description,
+        ])->all());
 
         return $this->success(new ServiceCategoryResource($category));
     }

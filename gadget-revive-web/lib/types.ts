@@ -146,6 +146,22 @@ export interface ServiceCategory {
   is_featured?: boolean;
   sort_order?: number;
   services_count?: number;
+  // Lowest active price across this category's whole subtree — only present on a single
+  // category detail request (GET /service-categories/{slug}), powers the hero's "Starting
+  // from ৳X" badge.
+  starting_price?: number | string | null;
+  // Up to 3 real services (cheapest/middle/priciest by price) relabeled Basic/Minor/Major —
+  // the category page's whole "book a service" grid.
+  tier_services?: Array<{
+    tier: string | null;
+    id: number;
+    name: string;
+    slug: string;
+    price: number | string;
+    duration_estimate?: string | null;
+    image?: string | null;
+    short_description?: string | null;
+  }>;
   parent_id?: number | null;
   parent?: ServiceCategory;
   children?: ServiceCategory[];

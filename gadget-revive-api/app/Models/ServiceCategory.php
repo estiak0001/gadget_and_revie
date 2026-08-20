@@ -67,6 +67,21 @@ class ServiceCategory extends Model
         return $this->belongsToMany(VendorProfile::class, 'vendor_service_categories', 'service_category_id', 'vendor_profile_id');
     }
 
+    /**
+     * This category's id plus every descendant's id (recursive). Storefront category pages are
+     * "flat" — a category page shows every service anywhere in its subtree, not just direct
+     * children — so this is the single source of truth for that subtree, shared by the services
+     * list query (ServiceController) and the "starting from" price stat (CategoryController).
+     */
+    public function allDescendantIds(): array
+    {
+        $ids = [$this->id];
+        foreach (static::where('parent_id', $this->id)->get() as $child) {
+            $ids = array_merge($ids, $child->allDescendantIds());
+        }
+        return $ids;
+    }
+
     public function scopeActive($query)
     {
         return $query->where('is_active', true);
