@@ -531,19 +531,21 @@ export default function HomeClient() {
                     title={category.description || category.name}
                     className="group flex flex-col items-center gap-1.5 sm:gap-2 rounded-xl border border-gray-200 bg-white p-2 sm:p-3 text-center transition-all duration-200 hover:-translate-y-0.5 hover:border-ink hover:shadow-md"
                   >
-                    <div className="relative flex h-10 w-10 sm:h-14 sm:w-14 items-center justify-center overflow-hidden rounded-full bg-gray-50 transition-colors group-hover:bg-gray-100">
-                      {category.image ? (
+                    {category.image ? (
+                      <div className="relative h-10 w-10 sm:h-14 sm:w-14">
                         <OptimizedImage
                           src={category.image}
                           alt={category.name}
                           fill
                           sizes="(min-width: 640px) 56px, 40px"
-                          className="object-cover"
+                          className="object-contain"
                         />
-                      ) : (
+                      </div>
+                    ) : (
+                      <div className="flex h-10 w-10 sm:h-14 sm:w-14 items-center justify-center rounded-full bg-gray-50 transition-colors group-hover:bg-gray-100">
                         <RenderIcon className="h-5 w-5 sm:h-7 sm:w-7 text-gray-700 stroke-[1.5] group-hover:text-ink transition-colors duration-300" />
-                      )}
-                    </div>
+                      </div>
+                    )}
                     <span className="line-clamp-2 text-[11px] sm:text-xs font-medium leading-tight text-gray-700 group-hover:text-ink transition-colors duration-300">
                       {category.name}
                     </span>
