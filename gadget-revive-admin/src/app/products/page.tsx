@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Plus,
   Edit2,
@@ -38,6 +39,7 @@ import {
   ConfirmModal,
   ErrorState,
   HistoryModal,
+  ActionsMenu,
 } from '@/components/ui';
 import { Product, ProductCategory, PaginatedResponse } from '@/types';
 import { formatCurrency, getErrorMessage } from '@/lib/utils';
@@ -55,6 +57,8 @@ function getImageUrl(image?: string): string {
 }
 
 export default function ProductsPage() {
+  const router = useRouter();
+
   // Data state
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
@@ -613,42 +617,45 @@ export default function ProductsPage() {
                         </div>
                       </td>
                       <td className="px-4 py-2.5">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleToggleFeatured(product)}
-                            disabled={togglingFeaturedId === product.id}
-                            title={product.is_featured ? 'Remove from featured' : 'Mark as featured'}
-                          >
-                            <Star
-                              className={`w-4 h-4 ${product.is_featured ? 'fill-amber-400 text-amber-400' : 'text-gray-400'}`}
-                            />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleToggleStatus(product)}
-                            title={product.is_active ? 'Hide from storefront' : 'Show on storefront'}
-                          >
-                            {product.is_active
-                              ? <Eye className="w-4 h-4 text-gray-400" />
-                              : <EyeOff className="w-4 h-4 text-red-500" />}
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => openViewModal(product)} title="View">
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => setHistoryProduct(product)} title="View History">
-                            <History className="w-4 h-4 text-gray-400" />
-                          </Button>
-                          <Link href={`/products/${product.id}/edit`}>
-                            <Button variant="ghost" size="sm" title="Edit">
-                              <Edit2 className="w-4 h-4" />
-                            </Button>
-                          </Link>
-                          <Button variant="ghost" size="sm" onClick={() => openDeleteModal(product)} title="Delete">
-                            <Trash2 className="w-4 h-4 text-red-500" />
-                          </Button>
+                        <div className="flex items-center justify-end">
+                          <ActionsMenu
+                            items={[
+                              {
+                                label: 'View Details',
+                                icon: <Eye className="w-4 h-4 text-gray-400" />,
+                                onClick: () => openViewModal(product),
+                              },
+                              {
+                                label: 'Edit',
+                                icon: <Edit2 className="w-4 h-4 text-gray-400" />,
+                                onClick: () => router.push(`/products/${product.id}/edit`),
+                              },
+                              {
+                                label: 'View History',
+                                icon: <History className="w-4 h-4 text-gray-400" />,
+                                onClick: () => setHistoryProduct(product),
+                              },
+                              {
+                                label: product.is_featured ? 'Remove from Featured' : 'Mark as Featured',
+                                icon: <Star className={`w-4 h-4 ${product.is_featured ? 'fill-amber-400 text-amber-400' : 'text-gray-400'}`} />,
+                                onClick: () => handleToggleFeatured(product),
+                                disabled: togglingFeaturedId === product.id,
+                              },
+                              {
+                                label: product.is_active ? 'Hide from Storefront' : 'Show on Storefront',
+                                icon: product.is_active
+                                  ? <EyeOff className="w-4 h-4 text-gray-400" />
+                                  : <Eye className="w-4 h-4 text-gray-400" />,
+                                onClick: () => handleToggleStatus(product),
+                              },
+                              {
+                                label: 'Delete',
+                                icon: <Trash2 className="w-4 h-4" />,
+                                onClick: () => openDeleteModal(product),
+                                variant: 'danger',
+                              },
+                            ]}
+                          />
                         </div>
                       </td>
                     </tr>

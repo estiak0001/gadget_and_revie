@@ -19,6 +19,8 @@ export { default as InfoButton } from './InfoButton';
 export { default as TAccountExample } from './TAccountExample';
 export { default as StepFlow } from './StepFlow';
 export { default as HistoryModal } from './HistoryModal';
+export { default as ActionsMenu } from './ActionsMenu';
+export type { ActionsMenuItem } from './ActionsMenu';
 export {
   Card,
   CardHeader,
