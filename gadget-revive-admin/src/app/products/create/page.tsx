@@ -164,6 +164,19 @@ export default function CreateProductPage() {
     setNewSpecValue(value ?? '');
   };
 
+  // Adds every not-yet-used suggestion straight into the specifications list in one go
+  // (using each one's first known value), instead of applying them one at a time — the
+  // admin can then remove any they don't want or add more manually.
+  const applyAllSpecSuggestions = (available: { key: string; values: string[] }[]) => {
+    if (available.length === 0) return;
+    const newSpecs: SpecItem[] = available.map((s, i) => ({
+      id: `spec-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 9)}`,
+      key: s.key,
+      value: s.values[0] ?? '',
+    }));
+    setSpecifications(prev => [...prev, ...newSpecs]);
+  };
+
   const buildAttributeValuesPayload = () => {
     const rows: Array<{ attribute_id: number; value_ids?: number[]; text_value?: string }> = [];
     for (const attr of categoryAttributes) {
@@ -750,9 +763,18 @@ export default function CreateProductPage() {
                   if (available.length === 0) return null;
                   return (
                     <div>
-                      <p className="text-xs font-medium text-gray-500 mb-1.5">
-                        Reuse from other products in this category
-                      </p>
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <p className="text-xs font-medium text-gray-500">
+                          Reuse from other products in this category
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => applyAllSpecSuggestions(available)}
+                          className="text-xs font-medium text-primary-600 hover:text-primary-700 hover:underline whitespace-nowrap"
+                        >
+                          Add all ({available.length})
+                        </button>
+                      </div>
                       <div className="flex flex-wrap gap-1.5">
                         {available.map((s) => (
                           <button
