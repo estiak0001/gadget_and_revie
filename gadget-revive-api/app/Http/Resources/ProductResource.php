@@ -34,9 +34,17 @@ class ProductResource extends JsonResource
             'gallery' => $this->gallery ? collect($this->gallery)->map(fn($img) => asset('storage/' . $img)) : [],
             'specifications' => $this->specifications,
             'brand_id' => $this->brand_id,
-            'brand' => $this->brand, // Old brand field (deprecated)
-            'brand_name' => $this->whenLoaded('brand', fn() => $this->brand->name),
-            'brand_details' => new ProductBrandResource($this->whenLoaded('brand')),
+            // `products.brand` is a real (deprecated, legacy free-text) column that happens to
+            // share its name with the brand() relationship below. Eloquent's magic property
+            // access always resolves a real column over a same-named relation — and
+            // whenLoaded() reads through exactly that magic property — so `$this->brand` here
+            // is genuinely the old string column, never the related ProductBrand, and
+            // whenLoaded('brand', ...) (with or without a closure) silently returns null even
+            // when the relation was eager-loaded correctly. Read via getRelation() instead,
+            // gated on relationLoaded(), to actually get the loaded brand.
+            'brand' => $this->brand,
+            'brand_name' => $this->when($this->relationLoaded('brand'), fn () => $this->getRelation('brand')?->name),
+            'brand_details' => $this->when($this->relationLoaded('brand'), fn () => $this->getRelation('brand') ? new ProductBrandResource($this->getRelation('brand')) : null),
             'model' => $this->model,
             'warranty_value' => $this->warranty_value,
             'warranty_unit' => $this->warranty_unit,

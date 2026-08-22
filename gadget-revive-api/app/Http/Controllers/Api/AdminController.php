@@ -42,6 +42,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class AdminController extends BaseController
 {
@@ -3647,9 +3648,13 @@ class AdminController extends BaseController
     public function adminProductBrandStore(Request $request): JsonResponse
     {
         $request->validate([
-            'name' => 'required|string|max:255|unique:product_brands,name',
+            // Plain unique:product_brands,name checks the raw table and doesn't know about
+            // SoftDeletes — a previously-deleted brand's name blocks recreation forever even
+            // though it no longer shows anywhere in the admin list. Scope the uniqueness check
+            // to non-deleted rows so a deleted name is free to reuse, same as the list itself.
+            'name' => ['required', 'string', 'max:255', Rule::unique('product_brands', 'name')->whereNull('deleted_at')],
             'name_bn' => 'nullable|string|max:255',
-            'slug' => 'nullable|string|max:255|unique:product_brands,slug',
+            'slug' => ['nullable', 'string', 'max:255', Rule::unique('product_brands', 'slug')->whereNull('deleted_at')],
             'logo' => 'nullable|image|max:2048',
             'description' => 'nullable|string',
             'is_active' => 'boolean',
@@ -3681,9 +3686,9 @@ class AdminController extends BaseController
     public function adminProductBrandUpdate(Request $request, int $id): JsonResponse
     {
         $request->validate([
-            'name' => 'sometimes|string|max:255|unique:product_brands,name,' . $id,
+            'name' => ['sometimes', 'string', 'max:255', Rule::unique('product_brands', 'name')->ignore($id)->whereNull('deleted_at')],
             'name_bn' => 'nullable|string|max:255',
-            'slug' => 'nullable|string|max:255|unique:product_brands,slug,' . $id,
+            'slug' => ['nullable', 'string', 'max:255', Rule::unique('product_brands', 'slug')->ignore($id)->whereNull('deleted_at')],
             'logo' => 'nullable|image|max:2048',
             'description' => 'nullable|string',
             'is_active' => 'boolean',
