@@ -61,7 +61,11 @@ apiClient.interceptors.response.use(
       requestUrl.includes("/public/") ||
       requestUrl.includes("/categories/") ||
       requestUrl.includes("/cart") ||
-      requestUrl.includes("/guest/");
+      requestUrl.includes("/guest/") ||
+      // The SMS feedback link and the general kiosk feedback page both work with no account at
+      // all — a stale Bearer token from an unrelated old session must never bounce either one
+      // to /auth/login. "/feedback" (no trailing slash) also covers the exact-path kiosk POST.
+      requestUrl.includes("/feedback");
 
     if (error.response?.status === 401 && !isIgnoredEndpoint) {
       if (typeof window !== "undefined") {

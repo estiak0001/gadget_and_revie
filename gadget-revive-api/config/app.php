@@ -56,6 +56,26 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Storefront (customer-facing Next.js site) URL
+    |--------------------------------------------------------------------------
+    |
+    | Used when the API builds links that must point at the storefront rather
+    | than at itself — e.g. the public feedback link texted to a customer
+    | (SmsService::feedbackUrl()). Distinct from 'url' above, which is this
+    | API's own domain.
+    |
+    | Deliberately its own env var, not FRONTEND_URL — production's .env
+    | already defines FRONTEND_URL=https://admin.gadgetandrevive.com (the
+    | admin panel's own URL, for some other/unused purpose), and reusing that
+    | name here sent the very first "Request Feedback" SMS to a 404 because
+    | /feedback/{token} only exists on the storefront, not the admin app.
+    |
+    */
+
+    'frontend_url' => env('STOREFRONT_URL', 'https://gadgetandrevive.com'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

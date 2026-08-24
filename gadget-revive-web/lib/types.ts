@@ -503,15 +503,19 @@ export interface PaymentNoticeRequest {
 export interface Review {
   id: number;
   order_id: number;
-  vendor_profile_id: number;
-  customer_id: number;
+  product_id: number | null;
+  vendor_profile_id: number | null;
+  user_id: number | null;
   rating: number;
-  comment: string;
-  vendor_reply?: string;
-  customer: {
+  review: string;
+  vendor_response?: string;
+  vendor_responded_at?: string;
+  status: 'pending' | 'approved' | 'rejected' | 'hidden';
+  helpful_count: number;
+  user: {
     id: number;
     name: string;
-  };
+  } | null;
   order: {
     id: number;
     order_number: string;
@@ -523,7 +527,7 @@ export interface Review {
 export interface CreateReviewRequest {
   order_id: number;
   rating: number;
-  comment: string;
+  review: string;
 }
 
 // ============================================

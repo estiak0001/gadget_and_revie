@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\ServiceController;
 use App\Http\Controllers\Api\ExpenseController;
+use App\Http\Controllers\Api\FeedbackController;
 use App\Http\Controllers\Api\ServiceIntakeController;
 use App\Http\Controllers\Api\SmsCampaignController;
 use App\Http\Controllers\Api\SmsConnectionController;
@@ -132,6 +133,7 @@ Route::get('/product-brands/by-category/{categoryId}', [ProductController::class
 
 // Public Reviews
 Route::get('/vendors/{vendorId}/reviews', [ReviewController::class, 'vendorReviews']);
+Route::get('/products/{productId}/reviews', [ReviewController::class, 'productReviews']);
 Route::post('/reviews/{id}/helpful', [ReviewController::class, 'markHelpful']);
 
 // Contact form submission (public)
@@ -160,6 +162,19 @@ Route::prefix('public')->group(function () {
 // orders to avoid letting anyone who guesses an order number pull a registered customer's
 // invoice), this works identically for guest orders and real registered-customer orders alike.
 Route::get('/i/{token}', [InvoiceController::class, 'shortDownload']);
+
+// Public, no-login feedback link — the {feedback_url} included in the "Request Feedback" order
+// SMS (see SmsService::feedbackUrl()). Same token-is-the-access-control convention as /i/{token}
+// above. show() returns the order's line items so the storefront feedback page can render a
+// per-product rating form; store() saves the submitted review(s), each starting status=pending
+// until an admin approves it on the Reviews moderation page.
+Route::get('/feedback/{token}', [FeedbackController::class, 'show']);
+Route::post('/feedback/{token}', [FeedbackController::class, 'store']);
+
+// General "kiosk" feedback — a tablet left at the counter for any walk-in customer to rate
+// their overall experience, no order/token involved at all. Declared as its own exact path
+// (no {token} segment), so it never collides with the routes above.
+Route::post('/feedback', [FeedbackController::class, 'submitGeneral']);
 
 // ============================================================================
 // GUEST ROUTES (No Authentication Required — identified by session_id)
@@ -388,6 +403,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::post('/{id}/send-delivered-sms', [AdminController::class, 'orderSendDeliveredSms'])->middleware('permission:view_orders,manage_orders,process_orders');
             Route::post('/{id}/send-status-sms', [AdminController::class, 'orderSendStatusSms'])->middleware('permission:view_orders,manage_orders,process_orders');
             Route::post('/{id}/send-due-sms', [AdminController::class, 'orderSendDueSms'])->middleware('permission:view_orders,manage_orders,process_orders');
+            Route::post('/{id}/send-feedback-sms', [AdminController::class, 'orderSendFeedbackSms'])->middleware('permission:view_orders,manage_orders,process_orders');
+            Route::get('/{id}/feedback-link', [AdminController::class, 'orderFeedbackLink'])->middleware('permission:view_orders,manage_orders,process_orders');
             Route::get('/{id}/sms-preview', [AdminController::class, 'orderPreviewSms'])->middleware('permission:view_orders,manage_orders,process_orders');
             Route::post('/{id}/refund', [AdminController::class, 'orderRefund'])->middleware('permission:view_orders,manage_orders,process_orders,refund_orders');
             Route::post('/{id}/record-payment', [AdminController::class, 'orderRecordPayment'])->middleware('permission:view_orders,manage_orders,process_orders');

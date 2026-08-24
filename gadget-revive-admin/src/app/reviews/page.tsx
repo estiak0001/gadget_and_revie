@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Search, Star, ThumbsUp, ThumbsDown, Eye, Trash2, CheckCircle, XCircle, Flag, Sparkles, MessageSquare } from 'lucide-react';
+import { Search, Star, ThumbsUp, ThumbsDown, Eye, Trash2, CheckCircle, XCircle, Flag, MessageSquare, Package, ExternalLink, Copy, Monitor } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import {
   Card, CardContent, CardHeader, CardTitle, Button, Input, Select, Modal,
@@ -11,17 +11,20 @@ import { formatDateTime, getErrorMessage } from '@/lib/utils';
 import adminService from '@/lib/adminService';
 import toast from 'react-hot-toast';
 
+// The public storefront's own domain — used only to open its (unauthenticated, tokenless)
+// general feedback kiosk page in a new tab, same convention as cms/pages/page.tsx.
+const WEB_URL = process.env.NEXT_PUBLIC_WEB_URL || 'http://localhost:3000';
+
 interface Review {
-  id: number; user: { id: number; name: string; avatar?: string }; vendor?: { id: number; business_name: string };
-  order?: { id: number; order_number: string }; service?: { id: number; name: string };
-  rating: number; title?: string; comment: string; pros?: string[]; cons?: string[];
-  status: string; is_featured: boolean; vendor_reply?: string; vendor_replied_at?: string;
+  id: number; user: { id: number; name: string; avatar?: string } | null; vendor?: { id: number; business_name: string } | null;
+  order?: { id: number; order_number: string } | null; product?: { id: number; name: string; image?: string } | null;
+  rating: number; review: string | null; status: string; vendor_response?: string; vendor_responded_at?: string;
   images?: string[]; created_at: string;
 }
 
 const REVIEW_STATUSES = [
   { value: 'pending', label: 'Pending', color: 'warning' }, { value: 'approved', label: 'Approved', color: 'success' },
-  { value: 'rejected', label: 'Rejected', color: 'danger' }, { value: 'flagged', label: 'Flagged', color: 'danger' },
+  { value: 'rejected', label: 'Rejected', color: 'danger' }, { value: 'hidden', label: 'Hidden', color: 'danger' },
 ];
 
 export default function ReviewsPage() {
@@ -36,6 +39,12 @@ export default function ReviewsPage() {
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [selectedReview, setSelectedReview] = useState<Review | null>(null);
+
+  // Collect In-Store Feedback: for a walk-in customer at the counter — look up their order by
+  // number, then either open the feedback page on this screen or copy the link, no SMS needed.
+  const [feedbackOrderNumber, setFeedbackOrderNumber] = useState('');
+  const [feedbackLookupLoading, setFeedbackLookupLoading] = useState(false);
+  const [feedbackLink, setFeedbackLink] = useState<{ order_number: string; url: string; already_submitted: boolean } | null>(null);
 
   const fetchReviews = async () => {
     setIsLoading(true);
@@ -60,20 +69,45 @@ export default function ReviewsPage() {
   useEffect(() => { fetchReviews(); }, [currentPage, filterStatus, filterRating]);
   const handleSearch = () => { setCurrentPage(1); fetchReviews(); };
 
-  const handleStatusChange = async (review: Review, status: string) => {
+  const handleFeedbackLookup = async () => {
+    const orderNumber = feedbackOrderNumber.trim();
+    if (!orderNumber) return;
+    setFeedbackLookupLoading(true);
+    setFeedbackLink(null);
     try {
-      await adminService.updateReviewStatus(review.id, status);
-      toast.success('Review status updated');
-      fetchReviews();
+      const found = await adminService.getOrders({ search: orderNumber, per_page: 1 });
+      const order = found.data.data[0];
+      if (!order) {
+        toast.error(`No order found matching "${orderNumber}"`);
+        return;
+      }
+      const link = await adminService.getOrderFeedbackLink(order.id);
+      setFeedbackLink(link.data.data);
     } catch (err) {
       toast.error(getErrorMessage(err));
+    } finally {
+      setFeedbackLookupLoading(false);
     }
   };
 
-  const handleToggleFeatured = async (review: Review) => {
+  const handleOpenFeedbackOnThisScreen = () => {
+    if (feedbackLink) window.open(feedbackLink.url, '_blank');
+  };
+
+  const handleCopyFeedbackLink = async () => {
+    if (!feedbackLink) return;
     try {
-      await adminService.updateReviewStatus(review.id, review.status, !review.is_featured);
-      toast.success(review.is_featured ? 'Removed from featured' : 'Added to featured');
+      await navigator.clipboard.writeText(feedbackLink.url);
+      toast.success('Link copied');
+    } catch {
+      toast.error('Could not copy — select and copy the link manually');
+    }
+  };
+
+  const handleStatusChange = async (review: Review, status: string) => {
+    try {
+      await adminService.updateReviewStatus(review.id, status);
+      toast.success(status === 'approved' ? 'Review approved — now visible on the storefront' : 'Review status updated');
       fetchReviews();
     } catch (err) {
       toast.error(getErrorMessage(err));
@@ -108,7 +142,59 @@ export default function ReviewsPage() {
 
   return (
     <AdminLayout>
-      <div className="page-header"><h1 className="page-title">Reviews & Ratings</h1><p className="page-description">Manage customer reviews</p></div>
+      <div className="page-header"><h1 className="page-title">Reviews & Ratings</h1><p className="page-description">Approve customer feedback so it appears on the storefront</p></div>
+
+      <Card className="mb-6 border-yellow-200 bg-yellow-50/40">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base"><Monitor className="w-4 h-4" />Collect Feedback From a Walk-in Customer</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <p className="text-sm text-gray-600 mb-3">Look up their order, then hand them this screen to leave feedback on the spot — no phone number needed.</p>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Input
+              placeholder="Order number, e.g. ORD-20260824-ABCDEF"
+              value={feedbackOrderNumber}
+              onChange={(e) => setFeedbackOrderNumber(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleFeedbackLookup()}
+              className="flex-1"
+            />
+            <Button onClick={handleFeedbackLookup} isLoading={feedbackLookupLoading}>
+              <Search className="w-4 h-4 mr-2" />
+              Find Order
+            </Button>
+          </div>
+          {feedbackLink && (
+            <div className="mt-4 bg-white border border-gray-200 rounded-lg p-4">
+              <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+                <p className="text-sm font-medium text-gray-900">Order #{feedbackLink.order_number}</p>
+                {feedbackLink.already_submitted && <Badge variant="warning">Already submitted feedback</Badge>}
+              </div>
+              <p className="text-xs text-gray-500 break-all mb-3">{feedbackLink.url}</p>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" onClick={handleOpenFeedbackOnThisScreen}>
+                  <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
+                  Open on This Screen
+                </Button>
+                <Button size="sm" variant="outline" onClick={handleCopyFeedbackLink}>
+                  <Copy className="w-3.5 h-3.5 mr-1.5" />
+                  Copy Link
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <div className="mt-5 pt-5 border-t border-yellow-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-gray-900">Or leave a tablet running at the counter</p>
+              <p className="text-xs text-gray-500">A dedicated, order-less link any walk-in customer can use on their own — set it to full screen once and leave it running.</p>
+            </div>
+            <Button variant="outline" onClick={() => window.open(`${WEB_URL}/feedback`, '_blank')} className="whitespace-nowrap">
+              <Monitor className="w-4 h-4 mr-2" />
+              Open General Feedback Kiosk
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
         <Card><CardContent className="p-4"><div className="flex items-center gap-3"><div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center"><Star className="w-5 h-5 text-yellow-600" /></div><div><p className="text-xs text-gray-500">Avg Rating</p><p className="text-xl font-bold">{avgRating}</p></div></div></CardContent></Card>
@@ -132,30 +218,26 @@ export default function ReviewsPage() {
           {reviews.map((review) => {
             const statusConfig = REVIEW_STATUSES.find(s => s.value === review.status);
             return (
-              <Card key={review.id} className={`${review.is_featured ? 'ring-2 ring-yellow-400' : ''}`}>
+              <Card key={review.id}>
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between">
                     <div className="flex items-start gap-4 flex-1">
                       <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden">
-                        {review.user.avatar ? <img src={review.user.avatar} alt="" className="w-full h-full object-cover" /> : <span className="text-lg font-bold text-gray-600">{review.user.name.charAt(0)}</span>}
+                        {review.user?.avatar ? <img src={review.user.avatar} alt="" className="w-full h-full object-cover" /> : <span className="text-lg font-bold text-gray-600">{(review.user?.name ?? 'G').charAt(0)}</span>}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-3 flex-wrap">
-                          <p className="font-medium">{review.user.name}</p>
+                          <p className="font-medium">{review.user?.name ?? 'Guest customer'}</p>
                           {renderStars(review.rating)}
                           <Badge variant={statusConfig?.color as 'success' | 'warning' | 'danger' | 'default' || 'default'}>{statusConfig?.label}</Badge>
-                          {review.is_featured && <Badge variant="warning"><Sparkles className="w-3 h-3 mr-1" />Featured</Badge>}
                         </div>
                         {review.vendor && <p className="text-sm text-gray-500 mt-0.5">Vendor: {review.vendor.business_name}</p>}
-                        {review.service && <p className="text-sm text-primary">Service: {review.service.name}</p>}
-                        {review.title && <p className="font-medium mt-2">{review.title}</p>}
-                        <p className="text-gray-600 mt-1">{review.comment}</p>
-                        <div className="flex flex-wrap gap-2 mt-3">
-                          {review.pros?.map((pro, i) => (<Badge key={`pro-${i}`} variant="success" className="text-xs"><ThumbsUp className="w-3 h-3 mr-1" />{pro}</Badge>))}
-                          {review.cons?.map((con, i) => (<Badge key={`con-${i}`} variant="danger" className="text-xs"><ThumbsDown className="w-3 h-3 mr-1" />{con}</Badge>))}
-                        </div>
-                        {review.vendor_reply && (
-                          <div className="mt-3 bg-blue-50 p-3 rounded-lg"><p className="text-xs text-blue-600 font-medium mb-1">Vendor Reply</p><p className="text-sm text-blue-800">{review.vendor_reply}</p><p className="text-xs text-blue-400 mt-1">{review.vendor_replied_at ? formatDateTime(review.vendor_replied_at) : ''}</p></div>
+                        {review.product && (
+                          <p className="text-sm text-primary flex items-center gap-1 mt-0.5"><Package className="w-3.5 h-3.5" />{review.product.name}</p>
+                        )}
+                        {review.review && <p className="text-gray-600 mt-1">{review.review}</p>}
+                        {review.vendor_response && (
+                          <div className="mt-3 bg-blue-50 p-3 rounded-lg"><p className="text-xs text-blue-600 font-medium mb-1">Vendor Reply</p><p className="text-sm text-blue-800">{review.vendor_response}</p><p className="text-xs text-blue-400 mt-1">{review.vendor_responded_at ? formatDateTime(review.vendor_responded_at) : ''}</p></div>
                         )}
                         <p className="text-xs text-gray-400 mt-2">{formatDateTime(review.created_at)}{review.order && <> • Order: <span className="text-primary">{review.order.order_number}</span></>}</p>
                       </div>
@@ -163,8 +245,7 @@ export default function ReviewsPage() {
                     <div className="flex flex-col gap-2 ml-4">
                       <Button variant="ghost" size="sm" onClick={() => { setSelectedReview(review); setIsViewModalOpen(true); }}><Eye className="w-4 h-4" /></Button>
                       {review.status === 'pending' && (<><Button variant="ghost" size="sm" onClick={() => handleStatusChange(review, 'approved')} title="Approve"><CheckCircle className="w-4 h-4 text-green-600" /></Button><Button variant="ghost" size="sm" onClick={() => handleStatusChange(review, 'rejected')} title="Reject"><XCircle className="w-4 h-4 text-red-600" /></Button></>)}
-                      <Button variant="ghost" size="sm" onClick={() => handleStatusChange(review, 'flagged')} title="Flag"><Flag className="w-4 h-4 text-orange-500" /></Button>
-                      <Button variant="ghost" size="sm" onClick={() => handleToggleFeatured(review)} title={review.is_featured ? 'Unfeature' : 'Feature'}><Sparkles className={`w-4 h-4 ${review.is_featured ? 'text-yellow-500' : 'text-gray-400'}`} /></Button>
+                      {review.status !== 'hidden' && (<Button variant="ghost" size="sm" onClick={() => handleStatusChange(review, 'hidden')} title="Hide"><Flag className="w-4 h-4 text-orange-500" /></Button>)}
                       <Button variant="ghost" size="sm" onClick={() => { setSelectedReview(review); setIsDeleteModalOpen(true); }}><Trash2 className="w-4 h-4 text-red-500" /></Button>
                     </div>
                   </div>
@@ -182,23 +263,16 @@ export default function ReviewsPage() {
         {selectedReview && (
           <div className="space-y-6">
             <div className="flex items-start gap-4">
-              <div className="w-14 h-14 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden">{selectedReview.user.avatar ? <img src={selectedReview.user.avatar} alt="" className="w-full h-full object-cover" /> : <span className="text-xl font-bold text-gray-600">{selectedReview.user.name.charAt(0)}</span>}</div>
-              <div><p className="text-lg font-semibold">{selectedReview.user.name}</p>{renderStars(selectedReview.rating)}<p className="text-sm text-gray-500 mt-1">{formatDateTime(selectedReview.created_at)}</p></div>
+              <div className="w-14 h-14 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden">{selectedReview.user?.avatar ? <img src={selectedReview.user.avatar} alt="" className="w-full h-full object-cover" /> : <span className="text-xl font-bold text-gray-600">{(selectedReview.user?.name ?? 'G').charAt(0)}</span>}</div>
+              <div><p className="text-lg font-semibold">{selectedReview.user?.name ?? 'Guest customer'}</p>{renderStars(selectedReview.rating)}<p className="text-sm text-gray-500 mt-1">{formatDateTime(selectedReview.created_at)}</p></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               {selectedReview.vendor && <div className="bg-gray-50 p-3 rounded-lg"><p className="text-xs text-gray-500">Vendor</p><p className="font-medium">{selectedReview.vendor.business_name}</p></div>}
-              {selectedReview.service && <div className="bg-gray-50 p-3 rounded-lg"><p className="text-xs text-gray-500">Service</p><p className="font-medium">{selectedReview.service.name}</p></div>}
+              {selectedReview.product && <div className="bg-gray-50 p-3 rounded-lg"><p className="text-xs text-gray-500">Product</p><p className="font-medium">{selectedReview.product.name}</p></div>}
               {selectedReview.order && <div className="bg-gray-50 p-3 rounded-lg"><p className="text-xs text-gray-500">Order</p><p className="font-medium text-primary">{selectedReview.order.order_number}</p></div>}
               <div className="bg-gray-50 p-3 rounded-lg"><p className="text-xs text-gray-500">Status</p><Badge variant={REVIEW_STATUSES.find(s => s.value === selectedReview.status)?.color as 'success' | 'warning' | 'danger' | 'default'}>{selectedReview.status}</Badge></div>
             </div>
-            {selectedReview.title && <h3 className="font-semibold text-lg">{selectedReview.title}</h3>}
-            <p className="text-gray-600">{selectedReview.comment}</p>
-            {(selectedReview.pros?.length || selectedReview.cons?.length) && (
-              <div className="grid grid-cols-2 gap-4">
-                {selectedReview.pros?.length ? <div><p className="text-sm font-medium text-green-700 mb-2">Pros</p>{selectedReview.pros.map((p, i) => (<div key={i} className="flex items-center gap-2 text-sm text-green-700 mb-1"><ThumbsUp className="w-3 h-3" />{p}</div>))}</div> : null}
-                {selectedReview.cons?.length ? <div><p className="text-sm font-medium text-red-700 mb-2">Cons</p>{selectedReview.cons.map((c, i) => (<div key={i} className="flex items-center gap-2 text-sm text-red-700 mb-1"><ThumbsDown className="w-3 h-3" />{c}</div>))}</div> : null}
-              </div>
-            )}
+            {selectedReview.review && <p className="text-gray-600">{selectedReview.review}</p>}
             {selectedReview.images?.length ? <div><p className="text-sm font-medium mb-2">Photos</p><div className="flex gap-2 flex-wrap">{selectedReview.images.map((img, i) => (<img key={i} src={img} alt="" className="w-20 h-20 object-cover rounded-lg" />))}</div></div> : null}
           </div>
         )}

@@ -11,4 +11,6 @@ export { apiClient } from './config';
 export { cmsService } from './cms';
 export type { CmsBanner, ServiceCard, TopbarSettings, HomepageCmsData } from './cms';
 export { guestCartService } from './guest';
+export { feedbackService } from './feedback';
+export type { FeedbackOrder, FeedbackProduct, FeedbackEntry } from './feedback';
 

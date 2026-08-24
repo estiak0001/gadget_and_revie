@@ -102,6 +102,66 @@ class ReviewController extends BaseController
     }
 
     /**
+     * Get approved reviews for a specific product (public) — the storefront product page's
+     * Reviews tab. Mirrors vendorReviews() above; unlike that one this only ever surfaces
+     * reviews left via the token-based feedback flow with a product_id attached (a plain
+     * vendor-wide review has product_id null and correctly never shows up here).
+     */
+    public function productReviews(Request $request, int $productId): JsonResponse
+    {
+        $query = Review::with(['user', 'order'])
+            ->where('product_id', $productId)
+            ->approved();
+
+        if ($request->has('rating')) {
+            $query->where('rating', $request->rating);
+        }
+
+        $sortBy = $request->get('sort_by', 'created_at');
+        $sortOrder = $request->get('sort_order', 'desc');
+
+        if (in_array($sortBy, ['created_at', 'rating', 'helpful_count'])) {
+            $query->orderBy($sortBy, $sortOrder);
+        }
+
+        $reviews = $query->paginate($request->get('per_page', 15));
+
+        $ratingStats = Review::where('product_id', $productId)
+            ->approved()
+            ->selectRaw('
+                COUNT(*) as total_reviews,
+                AVG(rating) as average_rating,
+                SUM(CASE WHEN rating = 5 THEN 1 ELSE 0 END) as five_star,
+                SUM(CASE WHEN rating = 4 THEN 1 ELSE 0 END) as four_star,
+                SUM(CASE WHEN rating = 3 THEN 1 ELSE 0 END) as three_star,
+                SUM(CASE WHEN rating = 2 THEN 1 ELSE 0 END) as two_star,
+                SUM(CASE WHEN rating = 1 THEN 1 ELSE 0 END) as one_star
+            ')
+            ->first();
+
+        return $this->success([
+            'reviews' => ReviewResource::collection($reviews->items()),
+            'pagination' => [
+                'total' => $reviews->total(),
+                'per_page' => $reviews->perPage(),
+                'current_page' => $reviews->currentPage(),
+                'last_page' => $reviews->lastPage(),
+            ],
+            'stats' => [
+                'total_reviews' => (int) $ratingStats->total_reviews,
+                'average_rating' => round($ratingStats->average_rating ?? 0, 2),
+                'rating_breakdown' => [
+                    5 => (int) $ratingStats->five_star,
+                    4 => (int) $ratingStats->four_star,
+                    3 => (int) $ratingStats->three_star,
+                    2 => (int) $ratingStats->two_star,
+                    1 => (int) $ratingStats->one_star,
+                ],
+            ],
+        ]);
+    }
+
+    /**
      * Create a new review
      */
     public function store(Request $request): JsonResponse

@@ -63,7 +63,10 @@ export const adminService = {
   sendOrderDeliveredSms: (id: number) => api.post(`/admin/orders/${id}/send-delivered-sms`),
   sendOrderStatusSms: (id: number) => api.post(`/admin/orders/${id}/send-status-sms`),
   sendOrderDueSms: (id: number) => api.post(`/admin/orders/${id}/send-due-sms`),
-  previewOrderSms: (id: number, type: 'status' | 'delivered' | 'due') =>
+  sendOrderFeedbackSms: (id: number) => api.post(`/admin/orders/${id}/send-feedback-sms`),
+  getOrderFeedbackLink: (id: number) =>
+    api.get<ApiResponse<{ order_number: string; url: string; already_submitted: boolean }>>(`/admin/orders/${id}/feedback-link`),
+  previewOrderSms: (id: number, type: 'status' | 'delivered' | 'due' | 'feedback') =>
     api.get<ApiResponse<{ phone: string; message: string }>>(`/admin/orders/${id}/sms-preview`, { params: { type } }),
   refundOrder: (id: number, data: { reason: string; refund_amount?: number }) =>
     api.post<ApiResponse<Order>>(`/admin/orders/${id}/refund`, data),
@@ -391,8 +394,8 @@ export const adminService = {
 
   // Reviews
   getReviews: (params?: ListParams) => api.get('/admin/reviews', { params }),
-  updateReviewStatus: (id: number, status: string, is_featured?: boolean) =>
-    api.put(`/admin/reviews/${id}`, { status, ...(is_featured !== undefined ? { is_featured } : {}) }),
+  updateReviewStatus: (id: number, status: string, reason?: string) =>
+    api.put(`/admin/reviews/${id}/moderate`, { status, ...(reason ? { reason } : {}) }),
   deleteReview: (id: number) => api.delete(`/admin/reviews/${id}`),
 
   // Reports

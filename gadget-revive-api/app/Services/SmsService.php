@@ -174,6 +174,31 @@ class SmsService
         ]);
     }
 
+    /** Manual — a "Request Feedback" button on the order detail page. Links to the public,
+     *  no-login storefront feedback page (not this API), so it uses feedbackUrl()/frontend_url
+     *  rather than invoiceUrl(). */
+    public function sendFeedbackRequest(string $phone, string $orderNumber, ?int $orderId = null): bool
+    {
+        $conn = $this->resolveConnection('order');
+        if (!$conn) {
+            return false;
+        }
+
+        return $this->sendVia($conn, $phone, $this->buildFeedbackRequestMessage($orderNumber, $orderId), 'feedback_request', $orderId);
+    }
+
+    public function buildFeedbackRequestMessage(string $orderNumber, ?int $orderId = null): string
+    {
+        $template = SiteSetting::get('sms_feedback_template', 'Thanks for shopping with {app}! We would love your feedback on order #{order}: {feedback_url}');
+        $appName = SiteSetting::get('site_name', 'Gadget & Revive');
+
+        return strtr($template, [
+            '{order}' => $orderNumber,
+            '{app}' => $appName,
+            '{feedback_url}' => $orderId ? $this->feedbackUrl($orderId) : '',
+        ]);
+    }
+
     /** Also manual — sent from a button next to a specific issued custom invoice, not fired
      *  automatically when the invoice is created (the admin decides whether/when the customer
      *  should be notified, same reasoning as sendOrderDelivered()). */
@@ -233,6 +258,18 @@ class SmsService
         }
 
         return url('/api/i/' . $order->getOrCreateInvoiceToken());
+    }
+
+    /** Points at the storefront's public feedback page, not this API (unlike invoiceUrl(), which
+     *  is a same-app short-download route) — the token is the access control, same convention. */
+    private function feedbackUrl(int $orderId): string
+    {
+        $order = Order::find($orderId);
+        if (!$order) {
+            return '';
+        }
+
+        return rtrim(config('app.frontend_url'), '/') . '/feedback/' . $order->getOrCreateFeedbackToken();
     }
 
     /** Admin's "Send Test SMS" from a specific connection — bypasses the purpose enabled/connection

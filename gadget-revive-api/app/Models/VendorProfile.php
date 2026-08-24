@@ -172,10 +172,16 @@ class VendorProfile extends Model
         return $this->status === 'pending';
     }
 
+    /**
+     * Fired from Review's created/updated/deleted boot hooks. Was still querying is_approved/
+     * is_visible — columns that 2026_02_15_115201_fix_reviews_table_schema.php replaced with a
+     * single status column — so any create/update/delete of a Review with a vendor_profile_id
+     * has been throwing a raw "Unknown column 'is_approved'" SQL error ever since that migration.
+     */
     public function updateRating(): void
     {
-        $this->rating = $this->reviews()->where('is_approved', true)->avg('rating') ?? 0;
-        $this->total_reviews = $this->reviews()->where('is_approved', true)->count();
+        $this->rating = $this->reviews()->where('status', 'approved')->avg('rating') ?? 0;
+        $this->total_reviews = $this->reviews()->where('status', 'approved')->count();
         $this->save();
     }
 

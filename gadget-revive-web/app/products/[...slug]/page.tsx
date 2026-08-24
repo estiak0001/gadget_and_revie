@@ -782,12 +782,13 @@ function ProductDetailView({ product: initialProduct }: { product: Product }) {
           setRelatedProducts(rel.data.filter((p) => p.id !== product.id).slice(0, 10));
         } catch { }
       }
-      if (product.vendor_id) {
-        try {
-          const r = await reviewService.getVendorReviews(product.vendor_id, { per_page: 10 });
-          setReviews(r.data);
-        } catch { }
-      }
+      try {
+        // Product-specific approved reviews (left via the SMS feedback link on a completed
+        // order) — not the vendor's whole review list, so a review of a different product from
+        // the same vendor never shows up here.
+        const r = await reviewService.getProductReviews(product.id, { per_page: 10 });
+        setReviews(r.data);
+      } catch { }
     };
     load();
   }, [product]);
@@ -1142,10 +1143,10 @@ function ProductDetailView({ product: initialProduct }: { product: Product }) {
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex items-center space-x-3">
                           <div className="w-10 h-10 bg-ink rounded-full flex items-center justify-center text-white font-bold">
-                            {review.customer?.name?.charAt(0) || 'U'}
+                            {review.user?.name?.charAt(0) || 'U'}
                           </div>
                           <div>
-                            <p className="font-semibold text-gray-900">{review.customer?.name || 'Anonymous'}</p>
+                            <p className="font-semibold text-gray-900">{review.user?.name || 'Anonymous'}</p>
                             <p className="text-sm text-gray-600">{new Date(review.created_at).toLocaleDateString()}</p>
                           </div>
                         </div>
@@ -1153,11 +1154,11 @@ function ProductDetailView({ product: initialProduct }: { product: Product }) {
                           {[...Array(5)].map((_, i) => <StarSolidIcon key={i} className={`h-4 w-4 ${i < review.rating ? 'text-yellow-400' : 'text-gray-300'}`} />)}
                         </div>
                       </div>
-                      <p className="text-gray-700">{review.comment}</p>
-                      {review.vendor_reply && (
+                      <p className="text-gray-700">{review.review}</p>
+                      {review.vendor_response && (
                         <div className="mt-4 pl-4 border-l-4 border-ink bg-gray-100 rounded-r-lg p-3">
                           <p className="text-sm font-semibold text-gray-900 mb-1">Vendor Reply:</p>
-                          <p className="text-sm text-gray-700">{review.vendor_reply}</p>
+                          <p className="text-sm text-gray-700">{review.vendor_response}</p>
                         </div>
                       )}
                     </div>

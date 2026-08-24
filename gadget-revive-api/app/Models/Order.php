@@ -92,6 +92,28 @@ class Order extends Model
         return $token;
     }
 
+    /**
+     * The short opaque token backing this order's public feedback link (used in the
+     * {feedback_url} SMS placeholder) — same convention as getOrCreateInvoiceToken(): generated
+     * once, lazily, reused after that, and the token itself is the access control rather than
+     * who's logged in (see FeedbackController).
+     */
+    public function getOrCreateFeedbackToken(): string
+    {
+        if ($this->feedback_token) {
+            return $this->feedback_token;
+        }
+
+        do {
+            $token = \Illuminate\Support\Str::random(8);
+        } while (self::where('feedback_token', $token)->exists());
+
+        $this->feedback_token = $token;
+        $this->saveQuietly();
+
+        return $token;
+    }
+
     protected $casts = [
         'subtotal' => 'decimal:2',
         'tax' => 'decimal:2',
@@ -178,6 +200,14 @@ class Order extends Model
     public function review()
     {
         return $this->hasOne(Review::class);
+    }
+
+    /** Plural counterpart to review() above — an order can now carry one review per product
+     *  (see reviews.product_id) rather than just the single overall one review() assumes. Used
+     *  by the public feedback flow (FeedbackController) to check per-product submission state. */
+    public function reviews()
+    {
+        return $this->hasMany(Review::class);
     }
 
     // Scopes

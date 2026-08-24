@@ -29,6 +29,7 @@ import {
     ClipboardList,
     Download,
     MessageSquare,
+    Star,
 } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import {
@@ -54,7 +55,7 @@ import { useAuthStore } from '@/store/auth';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
 
-type SmsKind = 'status' | 'delivered' | 'due' | 'custom_invoice';
+type SmsKind = 'status' | 'delivered' | 'due' | 'custom_invoice' | 'feedback';
 
 const ORDER_STATUSES = [
     { value: 'pending', label: 'Pending' },
@@ -113,6 +114,7 @@ export default function OrderDetailPage() {
     const [loadingPreviewKey, setLoadingPreviewKey] = useState<string | null>(null);
     const [isSendingSms, setIsSendingSms] = useState(false);
     const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+    const [isOpeningFeedbackPage, setIsOpeningFeedbackPage] = useState(false);
 
     const [isRecordPaymentOpen, setIsRecordPaymentOpen] = useState(false);
     const [recordPaymentAmount, setRecordPaymentAmount] = useState('');
@@ -240,6 +242,7 @@ export default function OrderDetailPage() {
             if (pendingSms.kind === 'status') await adminService.sendOrderStatusSms(order.id);
             else if (pendingSms.kind === 'delivered') await adminService.sendOrderDeliveredSms(order.id);
             else if (pendingSms.kind === 'due') await adminService.sendOrderDueSms(order.id);
+            else if (pendingSms.kind === 'feedback') await adminService.sendOrderFeedbackSms(order.id);
             else if (pendingSms.kind === 'custom_invoice') await adminService.sendCustomInvoiceSms(pendingSms.invoiceId!);
             toast.success('SMS sent.');
             setPendingSms(null);
@@ -248,6 +251,26 @@ export default function OrderDetailPage() {
             toast.error(getErrorMessage(err));
         } finally {
             setIsSendingSms(false);
+        }
+    };
+
+    // For a walk-in customer at the counter: opens the same public feedback page an SMS link
+    // would point to, directly on this screen, with no SMS involved. Opens the tab synchronously
+    // (before the await) so browsers don't block it as an unrequested popup, then points it at
+    // the real URL once the token is fetched/generated.
+    const openFeedbackPageOnThisScreen = async () => {
+        if (!order) return;
+        const tab = window.open('', '_blank');
+        setIsOpeningFeedbackPage(true);
+        try {
+            const res = await adminService.getOrderFeedbackLink(order.id);
+            if (tab) tab.location.href = res.data.data.url;
+            else window.location.href = res.data.data.url;
+        } catch (err) {
+            tab?.close();
+            toast.error(getErrorMessage(err));
+        } finally {
+            setIsOpeningFeedbackPage(false);
         }
     };
 
@@ -1381,6 +1404,30 @@ export default function OrderDetailPage() {
                                             Send Delivery SMS
                                         </Button>
                                     )}
+                                    {order.customer_phone && order.order_status === 'completed' && (
+                                        <Button
+                                            onClick={() => openSmsPreview('feedback')}
+                                            isLoading={loadingPreviewKey === 'feedback'}
+                                            variant="outline"
+                                            className="w-full justify-start border-yellow-300 text-yellow-700 hover:bg-yellow-50"
+                                            title="Text the customer a link to rate and review this order — reviews stay hidden until approved."
+                                        >
+                                            <Star className="w-4 h-4 mr-2" />
+                                            Request Feedback
+                                        </Button>
+                                    )}
+                                    {order.order_status === 'completed' && (
+                                        <Button
+                                            onClick={openFeedbackPageOnThisScreen}
+                                            isLoading={isOpeningFeedbackPage}
+                                            variant="outline"
+                                            className="w-full justify-start border-yellow-300 text-yellow-700 hover:bg-yellow-50"
+                                            title="For a walk-in customer at the counter — opens the feedback page right here, no phone number needed."
+                                        >
+                                            <Star className="w-4 h-4 mr-2" />
+                                            Collect Feedback on This Screen
+                                        </Button>
+                                    )}
                                     {Number(order.paid_amount ?? 0) > 0 && !['cancelled', 'refunded', 'rejected'].includes(order.order_status) && (
                                         <Button onClick={openReturn} variant="outline" className="w-full justify-start border-red-300 text-red-700 hover:bg-red-50">
                                             <RefreshCw className="w-4 h-4 mr-2" />
@@ -1537,8 +1584,8 @@ export default function OrderDetailPage() {
                 </div>
             ) : null}
 
-            {/* SMS Confirm Modal — shared by status / delivery / due / custom-invoice sends, so
-                the admin always sees the exact rendered text before it goes out. */}
+            {/* SMS Confirm Modal — shared by status / delivery / due / feedback / custom-invoice
+                sends, so the admin always sees the exact rendered text before it goes out. */}
             <Modal isOpen={!!pendingSms} onClose={() => { setPendingSms(null); setSmsPreview(null); }} title="Confirm SMS" size="sm">
                 {smsPreview && (
                     <div className="space-y-4">

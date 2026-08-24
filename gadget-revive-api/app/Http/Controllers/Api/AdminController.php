@@ -1011,7 +1011,7 @@ class AdminController extends BaseController
      */
     public function reviews(Request $request): JsonResponse
     {
-        $query = Review::with(['user', 'vendorProfile', 'order']);
+        $query = Review::with(['user', 'vendorProfile', 'order', 'product:id,name,image']);
 
         // Filter by status
         if ($request->has('status')) {
@@ -1043,12 +1043,28 @@ class AdminController extends BaseController
 
         $review->update(['status' => $request->status]);
 
+        // Approving/rejecting here bypassed the customer-facing ReviewController entirely, so
+        // the vendor's aggregate rating (average_rating/total_reviews on VendorProfile — only
+        // ever computed from approved reviews) needs the same recalculation store()/destroy()
+        // already do there, or a newly-approved review would never actually move the average.
+        if ($review->vendor_profile_id) {
+            $stats = Review::where('vendor_profile_id', $review->vendor_profile_id)
+                ->approved()
+                ->selectRaw('AVG(rating) as avg_rating, COUNT(*) as total_reviews')
+                ->first();
+
+            \App\Models\VendorProfile::where('id', $review->vendor_profile_id)->update([
+                'average_rating' => round($stats->avg_rating ?? 0, 2),
+                'total_reviews' => $stats->total_reviews ?? 0,
+            ]);
+        }
+
         AuditLog::log($admin, 'moderate_review', 'Review', $review->id, null, [
             'status' => $request->status,
             'reason' => $request->reason,
         ], 'Review moderated');
 
-        return $this->success(new ReviewResource($review->fresh()), 'Review moderated');
+        return $this->success(new ReviewResource($review->fresh(['user', 'vendorProfile', 'order', 'product'])), 'Review moderated');
     }
 
     /**
@@ -2147,6 +2163,52 @@ class AdminController extends BaseController
         return $this->success(null, 'Delivery SMS sent.');
     }
 
+    /** Manually text the customer a link to the public, no-login feedback page for this order. */
+    public function orderSendFeedbackSms(Request $request, int $id, \App\Services\SmsService $sms): JsonResponse
+    {
+        $order = Order::findOrFail($id);
+        $admin = $request->user();
+
+        if (!$order->customer_phone) {
+            return $this->error('This order has no customer phone number to send to.', 422);
+        }
+
+        if (!$sms->shouldSendOrderUpdates()) {
+            return $this->error('Order SMS is currently disabled — enable it under SMS Center > Order & Billing.', 422);
+        }
+
+        $ok = $sms->sendFeedbackRequest($order->customer_phone, $order->order_number, $order->id);
+
+        if (!$ok) {
+            return $this->error('Failed to send the feedback SMS. Check the SMS log for details.', 422);
+        }
+
+        AuditLog::log($admin, 'send_order_feedback_sms', 'Order', $order->id, null, [
+            'phone' => $order->customer_phone,
+        ], "Feedback request SMS sent for order #{$order->order_number}");
+
+        return $this->success(null, 'Feedback request SMS sent.');
+    }
+
+    /**
+     * Returns the same public feedback link an SMS would contain, without sending any SMS —
+     * for a walk-in customer at the counter: staff pulls up the order, opens this link right
+     * there on a shop screen/tablet, and the customer leaves feedback on the spot (no phone
+     * number needed). Also used by the Reviews page's "Collect In-Store Feedback" lookup.
+     */
+    public function orderFeedbackLink(int $id): JsonResponse
+    {
+        $order = Order::findOrFail($id);
+
+        $url = rtrim(config('app.frontend_url'), '/') . '/feedback/' . $order->getOrCreateFeedbackToken();
+
+        return $this->success([
+            'order_number' => $order->order_number,
+            'url' => $url,
+            'already_submitted' => $order->reviews()->exists(),
+        ]);
+    }
+
     /**
      * Manually notify the customer about the order's current status. Not tied to the status
      * update itself — an admin can change status several times before deciding it's worth
@@ -2217,7 +2279,7 @@ class AdminController extends BaseController
      */
     public function orderPreviewSms(Request $request, int $id, \App\Services\SmsService $sms): JsonResponse
     {
-        $request->validate(['type' => 'required|in:status,delivered,due']);
+        $request->validate(['type' => 'required|in:status,delivered,due,feedback']);
 
         $order = Order::findOrFail($id);
 
@@ -2229,6 +2291,7 @@ class AdminController extends BaseController
             'status'    => $sms->buildOrderStatusMessage($order->order_number, $order->order_status),
             'delivered' => $sms->buildOrderDeliveredMessage($order->order_number, $order->id),
             'due'       => $sms->buildPaymentDueMessage($order->order_number, number_format($order->outstanding_receivable, 2), $order->id),
+            'feedback'  => $sms->buildFeedbackRequestMessage($order->order_number, $order->id),
         };
 
         return $this->success(['phone' => $order->customer_phone, 'message' => $message]);
