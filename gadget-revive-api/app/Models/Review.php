@@ -16,6 +16,7 @@ class Review extends Model
         'user_id',
         'vendor_profile_id',
         'rating',
+        'would_recommend',
         'review',
         'images',
         'vendor_response',
@@ -26,10 +27,18 @@ class Review extends Model
 
     protected $casts = [
         'rating' => 'integer',
+        'would_recommend' => 'boolean',
         'helpful_count' => 'integer',
         'images' => 'array',
         'vendor_responded_at' => 'datetime',
     ];
+
+    /** True for the anonymous "kiosk" flow (a tablet at the counter, no order attached) —
+     *  distinguishes it from an order/product review for filtering and display. */
+    public function isGeneralFeedback(): bool
+    {
+        return $this->order_id === null;
+    }
 
     protected static function boot()
     {

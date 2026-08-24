@@ -121,11 +121,13 @@ class FeedbackController extends BaseController
     {
         $request->validate([
             'rating' => 'required|integer|min:1|max:5',
+            'would_recommend' => 'nullable|boolean',
             'review' => 'nullable|string|max:1000',
         ]);
 
         $review = Review::create([
             'rating' => $request->rating,
+            'would_recommend' => $request->has('would_recommend') ? $request->boolean('would_recommend') : null,
             'review' => $request->review,
             'status' => 'pending',
         ]);

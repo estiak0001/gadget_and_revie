@@ -45,7 +45,7 @@ export const feedbackService = {
    * The "kiosk" flow — a general store-wide rating with no order behind it at all, for a
    * tablet left at the counter for any walk-in customer. See app/feedback/page.tsx.
    */
-  submitGeneral: async (rating: number, review?: string): Promise<void> => {
-    await apiClient.post('/feedback', { rating, review });
+  submitGeneral: async (data: { rating: number; would_recommend?: boolean; review?: string }): Promise<void> => {
+    await apiClient.post('/feedback', data);
   },
 };

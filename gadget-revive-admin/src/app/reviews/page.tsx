@@ -18,9 +18,15 @@ const WEB_URL = process.env.NEXT_PUBLIC_WEB_URL || 'http://localhost:3000';
 interface Review {
   id: number; user: { id: number; name: string; avatar?: string } | null; vendor?: { id: number; business_name: string } | null;
   order?: { id: number; order_number: string } | null; product?: { id: number; name: string; image?: string } | null;
-  rating: number; review: string | null; status: string; vendor_response?: string; vendor_responded_at?: string;
+  rating: number; would_recommend?: boolean | null; review: string | null; status: string; vendor_response?: string; vendor_responded_at?: string;
   images?: string[]; created_at: string;
 }
+
+const REVIEW_TABS = [
+  { value: 'order', label: 'Order & Product Reviews' },
+  { value: 'general', label: 'Walk-in Kiosk Feedback' },
+] as const;
+type ReviewTab = (typeof REVIEW_TABS)[number]['value'];
 
 const REVIEW_STATUSES = [
   { value: 'pending', label: 'Pending', color: 'warning' }, { value: 'approved', label: 'Approved', color: 'success' },
@@ -28,6 +34,7 @@ const REVIEW_STATUSES = [
 ];
 
 export default function ReviewsPage() {
+  const [activeTab, setActiveTab] = useState<ReviewTab>('order');
   const [reviews, setReviews] = useState<Review[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -50,7 +57,7 @@ export default function ReviewsPage() {
     setIsLoading(true);
     setError(false);
     try {
-      const params: Record<string, string | number> = { page: currentPage };
+      const params: Record<string, string | number> = { page: currentPage, kind: activeTab };
       if (searchQuery) params.search = searchQuery;
       if (filterStatus) params.status = filterStatus;
       if (filterRating) params.rating = filterRating;
@@ -66,8 +73,9 @@ export default function ReviewsPage() {
     }
   };
 
-  useEffect(() => { fetchReviews(); }, [currentPage, filterStatus, filterRating]);
+  useEffect(() => { fetchReviews(); }, [currentPage, filterStatus, filterRating, activeTab]);
   const handleSearch = () => { setCurrentPage(1); fetchReviews(); };
+  const handleTabChange = (tab: ReviewTab) => { setActiveTab(tab); setCurrentPage(1); };
 
   const handleFeedbackLookup = async () => {
     const orderNumber = feedbackOrderNumber.trim();
@@ -196,6 +204,25 @@ export default function ReviewsPage() {
         </CardContent>
       </Card>
 
+      {/* Order/product reviews and anonymous kiosk feedback are different enough in shape
+          (kiosk has no user/order/product, but does have would_recommend) that they're kept in
+          separate tabs rather than one mixed list. */}
+      <div className="flex gap-1 mb-6 border-b border-gray-200">
+        {REVIEW_TABS.map((tab) => (
+          <button
+            key={tab.value}
+            onClick={() => handleTabChange(tab.value)}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === tab.value
+                ? 'border-primary text-primary'
+                : 'border-transparent text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
         <Card><CardContent className="p-4"><div className="flex items-center gap-3"><div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center"><Star className="w-5 h-5 text-yellow-600" /></div><div><p className="text-xs text-gray-500">Avg Rating</p><p className="text-xl font-bold">{avgRating}</p></div></div></CardContent></Card>
         <Card><CardContent className="p-4"><div className="flex items-center gap-3"><div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center"><ThumbsUp className="w-5 h-5 text-green-600" /></div><div><p className="text-xs text-gray-500">Positive</p><p className="text-xl font-bold">{positive}</p></div></div></CardContent></Card>
@@ -212,7 +239,7 @@ export default function ReviewsPage() {
       </div></CardContent></Card>
 
       {isLoading ? (<div className="flex items-center justify-center py-12"><LoadingSpinner size="lg" text="Loading reviews..." /></div>
-      ) : reviews.length === 0 ? (<EmptyState icon={<Star className="w-8 h-8 text-gray-400" />} title="No reviews found" />
+      ) : reviews.length === 0 ? (<EmptyState icon={<Star className="w-8 h-8 text-gray-400" />} title={activeTab === 'general' ? 'No walk-in kiosk feedback yet' : 'No reviews found'} />
       ) : (
         <div className="space-y-4">
           {reviews.map((review) => {
@@ -227,9 +254,14 @@ export default function ReviewsPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-3 flex-wrap">
-                          <p className="font-medium">{review.user?.name ?? 'Guest customer'}</p>
+                          <p className="font-medium">{review.user?.name ?? (activeTab === 'general' ? 'Walk-in customer' : 'Guest customer')}</p>
                           {renderStars(review.rating)}
                           <Badge variant={statusConfig?.color as 'success' | 'warning' | 'danger' | 'default' || 'default'}>{statusConfig?.label}</Badge>
+                          {review.would_recommend !== null && review.would_recommend !== undefined && (
+                            <Badge variant={review.would_recommend ? 'success' : 'danger'}>
+                              {review.would_recommend ? 'Would recommend' : "Wouldn't recommend"}
+                            </Badge>
+                          )}
                         </div>
                         {review.vendor && <p className="text-sm text-gray-500 mt-0.5">Vendor: {review.vendor.business_name}</p>}
                         {review.product && (
@@ -264,12 +296,15 @@ export default function ReviewsPage() {
           <div className="space-y-6">
             <div className="flex items-start gap-4">
               <div className="w-14 h-14 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden">{selectedReview.user?.avatar ? <img src={selectedReview.user.avatar} alt="" className="w-full h-full object-cover" /> : <span className="text-xl font-bold text-gray-600">{(selectedReview.user?.name ?? 'G').charAt(0)}</span>}</div>
-              <div><p className="text-lg font-semibold">{selectedReview.user?.name ?? 'Guest customer'}</p>{renderStars(selectedReview.rating)}<p className="text-sm text-gray-500 mt-1">{formatDateTime(selectedReview.created_at)}</p></div>
+              <div><p className="text-lg font-semibold">{selectedReview.user?.name ?? (activeTab === 'general' ? 'Walk-in customer' : 'Guest customer')}</p>{renderStars(selectedReview.rating)}<p className="text-sm text-gray-500 mt-1">{formatDateTime(selectedReview.created_at)}</p></div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               {selectedReview.vendor && <div className="bg-gray-50 p-3 rounded-lg"><p className="text-xs text-gray-500">Vendor</p><p className="font-medium">{selectedReview.vendor.business_name}</p></div>}
               {selectedReview.product && <div className="bg-gray-50 p-3 rounded-lg"><p className="text-xs text-gray-500">Product</p><p className="font-medium">{selectedReview.product.name}</p></div>}
               {selectedReview.order && <div className="bg-gray-50 p-3 rounded-lg"><p className="text-xs text-gray-500">Order</p><p className="font-medium text-primary">{selectedReview.order.order_number}</p></div>}
+              {selectedReview.would_recommend !== null && selectedReview.would_recommend !== undefined && (
+                <div className="bg-gray-50 p-3 rounded-lg"><p className="text-xs text-gray-500">Would recommend</p><p className="font-medium">{selectedReview.would_recommend ? 'Yes' : 'No'}</p></div>
+              )}
               <div className="bg-gray-50 p-3 rounded-lg"><p className="text-xs text-gray-500">Status</p><Badge variant={REVIEW_STATUSES.find(s => s.value === selectedReview.status)?.color as 'success' | 'warning' | 'danger' | 'default'}>{selectedReview.status}</Badge></div>
             </div>
             {selectedReview.review && <p className="text-gray-600">{selectedReview.review}</p>}

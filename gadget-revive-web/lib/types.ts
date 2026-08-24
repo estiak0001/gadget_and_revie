@@ -507,6 +507,7 @@ export interface Review {
   vendor_profile_id: number | null;
   user_id: number | null;
   rating: number;
+  would_recommend?: boolean | null;
   review: string;
   vendor_response?: string;
   vendor_responded_at?: string;

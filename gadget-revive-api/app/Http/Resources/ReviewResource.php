@@ -16,6 +16,7 @@ class ReviewResource extends JsonResource
             'user_id' => $this->user_id,
             'vendor_profile_id' => $this->vendor_profile_id,
             'rating' => $this->rating,
+            'would_recommend' => $this->would_recommend,
             'review' => $this->review,
             'images' => $this->images ? collect($this->images)->map(fn ($p) => asset('storage/' . $p)) : [],
             'vendor_response' => $this->vendor_response,

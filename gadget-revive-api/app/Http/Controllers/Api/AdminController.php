@@ -1023,6 +1023,15 @@ class AdminController extends BaseController
             $query->where('rating', $request->rating);
         }
 
+        // kind=general isolates the anonymous kiosk feedback (no order at all) from the normal
+        // order/product reviews — they're different enough in shape (no user/order/product,
+        // has would_recommend) that the admin Reviews page shows them in a separate tab.
+        if ($request->get('kind') === 'general') {
+            $query->whereNull('order_id');
+        } elseif ($request->get('kind') === 'order') {
+            $query->whereNotNull('order_id');
+        }
+
         $reviews = $query->latest()->paginate($request->get('per_page', 15));
 
         return $this->paginated($reviews);
