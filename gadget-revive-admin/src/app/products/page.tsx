@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Plus,
   Edit2,
@@ -56,8 +56,9 @@ function getImageUrl(image?: string): string {
   return `${ASSET_BASE_URL}/storage/${image.replace(/^\//, '')}`;
 }
 
-export default function ProductsPage() {
+function ProductsPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   // Data state
   const [products, setProducts] = useState<Product[]>([]);
@@ -83,8 +84,11 @@ export default function ProductsPage() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [historyProduct, setHistoryProduct] = useState<Product | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [activeTab, setActiveTab] = useState<'all' | 'active' | 'inactive' | 'draft' | 'low-stock' | 'out-of-stock'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'active' | 'inactive' | 'draft' | 'bulk-upload' | 'low-stock' | 'out-of-stock'>('all');
   const [togglingFeaturedId, setTogglingFeaturedId] = useState<number | null>(null);
+  // Set once from the URL on first load (arriving via "Review this batch in Products" straight
+  // after a bulk upload) — narrows the bulk-upload tab down to just that one spreadsheet's rows.
+  const [filterBatch, setFilterBatch] = useState('');
 
   // Featured products modal
   const [isFeaturedModalOpen, setIsFeaturedModalOpen] = useState(false);
@@ -95,7 +99,7 @@ export default function ProductsPage() {
   // applied to the list below — deriving these from `products` (the current page's already
   // server-filtered results) is what made every count wrong the moment you left the "All" tab.
   const [stats, setStats] = useState({
-    total: 0, active: 0, inactive: 0, draft: 0, lowStock: 0, outOfStock: 0,
+    total: 0, active: 0, inactive: 0, draft: 0, bulkUpload: 0, lowStock: 0, outOfStock: 0,
   });
 
   const fetchStats = useCallback(async () => {
@@ -103,12 +107,26 @@ export default function ProductsPage() {
       const res = await adminService.getProductStats();
       const d = res.data.data;
       setStats({
-        total: d.total, active: d.active, inactive: d.inactive,
-        draft: d.draft, lowStock: d.low_stock, outOfStock: d.out_of_stock,
+        total: d.total, active: d.active, inactive: d.inactive, draft: d.draft,
+        bulkUpload: d.bulk_import ?? 0, lowStock: d.low_stock, outOfStock: d.out_of_stock,
       });
     } catch (err) {
       console.error('Error fetching product stats:', err);
     }
+  }, []);
+
+  // Arriving from the bulk-upload result screen ("Review this batch in Products") — jump
+  // straight to the Bulk Upload tab, narrowed to that one spreadsheet's rows.
+  useEffect(() => {
+    const source = searchParams.get('source');
+    const batch = searchParams.get('bulk_upload_batch');
+    if (source === 'bulk_import') {
+      setActiveTab('bulk-upload');
+    }
+    if (batch) {
+      setFilterBatch(batch);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchProducts = useCallback(async () => {
@@ -126,6 +144,10 @@ export default function ProductsPage() {
       if (activeTab === 'active') params.is_active = 'true';
       if (activeTab === 'inactive') params.is_active = 'false';
       if (activeTab === 'draft') params.is_draft = 'true';
+      if (activeTab === 'bulk-upload') {
+        params.source = 'bulk_import';
+        if (filterBatch) params.bulk_upload_batch = filterBatch;
+      }
       if (activeTab === 'low-stock') params.stock_status = 'low';
       if (activeTab === 'out-of-stock') params.stock_status = 'out';
 
@@ -141,7 +163,7 @@ export default function ProductsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [currentPage, perPage, searchQuery, filterCategory, filterStatus, filterStock, activeTab]);
+  }, [currentPage, perPage, searchQuery, filterCategory, filterStatus, filterStock, activeTab, filterBatch]);
 
   const fetchCategories = useCallback(async () => {
     try {
@@ -299,6 +321,7 @@ export default function ProductsPage() {
     active: stats.active,
     inactive: stats.inactive,
     draft: stats.draft,
+    'bulk-upload': stats.bulkUpload,
     'low-stock': stats.lowStock,
     'out-of-stock': stats.outOfStock,
   };
@@ -424,24 +447,42 @@ export default function ProductsPage() {
         <CardContent className="p-0">
           {/* Tabs */}
           <div className="flex border-b overflow-x-auto">
-            {(['all', 'active', 'inactive', 'draft', 'low-stock', 'out-of-stock'] as const).map((tab) => (
+            {(['all', 'active', 'inactive', 'draft', 'bulk-upload', 'low-stock', 'out-of-stock'] as const).map((tab) => (
               <button
                 key={tab}
-                onClick={() => { setActiveTab(tab); setCurrentPage(1); }}
+                onClick={() => { setActiveTab(tab); setCurrentPage(1); if (tab !== 'bulk-upload') setFilterBatch(''); }}
                 className={`px-3 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
                   activeTab === tab
                     ? 'border-primary-600 text-primary-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
-                title={tab === 'draft' ? 'Instant products created from Orders/Purchases that still need full details' : undefined}
+                title={
+                  tab === 'draft'
+                    ? 'Instant products created from Orders/Purchases that still need full details'
+                    : tab === 'bulk-upload'
+                    ? 'Products created via the Excel bulk-upload tool'
+                    : undefined
+                }
               >
-                {tab === 'all' ? 'All' : tab === 'low-stock' ? 'Low Stock' : tab === 'out-of-stock' ? 'Out of Stock' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                {tab === 'all' ? 'All' : tab === 'low-stock' ? 'Low Stock' : tab === 'out-of-stock' ? 'Out of Stock' : tab === 'bulk-upload' ? 'Bulk Upload' : tab.charAt(0).toUpperCase() + tab.slice(1)}
                 <span className="ml-2 text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
                   {tabCounts[tab]}
                 </span>
               </button>
             ))}
           </div>
+          {activeTab === 'bulk-upload' && filterBatch && (
+            <div className="flex items-center justify-between gap-3 px-4 py-2 bg-sky-50 border-b border-sky-100 text-sm text-sky-800">
+              <span>Showing only the batch uploaded just now ({filterBatch})</span>
+              <button
+                type="button"
+                className="font-medium underline hover:no-underline"
+                onClick={() => setFilterBatch('')}
+              >
+                Show all Bulk Upload products
+              </button>
+            </div>
+          )}
 
           {/* Search & View Controls */}
           <div className="p-4">
@@ -614,6 +655,11 @@ export default function ProductsPage() {
                               <Badge variant="warning">Draft</Badge>
                             </span>
                           )}
+                          {product.source === 'bulk_import' && (
+                            <span title="Created via Excel bulk upload">
+                              <Badge variant="info">Bulk Upload</Badge>
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-2.5">
@@ -748,6 +794,11 @@ export default function ProductsPage() {
                   {product.is_draft && (
                     <span title="Instant product — needs full details">
                       <Badge variant="warning" className="text-[10px]">Draft</Badge>
+                    </span>
+                  )}
+                  {product.source === 'bulk_import' && (
+                    <span title="Created via Excel bulk upload">
+                      <Badge variant="info" className="text-[10px]">Bulk Upload</Badge>
                     </span>
                   )}
                 </div>
@@ -971,5 +1022,13 @@ export default function ProductsPage() {
         />
       )}
     </AdminLayout>
+  );
+}
+
+export default function ProductsPage() {
+  return (
+    <Suspense fallback={<AdminLayout><div className="flex items-center justify-center min-h-screen"><LoadingSpinner size="lg" text="Loading..." /></div></AdminLayout>}>
+      <ProductsPageContent />
+    </Suspense>
   );
 }

@@ -38,6 +38,8 @@ class Product extends Model
         'warranty_unit',
         'is_active',
         'is_draft',
+        'source',
+        'bulk_upload_batch',
         'is_featured',
         'sort_order',
         'created_by',
@@ -165,6 +167,11 @@ class Product extends Model
     public function scopeByVendor($query, $vendorProfileId)
     {
         return $query->where('vendor_profile_id', $vendorProfileId);
+    }
+
+    public function scopeBulkUploadBatch($query, string $batch)
+    {
+        return $query->where('bulk_upload_batch', $batch);
     }
 
     // Helpers

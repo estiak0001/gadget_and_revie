@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\InvestmentController;
 use App\Http\Controllers\Api\PermissionController;
 use App\Http\Controllers\Api\ProductController;
+use App\Http\Controllers\Api\ProductBulkUploadController;
 use App\Http\Controllers\Api\PublicController;
 use App\Http\Controllers\Api\PurchaseOrderController;
 use App\Http\Controllers\Api\ReportController;
@@ -647,6 +648,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::get('/', [AdminController::class, 'adminProducts'])->middleware('permission:manage_products,view_products');
             Route::get('/stats', [AdminController::class, 'adminProductStats'])->middleware('permission:manage_products,view_products');
             Route::get('/spec-suggestions', [AdminController::class, 'adminProductSpecSuggestions'])->middleware('permission:manage_products,view_products');
+            // Registered before the "/{id}" routes below so "bulk-upload" is never swallowed as
+            // an :id value.
+            Route::get('/bulk-upload/template', [ProductBulkUploadController::class, 'template'])->middleware('permission:manage_products,create_products');
+            Route::post('/bulk-upload', [ProductBulkUploadController::class, 'import'])->middleware('permission:manage_products,create_products');
             Route::post('/', [AdminController::class, 'adminProductStore'])->middleware('permission:manage_products,create_products');
             Route::get('/{id}', [AdminController::class, 'adminProductShow'])->middleware('permission:manage_products,view_products');
             Route::put('/{id}', [AdminController::class, 'adminProductUpdate'])->middleware('permission:manage_products,edit_products,manage_inventory');

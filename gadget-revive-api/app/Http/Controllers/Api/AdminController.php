@@ -3173,6 +3173,17 @@ class AdminController extends BaseController
             $query->where('is_draft', $request->boolean('is_draft'));
         }
 
+        // Filter by source — 'bulk_import' isolates everything created through the Excel
+        // bulk-upload tool (see ProductBulkUploadController) from normally-created products.
+        if ($request->has('source')) {
+            $query->where('source', $request->source);
+        }
+
+        // Jump straight to "everything from this one upload" right after a bulk import.
+        if ($request->has('bulk_upload_batch')) {
+            $query->where('bulk_upload_batch', $request->bulk_upload_batch);
+        }
+
         // Filter by stock status — always_in_stock overrides the raw quantity everywhere else
         // (storefront, isInStock()), so "out of stock" here must exclude it too, or every
         // always-in-stock item (stock_qty left at 0 on purpose) wrongly shows as out of stock.
@@ -3230,6 +3241,8 @@ class AdminController extends BaseController
             'active' => Product::where('is_active', true)->count(),
             'inactive' => Product::where('is_active', false)->count(),
             'draft' => Product::where('is_draft', true)->count(),
+            'bulk_import' => Product::where('source', 'bulk_import')->count(),
+            'bulk_import_pending' => Product::where('source', 'bulk_import')->where('is_active', false)->count(),
             'low_stock' => Product::lowStock()->count(),
             'out_of_stock' => Product::where('stock_qty', 0)->where('always_in_stock', false)->count(),
         ]);

@@ -187,6 +187,10 @@ export interface Product {
   gallery?: string[];
   is_active: boolean;
   is_draft?: boolean;
+  /** 'manual' (default, created via the normal form) or 'bulk_import' (created via the Excel bulk-upload tool). */
+  source?: 'manual' | 'bulk_import' | string;
+  /** Groups every product created together from one bulk-upload spreadsheet; null for manually-created products. */
+  bulk_upload_batch?: string | null;
   is_featured: boolean;
   sort_order?: number;
   created_by?: number;

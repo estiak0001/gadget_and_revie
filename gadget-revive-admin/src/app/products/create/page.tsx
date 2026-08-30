@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Save, Plus, Trash2, RefreshCw, Tag, GripVertical, Edit2, Check, X, ChevronRight, UploadCloud, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Trash2, RefreshCw, Tag, GripVertical, Edit2, Check, X, ChevronRight, UploadCloud, Image as ImageIcon, Download, FileSpreadsheet, CheckCircle2, XCircle } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import { Card, CardContent, CardHeader, CardTitle, Button, Input, Textarea, Select, SearchableSelect, Badge, LoadingSpinner, RichTextEditor, Modal, ImageUpload } from '@/components/ui';
 import { ProductCategory, ProductBrand, CategoryAttribute } from '@/types';
-import { getErrorMessage, cn } from '@/lib/utils';
+import { getErrorMessage, cn, downloadBlob } from '@/lib/utils';
 import adminService from '@/lib/adminService';
 import toast from 'react-hot-toast';
 
@@ -64,6 +64,19 @@ export default function CreateProductPage() {
   const [editingSpecKey, setEditingSpecKey] = useState('');
   const [editingSpecValue, setEditingSpecValue] = useState('');
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+
+  // Bulk upload (Excel) state — a wholly separate path from the single-product form above:
+  // rows go straight to the API as inactive, tagged products, never touching formData.
+  const [isBulkUploadModalOpen, setIsBulkUploadModalOpen] = useState(false);
+  const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false);
+  const [bulkUploadFile, setBulkUploadFile] = useState<File | null>(null);
+  const [isBulkUploading, setIsBulkUploading] = useState(false);
+  const [bulkUploadResult, setBulkUploadResult] = useState<{
+    batch: string;
+    created: number;
+    failed: number;
+    results: { row: number; name: string | null; status: 'created' | 'failed'; message: string | null }[];
+  } | null>(null);
 
   // Quick-create brand state
   const [isQuickBrandModalOpen, setIsQuickBrandModalOpen] = useState(false);
@@ -263,6 +276,51 @@ export default function CreateProductPage() {
 
   const generateSKU = () => {
     return `PROD-${Date.now()}-${Math.random().toString(36).substr(2, 5).toUpperCase()}`;
+  };
+
+  const handleDownloadBulkTemplate = async () => {
+    setIsDownloadingTemplate(true);
+    try {
+      const response = await adminService.downloadProductBulkUploadTemplate();
+      downloadBlob(new Blob([response.data]), 'product-bulk-upload-template.xlsx');
+      toast.success('Sample Excel downloaded');
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setIsDownloadingTemplate(false);
+    }
+  };
+
+  const handleBulkUpload = async () => {
+    if (!bulkUploadFile) {
+      toast.error('Choose a filled-in Excel file first');
+      return;
+    }
+    setIsBulkUploading(true);
+    setBulkUploadResult(null);
+    try {
+      const response = await adminService.bulkUploadProducts(bulkUploadFile);
+      const result = response.data?.data;
+      if (result) {
+        setBulkUploadResult(result);
+        if (result.created > 0) {
+          toast.success(`${result.created} product(s) created as Inactive`);
+        }
+        if (result.failed > 0) {
+          toast.error(`${result.failed} row(s) failed — see details below`);
+        }
+      }
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setIsBulkUploading(false);
+    }
+  };
+
+  const closeBulkUploadModal = () => {
+    setIsBulkUploadModalOpen(false);
+    setBulkUploadFile(null);
+    setBulkUploadResult(null);
   };
 
   // Pure — takes a File directly so both the <input> picker and the drop zone can share the
@@ -496,6 +554,14 @@ export default function CreateProductPage() {
             </div>
           </div>
           <div className="flex gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsBulkUploadModalOpen(true)}
+            >
+              <FileSpreadsheet className="w-4 h-4 mr-2" />
+              Bulk Upload
+            </Button>
             <Button
               type="button"
               variant="outline"
@@ -1330,6 +1396,107 @@ export default function CreateProductPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Bulk Upload Modal */}
+      <Modal
+        isOpen={isBulkUploadModalOpen}
+        onClose={closeBulkUploadModal}
+        title="Bulk Upload Products"
+        size="lg"
+      >
+        <div className="space-y-5">
+          <div className="bg-sky-50 border border-sky-100 rounded-lg p-4 text-sm text-gray-700 space-y-2">
+            <p>
+              Fill in the <strong>Products</strong> sheet of the sample file — one row per product.
+              The <strong>Categories</strong> and <strong>Brands</strong> sheets list the exact values
+              to use, and the <strong>Instructions</strong> sheet explains every column.
+            </p>
+            <p>
+              Every product created this way is saved as <strong>Inactive</strong> and tagged{' '}
+              <Badge variant="info">Bulk Upload</Badge> — none of them appear on the storefront
+              until you open it from the Products list and switch it Active.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 border border-gray-200 rounded-lg p-4">
+            <div>
+              <p className="font-medium text-gray-900">1. Download the sample Excel</p>
+              <p className="text-sm text-gray-500">Includes example data plus the category/brand reference sheets.</p>
+            </div>
+            <Button type="button" variant="outline" onClick={handleDownloadBulkTemplate} isLoading={isDownloadingTemplate}>
+              <Download className="w-4 h-4 mr-2" />
+              Sample Excel
+            </Button>
+          </div>
+
+          <div className="border border-gray-200 rounded-lg p-4 space-y-3">
+            <p className="font-medium text-gray-900">2. Upload your filled-in file</p>
+            <input
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              onChange={(e) => {
+                setBulkUploadFile(e.target.files?.[0] || null);
+                setBulkUploadResult(null);
+              }}
+              className="block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-sky-50 file:text-sky-700 file:font-medium hover:file:bg-sky-100"
+            />
+            <div className="flex justify-end">
+              <Button type="button" onClick={handleBulkUpload} isLoading={isBulkUploading} disabled={!bulkUploadFile}>
+                <UploadCloud className="w-4 h-4 mr-2" />
+                Upload
+              </Button>
+            </div>
+          </div>
+
+          {bulkUploadResult && (
+            <div className="border border-gray-200 rounded-lg p-4 space-y-3">
+              <div className="flex items-center gap-4 text-sm">
+                <span className="inline-flex items-center gap-1.5 text-emerald-700 font-medium">
+                  <CheckCircle2 className="w-4 h-4" /> {bulkUploadResult.created} created
+                </span>
+                {bulkUploadResult.failed > 0 && (
+                  <span className="inline-flex items-center gap-1.5 text-red-700 font-medium">
+                    <XCircle className="w-4 h-4" /> {bulkUploadResult.failed} failed
+                  </span>
+                )}
+              </div>
+
+              {bulkUploadResult.results.some((r) => r.status === 'failed') && (
+                <div className="max-h-56 overflow-y-auto border border-gray-100 rounded-md divide-y divide-gray-100">
+                  {bulkUploadResult.results
+                    .filter((r) => r.status === 'failed')
+                    .map((r) => (
+                      <div key={r.row} className="px-3 py-2 text-sm">
+                        <span className="font-medium text-gray-700">Row {r.row}</span>
+                        {r.name && <span className="text-gray-500"> ({r.name})</span>}
+                        <span className="text-red-600"> — {r.message}</span>
+                      </div>
+                    ))}
+                </div>
+              )}
+
+              {bulkUploadResult.created > 0 && (
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => router.push(`/products?source=bulk_import&bulk_upload_batch=${bulkUploadResult.batch}`)}
+                  >
+                    Review this batch in Products
+                    <ChevronRight className="w-4 h-4 ml-1" />
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex justify-end pt-1">
+            <Button type="button" variant="outline" onClick={closeBulkUploadModal}>
+              Close
+            </Button>
+          </div>
+        </div>
       </Modal>
     </AdminLayout>
   );

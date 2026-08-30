@@ -51,6 +51,8 @@ class ProductResource extends JsonResource
             'warranty_note' => $this->warranty,
             'is_active' => $this->is_active,
             'is_draft' => $this->is_draft,
+            'source' => $this->source,
+            'bulk_upload_batch' => $this->bulk_upload_batch,
             'is_featured' => $this->is_featured,
             'sort_order' => $this->sort_order,
             'category' => new ProductCategoryResource($this->whenLoaded('category')),

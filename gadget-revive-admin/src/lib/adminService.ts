@@ -185,7 +185,7 @@ export const adminService = {
 
   // Products
   getProducts: (params?: ListParams) => api.get<PaginatedResponse<Product>>('/admin/products', { params }),
-  getProductStats: () => api.get<ApiResponse<{ total: number; active: number; inactive: number; draft: number; low_stock: number; out_of_stock: number }>>('/admin/products/stats'),
+  getProductStats: () => api.get<ApiResponse<{ total: number; active: number; inactive: number; draft: number; bulk_import: number; bulk_import_pending: number; low_stock: number; out_of_stock: number }>>('/admin/products/stats'),
   getProduct: (id: number) => api.get<ApiResponse<Product>>(`/admin/products/${id}`),
   createProduct: (data: FormData | Record<string, unknown>) => {
     if (data instanceof FormData) {
@@ -213,6 +213,20 @@ export const adminService = {
   getProductSerials: (id: number) => api.get<ApiResponse<ProductSerial[]>>(`/admin/products/${id}/serials`),
   addProductSerials: (id: number, serials: string[]) =>
     api.post<ApiResponse<ProductSerial[]>>(`/admin/products/${id}/serials`, { serials }),
+  downloadProductBulkUploadTemplate: () =>
+    api.get('/admin/products/bulk-upload/template', { responseType: 'blob' }),
+  bulkUploadProducts: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post<ApiResponse<{
+      batch: string;
+      created: number;
+      failed: number;
+      results: { row: number; name: string | null; status: 'created' | 'failed'; message: string | null }[];
+    }>>('/admin/products/bulk-upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
 
   // Services
   getServices: (params?: ListParams) => api.get<PaginatedResponse<Service>>('/admin/services', { params }),
