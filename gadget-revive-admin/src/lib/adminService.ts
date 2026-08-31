@@ -221,8 +221,9 @@ export const adminService = {
     return api.post<ApiResponse<{
       batch: string;
       created: number;
+      duplicates: number;
       failed: number;
-      results: { row: number; name: string | null; status: 'created' | 'failed'; message: string | null }[];
+      results: { row: number; name: string | null; status: 'created' | 'duplicate' | 'failed'; message: string | null }[];
     }>>('/admin/products/bulk-upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });

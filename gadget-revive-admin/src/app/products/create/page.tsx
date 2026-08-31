@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Save, Plus, Trash2, RefreshCw, Tag, GripVertical, Edit2, Check, X, ChevronRight, UploadCloud, Image as ImageIcon, Download, FileSpreadsheet, CheckCircle2, XCircle } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Trash2, RefreshCw, Tag, GripVertical, Edit2, Check, X, ChevronRight, UploadCloud, Image as ImageIcon, Download, FileSpreadsheet, CheckCircle2, XCircle, Copy } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import { Card, CardContent, CardHeader, CardTitle, Button, Input, Textarea, Select, SearchableSelect, Badge, LoadingSpinner, RichTextEditor, Modal, ImageUpload } from '@/components/ui';
 import { ProductCategory, ProductBrand, CategoryAttribute } from '@/types';
@@ -74,8 +74,9 @@ export default function CreateProductPage() {
   const [bulkUploadResult, setBulkUploadResult] = useState<{
     batch: string;
     created: number;
+    duplicates: number;
     failed: number;
-    results: { row: number; name: string | null; status: 'created' | 'failed'; message: string | null }[];
+    results: { row: number; name: string | null; status: 'created' | 'duplicate' | 'failed'; message: string | null }[];
   } | null>(null);
 
   // Quick-create brand state
@@ -1451,10 +1452,15 @@ export default function CreateProductPage() {
 
           {bulkUploadResult && (
             <div className="border border-gray-200 rounded-lg p-4 space-y-3">
-              <div className="flex items-center gap-4 text-sm">
+              <div className="flex items-center gap-4 text-sm flex-wrap">
                 <span className="inline-flex items-center gap-1.5 text-emerald-700 font-medium">
                   <CheckCircle2 className="w-4 h-4" /> {bulkUploadResult.created} created
                 </span>
+                {bulkUploadResult.duplicates > 0 && (
+                  <span className="inline-flex items-center gap-1.5 text-amber-700 font-medium">
+                    <Copy className="w-4 h-4" /> {bulkUploadResult.duplicates} duplicate{bulkUploadResult.duplicates === 1 ? '' : 's'} skipped
+                  </span>
+                )}
                 {bulkUploadResult.failed > 0 && (
                   <span className="inline-flex items-center gap-1.5 text-red-700 font-medium">
                     <XCircle className="w-4 h-4" /> {bulkUploadResult.failed} failed
@@ -1462,17 +1468,41 @@ export default function CreateProductPage() {
                 )}
               </div>
 
+              {bulkUploadResult.results.some((r) => r.status === 'duplicate') && (
+                <div>
+                  <p className="text-xs font-medium text-amber-700 uppercase tracking-wide mb-1.5">
+                    Skipped — already in your catalog
+                  </p>
+                  <div className="max-h-56 overflow-y-auto border border-amber-100 bg-amber-50/40 rounded-md divide-y divide-amber-100">
+                    {bulkUploadResult.results
+                      .filter((r) => r.status === 'duplicate')
+                      .map((r) => (
+                        <div key={r.row} className="px-3 py-2 text-sm">
+                          <span className="font-medium text-gray-700">Row {r.row}</span>
+                          {r.name && <span className="text-gray-500"> ({r.name})</span>}
+                          <span className="text-amber-700"> — {r.message}</span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
               {bulkUploadResult.results.some((r) => r.status === 'failed') && (
-                <div className="max-h-56 overflow-y-auto border border-gray-100 rounded-md divide-y divide-gray-100">
-                  {bulkUploadResult.results
-                    .filter((r) => r.status === 'failed')
-                    .map((r) => (
-                      <div key={r.row} className="px-3 py-2 text-sm">
-                        <span className="font-medium text-gray-700">Row {r.row}</span>
-                        {r.name && <span className="text-gray-500"> ({r.name})</span>}
-                        <span className="text-red-600"> — {r.message}</span>
-                      </div>
-                    ))}
+                <div>
+                  {bulkUploadResult.duplicates > 0 && (
+                    <p className="text-xs font-medium text-red-700 uppercase tracking-wide mb-1.5">Failed</p>
+                  )}
+                  <div className="max-h-56 overflow-y-auto border border-gray-100 rounded-md divide-y divide-gray-100">
+                    {bulkUploadResult.results
+                      .filter((r) => r.status === 'failed')
+                      .map((r) => (
+                        <div key={r.row} className="px-3 py-2 text-sm">
+                          <span className="font-medium text-gray-700">Row {r.row}</span>
+                          {r.name && <span className="text-gray-500"> ({r.name})</span>}
+                          <span className="text-red-600"> — {r.message}</span>
+                        </div>
+                      ))}
+                  </div>
                 </div>
               )}
 

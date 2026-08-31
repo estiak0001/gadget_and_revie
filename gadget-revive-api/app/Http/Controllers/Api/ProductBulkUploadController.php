@@ -48,19 +48,25 @@ class ProductBulkUploadController extends Controller
             'Product',
             null,
             null,
-            ['batch' => $batch, 'created' => $import->created, 'failed' => $import->failed],
+            ['batch' => $batch, 'created' => $import->created, 'duplicates' => $import->duplicates, 'failed' => $import->failed],
             "Bulk-uploaded {$import->created} product(s) via Excel (batch {$batch})" .
+                ($import->duplicates > 0 ? ", {$import->duplicates} duplicate(s) skipped" : '') .
                 ($import->failed > 0 ? ", {$import->failed} row(s) failed" : '')
         );
+
+        $message = $import->created > 0
+            ? "{$import->created} product(s) created as Inactive — review and activate them to make them live."
+            : 'No products were created — see the row details below.';
+        if ($import->duplicates > 0) {
+            $message .= " {$import->duplicates} row(s) were skipped as duplicates of an existing product.";
+        }
 
         return $this->success([
             'batch' => $batch,
             'created' => $import->created,
+            'duplicates' => $import->duplicates,
             'failed' => $import->failed,
             'results' => $import->results,
-        ], $import->created > 0
-            ? "{$import->created} product(s) created as Inactive — review and activate them to make them live."
-            : 'No products were created — see the row errors below.'
-        );
+        ], $message);
     }
 }

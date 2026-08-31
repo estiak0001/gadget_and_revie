@@ -30,6 +30,11 @@ class ProductBulkImport implements ToCollection, WithHeadingRow
 
     public int $failed = 0;
 
+    /** Rows skipped because they match an existing product (or another row in this same file) —
+     *  kept separate from $failed so the admin sees "these already exist" as its own list rather
+     *  than mixed in with genuine data errors (missing name, bad category, etc.). */
+    public int $duplicates = 0;
+
     /** Category lookup cache, keyed by lowercased "Parent > Child" path and by lowercased leaf name. */
     private array $categoryByPath = [];
 
@@ -37,6 +42,10 @@ class ProductBulkImport implements ToCollection, WithHeadingRow
 
     /** Every SKU seen so far in this file, to catch duplicates within the same upload. */
     private array $seenSkus = [];
+
+    /** Every product name seen so far in this file — SKU is optional on the sheet, so name is
+     *  often the only signal available to catch a duplicate at all. */
+    private array $seenNames = [];
 
     public function __construct(
         private readonly User $admin,
@@ -144,14 +153,49 @@ class ProductBulkImport implements ToCollection, WithHeadingRow
                 $errors[] = "Warranty Unit must be one of day, week, month, year (got '{$row->get('warranty_unit')}').";
             }
 
+            // Duplicate detection is checked separately from the validation errors above, and
+            // against both this same file (two rows sharing a name/SKU) and the existing catalog
+            // (Product's default SoftDeletes scope already excludes trashed rows from ->exists()).
+            // SKU is optional on the sheet, so name is often the only signal available at all.
+            $duplicateReasons = [];
+
             $sku = $row->get('sku') ? trim($row->get('sku')) : null;
             if ($sku) {
                 $skuKey = Str::lower($sku);
                 if (isset($this->seenSkus[$skuKey])) {
-                    $errors[] = "SKU '{$sku}' is duplicated earlier in this file (row {$this->seenSkus[$skuKey]}).";
+                    $duplicateReasons[] = "SKU '{$sku}' is duplicated earlier in this file (row {$this->seenSkus[$skuKey]}).";
                 } elseif (Product::where('sku', $sku)->exists()) {
-                    $errors[] = "SKU '{$sku}' already exists.";
+                    $duplicateReasons[] = "SKU '{$sku}' already exists.";
                 }
+            }
+
+            if (!empty($name)) {
+                $nameKey = Str::lower(trim($name));
+                if (isset($this->seenNames[$nameKey])) {
+                    $duplicateReasons[] = "A product named '{$name}' is duplicated earlier in this file (row {$this->seenNames[$nameKey]}).";
+                } elseif (Product::whereRaw('LOWER(name) = ?', [$nameKey])->exists()) {
+                    $duplicateReasons[] = "A product named '{$name}' already exists.";
+                }
+            }
+
+            // Registered as seen regardless of this row's outcome, so a later row is still caught
+            // as "duplicated earlier in this file" even if this row itself failed for other reasons.
+            if ($sku) {
+                $this->seenSkus[Str::lower($sku)] = $excelRow;
+            }
+            if (!empty($name)) {
+                $this->seenNames[Str::lower(trim($name))] = $excelRow;
+            }
+
+            if (!empty($duplicateReasons)) {
+                $this->duplicates++;
+                $this->results[] = [
+                    'row' => $excelRow,
+                    'name' => $name ?: null,
+                    'status' => 'duplicate',
+                    'message' => implode(' ', array_merge($duplicateReasons, $errors)),
+                ];
+                continue;
             }
 
             if (!empty($errors)) {
@@ -163,10 +207,6 @@ class ProductBulkImport implements ToCollection, WithHeadingRow
                     'message' => implode(' ', $errors),
                 ];
                 continue;
-            }
-
-            if ($sku) {
-                $this->seenSkus[Str::lower($sku)] = $excelRow;
             }
 
             $brandId = $this->findOrCreateBrandId($row->get('brand'));
