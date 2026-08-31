@@ -236,6 +236,12 @@ server {
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
         include fastcgi_params;
         fastcgi_hide_header X-Powered-By;
+        # A large product-catalog bulk-upload (hundreds of rows, each with several embedded
+        # photos) can legitimately take several minutes for PhpSpreadsheet to parse — raised
+        # from nginx's 60s default so that request isn't cut off mid-import. The endpoint
+        # itself also calls set_time_limit(0) for the same reason (see
+        # ProductBulkUploadController::import()).
+        fastcgi_read_timeout 900s;
     }
     location ~ /\. { deny all; }
 

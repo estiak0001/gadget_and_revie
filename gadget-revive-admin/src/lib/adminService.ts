@@ -215,7 +215,7 @@ export const adminService = {
     api.post<ApiResponse<ProductSerial[]>>(`/admin/products/${id}/serials`, { serials }),
   downloadProductBulkUploadTemplate: () =>
     api.get('/admin/products/bulk-upload/template', { responseType: 'blob' }),
-  bulkUploadProducts: (file: File) => {
+  bulkUploadProducts: (file: File, onUploadProgress?: (percent: number) => void) => {
     const formData = new FormData();
     formData.append('file', file);
     return api.post<ApiResponse<{
@@ -226,6 +226,9 @@ export const adminService = {
       results: { row: number; name: string | null; status: 'created' | 'duplicate' | 'failed'; message: string | null }[];
     }>>('/admin/products/bulk-upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: onUploadProgress
+        ? (event) => onUploadProgress(event.total ? Math.round((event.loaded / event.total) * 100) : 0)
+        : undefined,
     });
   },
 

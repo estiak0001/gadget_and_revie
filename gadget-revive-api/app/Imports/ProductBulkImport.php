@@ -7,6 +7,7 @@ use App\Models\ProductBrand;
 use App\Models\ProductCategory;
 use App\Models\User;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Maatwebsite\Excel\Concerns\ToCollection;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
@@ -20,6 +21,12 @@ use Maatwebsite\Excel\Concerns\WithHeadingRow;
  * Rows are processed independently, not inside one transaction — a typo in row 8 shouldn't
  * throw away the 40 good rows around it. Each row's outcome (created or the reason it failed)
  * is collected and handed back to the controller for the on-screen summary.
+ *
+ * Images pasted directly into the "Image 1".."Image 7" cells (real embedded pictures, not
+ * URLs) are extracted separately by ProductBulkImageExtractor before this class ever runs —
+ * see $imagesByRow — since ToCollection/WithHeadingRow only ever reads cell text, never
+ * floating drawings. Image 1 becomes the main image, 2-7 become the gallery, in column order;
+ * a row with no Image cells filled in simply gets no image, same as before this existed.
  */
 class ProductBulkImport implements ToCollection, WithHeadingRow
 {
@@ -50,6 +57,8 @@ class ProductBulkImport implements ToCollection, WithHeadingRow
     public function __construct(
         private readonly User $admin,
         private readonly string $batch,
+        /** @var array<int, array<int, array{binary: string, extension: string}>> */
+        private readonly array $imagesByRow = [],
     ) {
         $this->preloadCategories();
     }
@@ -98,6 +107,35 @@ class ProductBulkImport implements ToCollection, WithHeadingRow
             'slug' => Str::slug($name),
             'is_active' => true,
         ])->id;
+    }
+
+    /**
+     * Saves this row's extracted images (if any) to the same disk folders adminProductStore
+     * uses for a manually-uploaded product — slot 1 (main image) to `products`, slots 2-7
+     * (gallery, in column order) to `products/gallery`. Leaves both empty (null / []) when the
+     * row had no Image cells filled in, same as before this existed.
+     *
+     * @param array<int, array{binary: string, extension: string}> $slots
+     * @return array{image: ?string, gallery: array<int, string>}
+     */
+    private function storeRowImages(array $slots): array
+    {
+        $image = null;
+        $gallery = [];
+
+        foreach ($slots as $slotNumber => $file) {
+            $filename = Str::random(40) . '.' . $file['extension'];
+            $folder = $slotNumber === 1 ? 'products' : 'products/gallery';
+            Storage::disk('public')->put("{$folder}/{$filename}", $file['binary']);
+
+            if ($slotNumber === 1) {
+                $image = "{$folder}/{$filename}";
+            } else {
+                $gallery[] = "{$folder}/{$filename}";
+            }
+        }
+
+        return ['image' => $image, 'gallery' => $gallery];
     }
 
     private function toBool(mixed $value, bool $default): bool
@@ -210,12 +248,15 @@ class ProductBulkImport implements ToCollection, WithHeadingRow
             }
 
             $brandId = $this->findOrCreateBrandId($row->get('brand'));
+            $images = $this->storeRowImages($this->imagesByRow[$excelRow] ?? []);
 
             $product = Product::create([
                 'category_id' => $categoryId,
                 'brand_id' => $brandId,
                 'sku' => $sku,
                 'name' => $name,
+                'image' => $images['image'],
+                'gallery' => !empty($images['gallery']) ? $images['gallery'] : null,
                 'name_bn' => $row->get('name_bengali') ?: null,
                 'description' => $row->get('description') ?: null,
                 'short_description' => $row->get('short_description') ?: null,

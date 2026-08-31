@@ -71,6 +71,12 @@ export default function CreateProductPage() {
   const [isDownloadingTemplate, setIsDownloadingTemplate] = useState(false);
   const [bulkUploadFile, setBulkUploadFile] = useState<File | null>(null);
   const [isBulkUploading, setIsBulkUploading] = useState(false);
+  const [bulkUploadProgress, setBulkUploadProgress] = useState(0);
+  // Progress is a network-transfer percentage (axios onUploadProgress) — once it hits 100 the
+  // bytes are fully sent, but the server may still be parsing rows/extracting images for a bit
+  // longer with no signal of its own, so that stretch shows as an indeterminate "Processing..."
+  // state rather than a percentage that can't actually move.
+  const [bulkUploadPhase, setBulkUploadPhase] = useState<'idle' | 'uploading' | 'processing'>('idle');
   const [bulkUploadResult, setBulkUploadResult] = useState<{
     batch: string;
     created: number;
@@ -299,8 +305,13 @@ export default function CreateProductPage() {
     }
     setIsBulkUploading(true);
     setBulkUploadResult(null);
+    setBulkUploadProgress(0);
+    setBulkUploadPhase('uploading');
     try {
-      const response = await adminService.bulkUploadProducts(bulkUploadFile);
+      const response = await adminService.bulkUploadProducts(bulkUploadFile, (percent) => {
+        setBulkUploadProgress(percent);
+        if (percent >= 100) setBulkUploadPhase('processing');
+      });
       const result = response.data?.data;
       if (result) {
         setBulkUploadResult(result);
@@ -315,6 +326,7 @@ export default function CreateProductPage() {
       toast.error(getErrorMessage(error));
     } finally {
       setIsBulkUploading(false);
+      setBulkUploadPhase('idle');
     }
   };
 
@@ -322,6 +334,8 @@ export default function CreateProductPage() {
     setIsBulkUploadModalOpen(false);
     setBulkUploadFile(null);
     setBulkUploadResult(null);
+    setBulkUploadProgress(0);
+    setBulkUploadPhase('idle');
   };
 
   // Pure — takes a File directly so both the <input> picker and the drop zone can share the
@@ -1414,6 +1428,11 @@ export default function CreateProductPage() {
               to use, and the <strong>Instructions</strong> sheet explains every column.
             </p>
             <p>
+              To add photos, insert the actual picture directly into the <strong>Image 1</strong>–
+              <strong>Image 7</strong> cells (not a URL) — Image 1 becomes the main image, the rest
+              become the gallery. Leave them empty to add photos later instead.
+            </p>
+            <p>
               Every product created this way is saved as <strong>Inactive</strong> and tagged{' '}
               <Badge variant="info">Bulk Upload</Badge> — none of them appear on the storefront
               until you open it from the Products list and switch it Active.
@@ -1436,11 +1455,12 @@ export default function CreateProductPage() {
             <input
               type="file"
               accept=".xlsx,.xls,.csv"
+              disabled={isBulkUploading}
               onChange={(e) => {
                 setBulkUploadFile(e.target.files?.[0] || null);
                 setBulkUploadResult(null);
               }}
-              className="block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-sky-50 file:text-sky-700 file:font-medium hover:file:bg-sky-100"
+              className="block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-sky-50 file:text-sky-700 file:font-medium hover:file:bg-sky-100 disabled:opacity-50"
             />
             <div className="flex justify-end">
               <Button type="button" onClick={handleBulkUpload} isLoading={isBulkUploading} disabled={!bulkUploadFile}>
@@ -1448,6 +1468,25 @@ export default function CreateProductPage() {
                 Upload
               </Button>
             </div>
+
+            {bulkUploadPhase !== 'idle' && (
+              <div>
+                <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                  <span>{bulkUploadPhase === 'uploading' ? 'Uploading…' : 'Processing rows…'}</span>
+                  {bulkUploadPhase === 'uploading' && <span>{bulkUploadProgress}%</span>}
+                </div>
+                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                  {bulkUploadPhase === 'uploading' ? (
+                    <div
+                      className="h-full bg-sky-500 rounded-full transition-all duration-150"
+                      style={{ width: `${bulkUploadProgress}%` }}
+                    />
+                  ) : (
+                    <div className="h-full w-full bg-sky-500 rounded-full animate-pulse" />
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {bulkUploadResult && (
