@@ -652,6 +652,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
             // an :id value.
             Route::get('/bulk-upload/template', [ProductBulkUploadController::class, 'template'])->middleware('permission:manage_products,create_products');
             Route::post('/bulk-upload', [ProductBulkUploadController::class, 'import'])->middleware('permission:manage_products,create_products');
+            Route::post('/bulk-delete', [AdminController::class, 'adminProductBulkDelete'])->middleware('permission:manage_products,delete_products');
             Route::post('/', [AdminController::class, 'adminProductStore'])->middleware('permission:manage_products,create_products');
             Route::get('/{id}', [AdminController::class, 'adminProductShow'])->middleware('permission:manage_products,view_products');
             Route::put('/{id}', [AdminController::class, 'adminProductUpdate'])->middleware('permission:manage_products,edit_products,manage_inventory');

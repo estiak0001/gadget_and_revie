@@ -84,6 +84,13 @@ function ProductsPageContent() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [historyProduct, setHistoryProduct] = useState<Product | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Bulk selection (table view) — most useful right after a bulk upload, to clear out rows
+  // that turned out unwanted, but works from any tab.
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const selectAllCheckboxRef = React.useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<'all' | 'active' | 'inactive' | 'draft' | 'bulk-upload' | 'low-stock' | 'out-of-stock'>('all');
   const [togglingFeaturedId, setTogglingFeaturedId] = useState<number | null>(null);
   // Set once from the URL on first load (arriving via "Review this batch in Products" straight
@@ -186,6 +193,51 @@ function ProductsPageContent() {
   useEffect(() => {
     fetchProducts();
   }, [fetchProducts]);
+
+  // Whenever the visible row set changes (tab/page/filter/refetch), any prior selection no
+  // longer necessarily matches what's on screen — clear it rather than risk deleting rows the
+  // admin can no longer see.
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [products]);
+
+  useEffect(() => {
+    if (selectAllCheckboxRef.current) {
+      const allSelected = products.length > 0 && selectedIds.size === products.length;
+      selectAllCheckboxRef.current.indeterminate = selectedIds.size > 0 && !allSelected;
+    }
+  }, [selectedIds, products]);
+
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) =>
+      prev.size === products.length ? new Set() : new Set(products.map((p) => p.id))
+    );
+  };
+
+  const toggleSelectOne = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleBulkDelete = async () => {
+    setIsBulkDeleting(true);
+    try {
+      const res = await adminService.bulkDeleteProducts(Array.from(selectedIds));
+      toast.success(res.data.data?.deleted ? `${res.data.data.deleted} product(s) deleted` : 'Products deleted');
+      setIsBulkDeleteModalOpen(false);
+      setSelectedIds(new Set());
+      fetchProducts();
+      fetchStats();
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
 
   const handleSearch = () => {
     setCurrentPage(1);
@@ -561,6 +613,24 @@ function ProductsPageContent() {
         </CardContent>
       </Card>
 
+      {/* Bulk Selection Toolbar */}
+      {selectedIds.size > 0 && viewMode === 'table' && (
+        <Card className="mb-4 border-red-200 bg-red-50/60">
+          <CardContent className="p-3 flex items-center justify-between">
+            <p className="text-sm font-medium text-red-800">{selectedIds.size} selected</p>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
+                Clear
+              </Button>
+              <Button variant="danger" size="sm" onClick={() => setIsBulkDeleteModalOpen(true)}>
+                <Trash2 className="w-4 h-4 mr-1.5" />
+                Delete Selected
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Products List */}
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
@@ -585,6 +655,16 @@ function ProductsPageContent() {
               <table className="w-full">
                 <thead className="bg-gray-50 border-y">
                   <tr>
+                    <th className="w-10 px-4 py-2">
+                      <input
+                        ref={selectAllCheckboxRef}
+                        type="checkbox"
+                        checked={products.length > 0 && selectedIds.size === products.length}
+                        onChange={toggleSelectAll}
+                        className="rounded border-gray-300"
+                        aria-label="Select all products on this page"
+                      />
+                    </th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
                     <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
@@ -596,7 +676,16 @@ function ProductsPageContent() {
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {products.map((product) => (
-                    <tr key={product.id} className="hover:bg-gray-50 transition-colors">
+                    <tr key={product.id} className={`hover:bg-gray-50 transition-colors ${selectedIds.has(product.id) ? 'bg-red-50/40' : ''}`}>
+                      <td className="px-4 py-2.5">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(product.id)}
+                          onChange={() => toggleSelectOne(product.id)}
+                          className="rounded border-gray-300"
+                          aria-label={`Select ${product.name}`}
+                        />
+                      </td>
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-3">
                           <div className="w-9 h-9 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden shrink-0">
@@ -1007,6 +1096,18 @@ function ProductsPageContent() {
         confirmLabel="Delete Product"
         variant="danger"
         isLoading={isDeleting}
+      />
+
+      {/* Bulk Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={isBulkDeleteModalOpen}
+        onClose={() => setIsBulkDeleteModalOpen(false)}
+        onConfirm={handleBulkDelete}
+        title="Delete Selected Products"
+        message={`Are you sure you want to delete ${selectedIds.size} product(s)? This action cannot be undone.`}
+        confirmLabel={`Delete ${selectedIds.size} Product(s)`}
+        variant="danger"
+        isLoading={isBulkDeleting}
       />
 
       {historyProduct && (

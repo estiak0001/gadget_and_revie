@@ -3577,6 +3577,36 @@ class AdminController extends BaseController
     }
 
     /**
+     * Bulk-delete products (admin) — same soft-delete as adminProductDelete() above, just for
+     * many rows at once (e.g. clearing out a bulk-upload batch that turned out unwanted).
+     * Capped at 200 per request and silently skips any id that no longer exists rather than
+     * failing the whole batch over one already-deleted row.
+     */
+    public function adminProductBulkDelete(Request $request): JsonResponse
+    {
+        $request->validate([
+            'ids' => 'required|array|min:1|max:200',
+            'ids.*' => 'integer',
+        ]);
+
+        $admin = $request->user();
+        $products = Product::whereIn('id', $request->ids)->get();
+
+        foreach ($products as $product) {
+            AuditLog::log($admin, 'delete_product', 'Product', $product->id, $product->toArray(), null, 'Product deleted by admin (bulk)');
+            $product->delete();
+        }
+
+        $deleted = $products->count();
+        $skipped = count($request->ids) - $deleted;
+
+        return $this->success(
+            ['deleted' => $deleted, 'skipped' => $skipped],
+            "{$deleted} product(s) deleted" . ($skipped > 0 ? ", {$skipped} were already gone" : '')
+        );
+    }
+
+    /**
      * Toggle product active status (admin)
      */
     public function adminProductToggleStatus(Request $request, int $id): JsonResponse

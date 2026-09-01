@@ -206,6 +206,8 @@ export const adminService = {
     return api.put(`/admin/products/${id}`, data);
   },
   deleteProduct: (id: number) => api.delete(`/admin/products/${id}`),
+  bulkDeleteProducts: (ids: number[]) =>
+    api.post<ApiResponse<{ deleted: number; skipped: number }>>('/admin/products/bulk-delete', { ids }),
   toggleProductStatus: (id: number) => api.put(`/admin/products/${id}/toggle-status`),
   toggleProductFeatured: (id: number) => api.put(`/admin/products/${id}/toggle-featured`),
   adjustStock: (id: number, data: { type: string; quantity: number; reason?: string }) =>
