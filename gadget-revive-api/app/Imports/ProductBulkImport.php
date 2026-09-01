@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Maatwebsite\Excel\Concerns\ToCollection;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
+use Maatwebsite\Excel\Concerns\WithMultipleSheets;
 
 /**
  * Parses the bulk-upload spreadsheet and creates products from it. Every product created here
@@ -22,14 +23,41 @@ use Maatwebsite\Excel\Concerns\WithHeadingRow;
  * throw away the 40 good rows around it. Each row's outcome (created or the reason it failed)
  * is collected and handed back to the controller for the on-screen summary.
  *
+ * Implements WithMultipleSheets solely to restrict processing to the "Products" sheet — without
+ * it, maatwebsite/excel runs this SAME import against every sheet in the uploaded workbook
+ * (Reader::getWorksheets(): "each worksheet [gets] the same import class" when
+ * WithMultipleSheets isn't implemented), so the Categories/Brands/Instructions reference sheets
+ * were silently being parsed as product rows too — every one of their rows failing validation
+ * and inflating the failure count, with row numbers colliding across sheets since each sheet
+ * counts its own rows from 1. Only reproduced against a real multi-sheet template with enough
+ * rows to notice; the earlier single-sheet CSV test files never touched this path at all.
+ *
  * Images pasted directly into the "Image 1".."Image 7" cells (real embedded pictures, not
  * URLs) are extracted separately by ProductBulkImageExtractor before this class ever runs —
  * see $imagesByRow — since ToCollection/WithHeadingRow only ever reads cell text, never
  * floating drawings. Image 1 becomes the main image, 2-7 become the gallery, in column order;
- * a row with no Image cells filled in simply gets no image, same as before this existed.
+ * a row with no Image cells filled in simply gets no image, same as before this existed. Every
+ * image is stored exactly as extracted — never resized, cropped, or re-encoded.
+ *
+ * "Description" (plain multi-line text with •/- bullets) is reformatted into HTML — see
+ * formatDescriptionHtml() — since that field is rendered as real HTML everywhere else in this
+ * app. "Specifications" (optionally grouped, "Group:" header + indented "• Key: Value" lines,
+ * or just plain "Key: Value" lines) is parsed into Product.specifications' flat map — see
+ * parseSpecifications().
  */
-class ProductBulkImport implements ToCollection, WithHeadingRow
+class ProductBulkImport implements ToCollection, WithHeadingRow, WithMultipleSheets
 {
+    /**
+     * Restricts the import to just the "Products" sheet — see the class docblock for why this
+     * is required, not optional. A plain .csv upload has no sheets/worksheet concept at all
+     * (Reader::getWorksheets() special-cases that before this interface is ever consulted), so
+     * this has no effect there.
+     */
+    public function sheets(): array
+    {
+        return ['Products' => $this];
+    }
+
     /** @var array<int, array{row:int, name:?string, status:string, message:?string}> */
     public array $results = [];
 
@@ -136,6 +164,113 @@ class ProductBulkImport implements ToCollection, WithHeadingRow
         }
 
         return ['image' => $image, 'gallery' => $gallery];
+    }
+
+    /**
+     * Converts the plain multi-line "Description" text (the way it's naturally typed/pasted —
+     * a paragraph, a blank line, then "•"/"-" bullet lines, another blank line, etc.) into the
+     * HTML the description field is actually rendered as everywhere else (the product form's
+     * RichTextEditor, and dangerouslySetInnerHTML on the admin product view and the storefront
+     * product page). A bare "\n" collapses to a single space in HTML, so without this a nicely
+     * laid-out bulk-upload description would render as one squashed line.
+     */
+    private function formatDescriptionHtml(?string $raw): ?string
+    {
+        if (empty($raw)) {
+            return null;
+        }
+
+        $html = '';
+        $inList = false;
+
+        foreach (preg_split('/\r\n|\r|\n/', $raw) as $line) {
+            $line = trim($line);
+
+            if ($line === '') {
+                if ($inList) {
+                    $html .= '</ul>';
+                    $inList = false;
+                }
+                continue;
+            }
+
+            $stripped = preg_replace('/^[•\-*]\s*/u', '', $line);
+            $hadBullet = $stripped !== $line;
+
+            if ($hadBullet) {
+                if (!$inList) {
+                    $html .= '<ul>';
+                    $inList = true;
+                }
+                $html .= '<li>' . e($stripped) . '</li>';
+            } else {
+                if ($inList) {
+                    $html .= '</ul>';
+                    $inList = false;
+                }
+                $html .= '<p>' . e($line) . '</p>';
+            }
+        }
+
+        if ($inList) {
+            $html .= '</ul>';
+        }
+
+        return $html !== '' ? $html : null;
+    }
+
+    /**
+     * Parses the "Specifications" column into the flat key-value map Product.specifications
+     * expects — the exact shape adminProductStore already builds from the product form's spec-
+     * list UI. Understands the grouped format real spec sheets tend to use:
+     *   Display Features:
+     *     • Display Size: 22"
+     *     • Panel Type: VA
+     *   Connectivity:
+     *     • HDMI: HDMI(v1.4) x 1
+     * as well as plain "Key: Value" lines with no grouping/bullets at all. A spec found under a
+     * group is prefixed "Group - Key" — two different groups both happening to have, say, an
+     * "Others" line is common in real spec sheets, and without the prefix the second one would
+     * silently overwrite the first in the flat map.
+     */
+    private function parseSpecifications(?string $raw): ?array
+    {
+        if (empty($raw)) {
+            return null;
+        }
+
+        $specs = [];
+        $currentGroup = null;
+
+        foreach (preg_split('/\r\n|\r|\n/', $raw) as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+
+            $stripped = preg_replace('/^[•\-*]\s*/u', '', $line);
+            $hadBullet = $stripped !== $line;
+
+            if (!$hadBullet && preg_match('/^(.+):\s*$/u', $line, $m)) {
+                // A bare "Label:" with nothing after it — a group header, not a spec itself.
+                $currentGroup = trim($m[1]);
+                continue;
+            }
+
+            if (!str_contains($stripped, ':')) {
+                continue;
+            }
+
+            [$key, $value] = array_map('trim', explode(':', $stripped, 2));
+            if ($key === '' || $value === '') {
+                continue;
+            }
+
+            $label = $currentGroup ? "{$currentGroup} - {$key}" : $key;
+            $specs[$label] = $value;
+        }
+
+        return !empty($specs) ? $specs : null;
     }
 
     private function toBool(mixed $value, bool $default): bool
@@ -258,8 +393,9 @@ class ProductBulkImport implements ToCollection, WithHeadingRow
                 'image' => $images['image'],
                 'gallery' => !empty($images['gallery']) ? $images['gallery'] : null,
                 'name_bn' => $row->get('name_bengali') ?: null,
-                'description' => $row->get('description') ?: null,
+                'description' => $this->formatDescriptionHtml($row->get('description')),
                 'short_description' => $row->get('short_description') ?: null,
+                'specifications' => $this->parseSpecifications($row->get('specifications')),
                 'price' => (float) $row->get('price'),
                 'discount_price' => $row->get('discount_price') !== null && $row->get('discount_price') !== ''
                     ? (float) $row->get('discount_price') : null,

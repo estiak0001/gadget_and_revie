@@ -1430,7 +1430,14 @@ export default function CreateProductPage() {
             <p>
               To add photos, insert the actual picture directly into the <strong>Image 1</strong>–
               <strong>Image 7</strong> cells (not a URL) — Image 1 becomes the main image, the rest
-              become the gallery. Leave them empty to add photos later instead.
+              become the gallery, kept at their original size and quality. Leave them empty to add
+              photos later instead.
+            </p>
+            <p>
+              <strong>Description</strong> supports plain-text paragraphs and •/- bullet lines —
+              they're turned into proper formatting automatically. <strong>Specifications</strong>{' '}
+              accepts one "Key: Value" per line, optionally grouped under a heading line (see the
+              Instructions sheet for an example).
             </p>
             <p>
               Every product created this way is saved as <strong>Inactive</strong> and tagged{' '}
