@@ -289,7 +289,10 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({ value, onChange, placeh
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
-      StarterKit,
+      // Tiptap v3's StarterKit bundles its own Link extension by default — without disabling
+      // it here, this file's own Link.configure() below registers a second one under the same
+      // name ("Duplicate extension names found: ['link']" in the console).
+      StarterKit.configure({ link: false }),
       Link.configure({
         openOnClick: false,
         HTMLAttributes: { class: 'text-blue-600 underline cursor-pointer' },
