@@ -3286,7 +3286,10 @@ class AdminController extends BaseController
             'vendor_profile_id' => 'nullable|exists:vendor_profiles,id',
             'category_id' => 'required|exists:product_categories,id',
             'brand_id' => 'nullable|exists:product_brands,id',
-            'sku' => 'nullable|string|max:191|unique:products,sku',
+            // whereNull('deleted_at'): a soft-deleted product's SKU must be reusable — the DB no
+            // longer enforces this itself (see 2026_09_01_070000_drop_unique_constraints_from_
+            // products_table.php), so the app-level check has to be the one that's soft-delete-aware.
+            'sku' => ['nullable', 'string', 'max:191', Rule::unique('products', 'sku')->whereNull('deleted_at')],
             'name' => 'required|string|max:255',
             'name_bn' => 'nullable|string|max:255',
             'description' => 'nullable|string',
@@ -3386,7 +3389,7 @@ class AdminController extends BaseController
             'vendor_profile_id' => 'nullable|exists:vendor_profiles,id',
             'category_id' => 'sometimes|exists:product_categories,id',
             'brand_id' => 'nullable|exists:product_brands,id',
-            'sku' => 'nullable|string|max:191|unique:products,sku,' . $id,
+            'sku' => ['nullable', 'string', 'max:191', Rule::unique('products', 'sku')->ignore($id)->whereNull('deleted_at')],
             'name' => 'sometimes|string|max:255',
             'name_bn' => 'nullable|string|max:255',
             'description' => 'nullable|string',
