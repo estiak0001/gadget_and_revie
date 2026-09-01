@@ -3140,8 +3140,25 @@ class AdminController extends BaseController
 
     public function adminProducts(Request $request): JsonResponse
     {
-        $query = Product::with(['category', 'vendorProfile', 'brand', 'creator:id,name']);
+        $query = $this->applyProductFilters(Product::with(['category', 'vendorProfile', 'brand', 'creator:id,name']), $request);
 
+        // Sort
+        $sortBy = $request->get('sort_by', 'created_at');
+        $sortOrder = $request->get('sort_order', 'desc');
+        $query->orderBy($sortBy, $sortOrder);
+
+        $products = $query->paginate($request->get('per_page', 15));
+
+        return $this->paginated($products);
+    }
+
+    /**
+     * Every filter adminProducts() above supports, factored out so "select all N matching"
+     * bulk actions (see adminProductBulkDelete()) apply exactly the same WHERE clauses the
+     * admin is currently looking at — not a second, drifting copy of this logic.
+     */
+    private function applyProductFilters(\Illuminate\Database\Eloquent\Builder $query, Request $request): \Illuminate\Database\Eloquent\Builder
+    {
         // Filter by category
         if ($request->has('category_id')) {
             $query->where('category_id', $request->category_id);
@@ -3219,14 +3236,7 @@ class AdminController extends BaseController
             });
         }
 
-        // Sort
-        $sortBy = $request->get('sort_by', 'created_at');
-        $sortOrder = $request->get('sort_order', 'desc');
-        $query->orderBy($sortBy, $sortOrder);
-
-        $products = $query->paginate($request->get('per_page', 15));
-
-        return $this->paginated($products);
+        return $query;
     }
 
     /**
@@ -3584,12 +3594,32 @@ class AdminController extends BaseController
      */
     public function adminProductBulkDelete(Request $request): JsonResponse
     {
+        $admin = $request->user();
+
+        // "Select all N matching" from the products list — re-applies the exact same filters
+        // the admin's current tab/search/filter combo is using (applyProductFilters(), shared
+        // with adminProducts()) rather than trusting a giant client-sent id list. This is what
+        // makes deleting more than one page's worth possible in a single action.
+        if ($request->boolean('select_all')) {
+            $query = $this->applyProductFilters(Product::query(), $request);
+
+            $deleted = 0;
+            $query->chunkById(200, function ($products) use ($admin, &$deleted) {
+                foreach ($products as $product) {
+                    AuditLog::log($admin, 'delete_product', 'Product', $product->id, $product->toArray(), null, 'Product deleted by admin (bulk, select all matching)');
+                    $product->delete();
+                    $deleted++;
+                }
+            });
+
+            return $this->success(['deleted' => $deleted, 'skipped' => 0], "{$deleted} product(s) deleted");
+        }
+
         $request->validate([
-            'ids' => 'required|array|min:1|max:200',
+            'ids' => 'required|array|min:1|max:500',
             'ids.*' => 'integer',
         ]);
 
-        $admin = $request->user();
         $products = Product::whereIn('id', $request->ids)->get();
 
         foreach ($products as $product) {
@@ -3597,12 +3627,12 @@ class AdminController extends BaseController
             $product->delete();
         }
 
-        $deleted = $products->count();
-        $skipped = count($request->ids) - $deleted;
+        $deletedCount = $products->count();
+        $skipped = count($request->ids) - $deletedCount;
 
         return $this->success(
-            ['deleted' => $deleted, 'skipped' => $skipped],
-            "{$deleted} product(s) deleted" . ($skipped > 0 ? ", {$skipped} were already gone" : '')
+            ['deleted' => $deletedCount, 'skipped' => $skipped],
+            "{$deletedCount} product(s) deleted" . ($skipped > 0 ? ", {$skipped} were already gone" : '')
         );
     }
 

@@ -41,7 +41,7 @@ import {
   HistoryModal,
   ActionsMenu,
 } from '@/components/ui';
-import { Product, ProductCategory, PaginatedResponse } from '@/types';
+import { Product, ProductCategory, ProductBrand, PaginatedResponse } from '@/types';
 import { formatCurrency, getErrorMessage } from '@/lib/utils';
 import adminService from '@/lib/adminService';
 import toast from 'react-hot-toast';
@@ -63,12 +63,14 @@ function ProductsPageContent() {
   // Data state
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
+  const [brands, setBrands] = useState<ProductBrand[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(false);
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
+  const [filterBrand, setFilterBrand] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterStock, setFilterStock] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -88,6 +90,9 @@ function ProductsPageContent() {
   // Bulk selection (table view) — most useful right after a bulk upload, to clear out rows
   // that turned out unwanted, but works from any tab.
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  // True once the admin explicitly expands past "everything on this page" to every product
+  // matching the current filters, across all pages — see handleSelectAllMatching().
+  const [selectAllMatching, setSelectAllMatching] = useState(false);
   const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const selectAllCheckboxRef = React.useRef<HTMLInputElement>(null);
@@ -136,27 +141,36 @@ function ProductsPageContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Shared by the list fetch and "select all N matching" bulk-delete, so a select-all can
+  // never target a different set of rows than what's actually on screen.
+  const buildFilterParams = useCallback((): Record<string, string | number> => {
+    const params: Record<string, string | number> = {};
+    if (searchQuery) params.search = searchQuery;
+    if (filterCategory) params.category_id = filterCategory;
+    if (filterBrand) params.brand_id = filterBrand;
+    if (filterStatus) params.is_active = filterStatus === 'active' ? 'true' : 'false';
+    if (filterStock) params.stock_status = filterStock;
+    if (activeTab === 'active') params.is_active = 'true';
+    if (activeTab === 'inactive') params.is_active = 'false';
+    if (activeTab === 'draft') params.is_draft = 'true';
+    if (activeTab === 'bulk-upload') {
+      params.source = 'bulk_import';
+      if (filterBatch) params.bulk_upload_batch = filterBatch;
+    }
+    if (activeTab === 'low-stock') params.stock_status = 'low';
+    if (activeTab === 'out-of-stock') params.stock_status = 'out';
+    return params;
+  }, [searchQuery, filterCategory, filterBrand, filterStatus, filterStock, activeTab, filterBatch]);
+
   const fetchProducts = useCallback(async () => {
     setIsLoading(true);
     setError(false);
     try {
       const params: Record<string, string | number> = {
+        ...buildFilterParams(),
         page: currentPage,
         per_page: perPage,
       };
-      if (searchQuery) params.search = searchQuery;
-      if (filterCategory) params.category_id = filterCategory;
-      if (filterStatus) params.is_active = filterStatus === 'active' ? 'true' : 'false';
-      if (filterStock) params.stock_status = filterStock;
-      if (activeTab === 'active') params.is_active = 'true';
-      if (activeTab === 'inactive') params.is_active = 'false';
-      if (activeTab === 'draft') params.is_draft = 'true';
-      if (activeTab === 'bulk-upload') {
-        params.source = 'bulk_import';
-        if (filterBatch) params.bulk_upload_batch = filterBatch;
-      }
-      if (activeTab === 'low-stock') params.stock_status = 'low';
-      if (activeTab === 'out-of-stock') params.stock_status = 'out';
 
       const response = await adminService.getProducts(params);
       setProducts(response.data.data);
@@ -170,7 +184,7 @@ function ProductsPageContent() {
     } finally {
       setIsLoading(false);
     }
-  }, [currentPage, perPage, searchQuery, filterCategory, filterStatus, filterStock, activeTab, filterBatch]);
+  }, [currentPage, perPage, buildFilterParams]);
 
   const fetchCategories = useCallback(async () => {
     try {
@@ -182,9 +196,20 @@ function ProductsPageContent() {
     }
   }, []);
 
+  const fetchBrands = useCallback(async () => {
+    try {
+      const response = await adminService.getProductBrands({ per_page: 200 });
+      setBrands(response.data.data?.data || []);
+    } catch (err) {
+      console.error('Error fetching brands:', err);
+      setBrands([]);
+    }
+  }, []);
+
   useEffect(() => {
     fetchCategories();
-  }, [fetchCategories]);
+    fetchBrands();
+  }, [fetchCategories, fetchBrands]);
 
   useEffect(() => {
     fetchStats();
@@ -199,37 +224,53 @@ function ProductsPageContent() {
   // admin can no longer see.
   useEffect(() => {
     setSelectedIds(new Set());
+    setSelectAllMatching(false);
   }, [products]);
 
   useEffect(() => {
     if (selectAllCheckboxRef.current) {
       const allSelected = products.length > 0 && selectedIds.size === products.length;
-      selectAllCheckboxRef.current.indeterminate = selectedIds.size > 0 && !allSelected;
+      selectAllCheckboxRef.current.indeterminate = !selectAllMatching && selectedIds.size > 0 && !allSelected;
     }
-  }, [selectedIds, products]);
+  }, [selectedIds, products, selectAllMatching]);
 
   const toggleSelectAll = () => {
+    setSelectAllMatching(false);
     setSelectedIds((prev) =>
       prev.size === products.length ? new Set() : new Set(products.map((p) => p.id))
     );
   };
 
   const toggleSelectOne = (id: number) => {
+    // Unchecking a single row while "all N matching" is active falls back to a normal,
+    // page-only selection (starting from everything on this page) rather than trying to
+    // express "all matching, except this one" — simpler to reason about and to delete safely.
+    setSelectAllMatching(false);
     setSelectedIds((prev) => {
-      const next = new Set(prev);
+      const next = new Set(prev.size === 0 ? products.map((p) => p.id) : prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
   };
 
+  // Expands the selection from "everything on this page" to every product matching the
+  // current tab/search/filters, across all pages — reuses buildFilterParams() so it can never
+  // target a different set of rows than what's actually being viewed.
+  const handleSelectAllMatching = () => {
+    setSelectAllMatching(true);
+  };
+
   const handleBulkDelete = async () => {
     setIsBulkDeleting(true);
     try {
-      const res = await adminService.bulkDeleteProducts(Array.from(selectedIds));
+      const res = selectAllMatching
+        ? await adminService.bulkDeleteProductsMatching(buildFilterParams())
+        : await adminService.bulkDeleteProducts(Array.from(selectedIds));
       toast.success(res.data.data?.deleted ? `${res.data.data.deleted} product(s) deleted` : 'Products deleted');
       setIsBulkDeleteModalOpen(false);
       setSelectedIds(new Set());
+      setSelectAllMatching(false);
       fetchProducts();
       fetchStats();
     } catch (err) {
@@ -576,7 +617,7 @@ function ProductsPageContent() {
 
             {/* Expanded Filters */}
             {showFilters && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4 pt-4 border-t">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-4 pt-4 border-t">
                 <Select
                   options={[
                     { value: '', label: 'All Categories' },
@@ -587,6 +628,17 @@ function ProductsPageContent() {
                   ]}
                   value={filterCategory}
                   onChange={(e) => { setFilterCategory(e.target.value); setCurrentPage(1); }}
+                />
+                <Select
+                  options={[
+                    { value: '', label: 'All Brands' },
+                    ...brands.map((brand) => ({
+                      value: brand.id,
+                      label: brand.name,
+                    })),
+                  ]}
+                  value={filterBrand}
+                  onChange={(e) => { setFilterBrand(e.target.value); setCurrentPage(1); }}
                 />
                 <Select
                   options={[
@@ -616,17 +668,31 @@ function ProductsPageContent() {
       {/* Bulk Selection Toolbar */}
       {selectedIds.size > 0 && viewMode === 'table' && (
         <Card className="mb-4 border-red-200 bg-red-50/60">
-          <CardContent className="p-3 flex items-center justify-between">
-            <p className="text-sm font-medium text-red-800">{selectedIds.size} selected</p>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>
-                Clear
-              </Button>
-              <Button variant="danger" size="sm" onClick={() => setIsBulkDeleteModalOpen(true)}>
-                <Trash2 className="w-4 h-4 mr-1.5" />
-                Delete Selected
-              </Button>
+          <CardContent className="p-3 flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-red-800">
+                {selectAllMatching ? `All ${totalProducts} matching selected` : `${selectedIds.size} selected`}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={() => { setSelectedIds(new Set()); setSelectAllMatching(false); }}>
+                  Clear
+                </Button>
+                <Button variant="danger" size="sm" onClick={() => setIsBulkDeleteModalOpen(true)}>
+                  <Trash2 className="w-4 h-4 mr-1.5" />
+                  Delete {selectAllMatching ? `All ${totalProducts}` : 'Selected'}
+                </Button>
+              </div>
             </div>
+            {/* Only offered once every row on the current page is checked and there's more
+                than one page to expand into. */}
+            {!selectAllMatching && selectedIds.size === products.length && totalProducts > products.length && (
+              <p className="text-sm text-red-700">
+                All {products.length} products on this page are selected.{' '}
+                <button type="button" className="font-medium underline hover:no-underline" onClick={handleSelectAllMatching}>
+                  Select all {totalProducts} products matching this view instead
+                </button>
+              </p>
+            )}
           </CardContent>
         </Card>
       )}
@@ -1104,8 +1170,12 @@ function ProductsPageContent() {
         onClose={() => setIsBulkDeleteModalOpen(false)}
         onConfirm={handleBulkDelete}
         title="Delete Selected Products"
-        message={`Are you sure you want to delete ${selectedIds.size} product(s)? This action cannot be undone.`}
-        confirmLabel={`Delete ${selectedIds.size} Product(s)`}
+        message={
+          selectAllMatching
+            ? `Are you sure you want to delete all ${totalProducts} products matching the current filters? This action cannot be undone.`
+            : `Are you sure you want to delete ${selectedIds.size} product(s)? This action cannot be undone.`
+        }
+        confirmLabel={selectAllMatching ? `Delete All ${totalProducts}` : `Delete ${selectedIds.size} Product(s)`}
         variant="danger"
         isLoading={isBulkDeleting}
       />

@@ -208,6 +208,10 @@ export const adminService = {
   deleteProduct: (id: number) => api.delete(`/admin/products/${id}`),
   bulkDeleteProducts: (ids: number[]) =>
     api.post<ApiResponse<{ deleted: number; skipped: number }>>('/admin/products/bulk-delete', { ids }),
+  // "Select all N matching" — deletes every product matching the given filters (same shape as
+  // getProducts' params) rather than a fixed id list, so it isn't capped by page size.
+  bulkDeleteProductsMatching: (filters: Record<string, string | number>) =>
+    api.post<ApiResponse<{ deleted: number; skipped: number }>>('/admin/products/bulk-delete', { select_all: true, ...filters }),
   toggleProductStatus: (id: number) => api.put(`/admin/products/${id}/toggle-status`),
   toggleProductFeatured: (id: number) => api.put(`/admin/products/${id}/toggle-featured`),
   adjustStock: (id: number, data: { type: string; quantity: number; reason?: string }) =>
