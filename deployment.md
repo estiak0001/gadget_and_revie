@@ -245,7 +245,13 @@ server {
     }
     location ~ /\. { deny all; }
 
-    client_max_body_size 50M;
+    # 50M was fine for text-only product uploads but rejects a real bulk-upload catalog with a
+    # photo per row well before it even reaches PHP — nginx returns 413 with no CORS headers at
+    # all (never reaches Laravel's HandleCors middleware), which the browser's console then
+    # misreports as a CORS failure rather than what's actually a body-size rejection. Raised
+    # alongside ProductBulkUploadController's own max:102400 validation rule and PHP's
+    # upload_max_filesize/post_max_size (both also 100M in php.ini).
+    client_max_body_size 100M;
 
     listen 443 ssl; # managed by Certbot
     ssl_certificate /etc/letsencrypt/live/gadgetandrevive.com/fullchain.pem;

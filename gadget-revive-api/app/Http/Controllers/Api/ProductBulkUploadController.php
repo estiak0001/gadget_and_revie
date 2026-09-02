@@ -34,7 +34,11 @@ class ProductBulkUploadController extends Controller
     public function import(Request $request): JsonResponse
     {
         $request->validate([
-            'file' => 'required|file|mimes:xlsx,xls,csv|max:10240',
+            // 10MB was fine for a text-only catalog but rejects a real one with a photo per
+            // row long before nginx or PHP's own upload limits ever come into play — raised to
+            // 100MB alongside those (nginx client_max_body_size, PHP upload_max_filesize/
+            // post_max_size — see deployment.md).
+            'file' => 'required|file|mimes:xlsx,xls,csv|max:102400',
         ]);
 
         // A large catalog file with several photos per row (hundreds of rows, thousands of
