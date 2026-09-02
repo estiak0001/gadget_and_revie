@@ -733,6 +733,41 @@ function ProductCard({ product: p, onWishlist, onCompare, onAddToCart, isWishlis
   );
 }
 
+/**
+ * The bulk-upload importer tags a spec parsed out from a grouped "Group:\n • Key: Value" block
+ * with a "Group - Key" name (see ProductBulkImport::parseSpecifications() on the API) — plain
+ * key-value maps entered by hand, or bulk-uploaded without any grouping, have no such prefix.
+ * Splits specifications into named segments when that prefix is present; a product with none
+ * (every previously-added product, since grouping didn't exist before) falls back to a single
+ * flat list exactly as it rendered before segments existed.
+ */
+function groupSpecifications(specifications?: Record<string, unknown>): { group: string | null; rows: [string, unknown][] }[] {
+  if (!specifications) return [];
+
+  const order: (string | null)[] = [];
+  const byGroup = new Map<string | null, [string, unknown][]>();
+
+  for (const [key, value] of Object.entries(specifications)) {
+    const sep = key.indexOf(' - ');
+    const group = sep > 0 ? key.slice(0, sep) : null;
+    const label = sep > 0 ? key.slice(sep + 3) : key;
+
+    if (!byGroup.has(group)) {
+      byGroup.set(group, []);
+      order.push(group);
+    }
+    byGroup.get(group)!.push([label, value]);
+  }
+
+  // No key had a "Group - " prefix at all — same flat shape every product rendered before
+  // segments existed, so the caller can treat this as "no segments" and skip section headers.
+  if (order.length === 1 && order[0] === null) {
+    return [{ group: null, rows: byGroup.get(null)! }];
+  }
+
+  return order.map((g) => ({ group: g, rows: byGroup.get(g)! }));
+}
+
 // ═════════════════════════════════════════════════
 //  PRODUCT DETAIL VIEW
 // ═════════════════════════════════════════════════
@@ -1110,24 +1145,33 @@ function ProductDetailView({ product: initialProduct }: { product: Product }) {
             )}
             {activeTab === 'specifications' && (
               product.specifications && Object.keys(product.specifications).length > 0 ? (
-                <div className="overflow-hidden rounded-xl border border-gray-200">
-                  <table className="w-full table-fixed text-sm">
-                    <tbody className="divide-y divide-gray-200">
-                      {Object.entries(product.specifications).map(([k, v], i) => (
-                        <tr key={k} className={i % 2 === 1 ? 'bg-gray-50' : 'bg-white'}>
-                          <th
-                            scope="row"
-                            className="w-1/3 sm:w-56 px-4 py-3 text-left align-top font-medium text-gray-500 break-words"
-                          >
-                            {k}
-                          </th>
-                          <td className="px-4 py-3 align-top text-gray-900 break-words whitespace-normal leading-relaxed">
-                            {String(v)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="space-y-5">
+                  {groupSpecifications(product.specifications).map(({ group, rows }) => (
+                    <div key={group ?? '__flat'}>
+                      {group && (
+                        <h3 className="text-sm font-semibold text-gray-900 mb-2">{group}</h3>
+                      )}
+                      <div className="overflow-hidden rounded-xl border border-gray-200">
+                        <table className="w-full table-fixed text-sm">
+                          <tbody className="divide-y divide-gray-200">
+                            {rows.map(([k, v], i) => (
+                              <tr key={k} className={i % 2 === 1 ? 'bg-gray-50' : 'bg-white'}>
+                                <th
+                                  scope="row"
+                                  className="w-1/3 sm:w-56 px-4 py-3 text-left align-top font-medium text-gray-500 break-words"
+                                >
+                                  {k}
+                                </th>
+                                <td className="px-4 py-3 align-top text-gray-900 break-words whitespace-normal leading-relaxed">
+                                  {String(v)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : (
                 <p className="text-gray-500">No specifications available.</p>
