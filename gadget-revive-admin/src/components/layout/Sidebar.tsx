@@ -83,9 +83,13 @@ const navigation: NavSection[] = [
       },
       {
         title: 'Products',
-        href: '/products',
         icon: <Package className="w-5 h-5" />,
         permissions: ['manage_products', 'create_products', 'edit_products', 'delete_products', 'manage_inventory'],
+        children: [
+          { title: 'All Products', href: '/products' },
+          { title: 'Add Product', href: '/products/create' },
+          { title: 'Bulk Import', href: '/products/bulk-import' },
+        ],
       },
     ],
   },
