@@ -5,7 +5,7 @@ import {
   DashboardStats, PaginatedResponse, ApiResponse, ServiceIntake,
   Expense, ExpenseCategory, ExpenseReport, Supplier, PurchaseOrder,
   ChartOfAccount, JournalEntry, TrialBalance, IncomeStatement, BalanceSheet, AccountLedger, CashPosition, CashBook,
-  PendingSyncSummary, Investor, Investment, CustomInvoice, ProductSerial, PurchaseProductHistory, PurchaseSerialHistoryEntry,
+  PendingSyncSummary, Investor, Investment, CustomInvoice, ProductSerial, ScrapedProduct, PurchaseProductHistory, PurchaseSerialHistoryEntry,
   SmsLog, SmsConnection, SmsCampaign, SmsBalance, SmsUsageStats,
   Quotation, QuotationProductSearchResult, QuotationTemplate, QuotationTemplateType,
 } from '@/types';
@@ -237,6 +237,23 @@ export const adminService = {
         : undefined,
     });
   },
+
+  // Scraped Products (staging table an external scraping script submits into — see
+  // /scraped-products; a "Promote" action there creates the real, still-Inactive Product,
+  // one dedicated endpoint per transition rather than a generic "update status" call).
+  getScrapedProducts: (params?: ListParams) =>
+    api.get<PaginatedResponse<ScrapedProduct>>('/admin/scraped-products', { params }),
+  getScrapedProductStats: () =>
+    api.get<ApiResponse<{ pending: number; promoted: number; rejected: number }>>('/admin/scraped-products/stats'),
+  getScrapedProduct: (id: number) => api.get<ApiResponse<ScrapedProduct>>(`/admin/scraped-products/${id}`),
+  updateScrapedProduct: (id: number, data: Record<string, unknown>) =>
+    api.put<ApiResponse<ScrapedProduct>>(`/admin/scraped-products/${id}`, data),
+  promoteScrapedProduct: (id: number) => api.post<ApiResponse<ScrapedProduct>>(`/admin/scraped-products/${id}/promote`),
+  rejectScrapedProduct: (id: number, reason?: string) =>
+    api.post<ApiResponse<ScrapedProduct>>(`/admin/scraped-products/${id}/reject`, { reason }),
+  bulkRejectScrapedProducts: (ids: number[], reason?: string) =>
+    api.post<ApiResponse<{ rejected: number; skipped: number }>>('/admin/scraped-products/bulk-reject', { ids, reason }),
+  deleteScrapedProduct: (id: number) => api.delete(`/admin/scraped-products/${id}`),
 
   // Services
   getServices: (params?: ListParams) => api.get<PaginatedResponse<Service>>('/admin/services', { params }),

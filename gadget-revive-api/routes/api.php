@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\InvestmentController;
 use App\Http\Controllers\Api\PermissionController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\ProductBulkUploadController;
+use App\Http\Controllers\Api\ScrapedProductController;
 use App\Http\Controllers\Api\PublicController;
 use App\Http\Controllers\Api\PurchaseOrderController;
 use App\Http\Controllers\Api\ReportController;
@@ -661,6 +662,24 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::put('/{id}/toggle-featured', [AdminController::class, 'adminProductToggleFeatured'])->middleware('permission:manage_products,toggle_product_featured');
             Route::get('/{id}/serials', [AdminController::class, 'adminProductSerials'])->middleware('permission:manage_products,view_products,manage_inventory');
             Route::post('/{id}/serials', [AdminController::class, 'adminProductAddSerials'])->middleware('permission:manage_products,edit_products,manage_inventory');
+        });
+
+        // Scraped Products Staging (Admin) — landing table for an external scraping script
+        // (startech_scrap.ipynb, run on the user's own machine, never this server) so it can
+        // submit one product at a time instead of producing an .xlsx to re-upload. Nothing
+        // here reaches the storefront until an admin reviews + Promotes a row into a real
+        // (still Inactive) Product — see ScrapedProductController's class docblock.
+        Route::prefix('scraped-products')->group(function () {
+            // Registered before "/{id}" so these static segments are never swallowed as an :id value.
+            Route::post('/ingest', [ScrapedProductController::class, 'ingest'])->middleware('permission:manage_products,create_products');
+            Route::get('/', [ScrapedProductController::class, 'index'])->middleware('permission:manage_products,view_products');
+            Route::get('/stats', [ScrapedProductController::class, 'stats'])->middleware('permission:manage_products,view_products');
+            Route::post('/bulk-reject', [ScrapedProductController::class, 'bulkReject'])->middleware('permission:manage_products,delete_products');
+            Route::get('/{id}', [ScrapedProductController::class, 'show'])->middleware('permission:manage_products,view_products');
+            Route::put('/{id}', [ScrapedProductController::class, 'update'])->middleware('permission:manage_products,edit_products');
+            Route::post('/{id}/promote', [ScrapedProductController::class, 'promote'])->middleware('permission:manage_products,create_products');
+            Route::post('/{id}/reject', [ScrapedProductController::class, 'reject'])->middleware('permission:manage_products,delete_products');
+            Route::delete('/{id}', [ScrapedProductController::class, 'destroy'])->middleware('permission:manage_products,delete_products');
         });
 
         // Product Brands Management (Admin) — grouped under "Categories" in the sidebar; read

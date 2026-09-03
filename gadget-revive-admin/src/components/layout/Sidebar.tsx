@@ -89,6 +89,7 @@ const navigation: NavSection[] = [
           { title: 'All Products', href: '/products' },
           { title: 'Add Product', href: '/products/create' },
           { title: 'Bulk Import', href: '/products/bulk-import' },
+          { title: 'Scraped Products', href: '/scraped-products' },
         ],
       },
     ],

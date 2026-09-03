@@ -28,7 +28,12 @@ export default function ProductBulkImportPage() {
             </p>
             <p>
               Run the script yourself, point it at the sample Excel below, and it fills in one
-              workbook (or one per brand) ready to upload — then bring each file here.
+              workbook (or one per brand) ready to upload — then bring each file here. If your
+              script instead posts straight to this admin&apos;s{' '}
+              <Link href="/scraped-products" className="font-medium underline">
+                Scraped Products
+              </Link>{' '}
+              staging table (no Excel step at all), review and promote rows from there.
             </p>
           </div>
         </CardContent>

@@ -102,6 +102,7 @@ export interface ProductCategory {
   sort_order?: number;
   status?: string;
   products_count?: number;
+  breadcrumb?: { id: number; name: string; slug: string }[];
   parent?: {
     id: number;
     name: string;
@@ -187,8 +188,8 @@ export interface Product {
   gallery?: string[];
   is_active: boolean;
   is_draft?: boolean;
-  /** 'manual' (default, created via the normal form) or 'bulk_import' (created via the Excel bulk-upload tool). */
-  source?: 'manual' | 'bulk_import' | string;
+  /** 'manual' (default, created via the normal form), 'bulk_import' (Excel bulk-upload tool), or 'scraped' (promoted from a ScrapedProduct staging row). */
+  source?: 'manual' | 'bulk_import' | 'scraped' | string;
   /** Groups every product created together from one bulk-upload spreadsheet; null for manually-created products. */
   bulk_upload_batch?: string | null;
   is_featured: boolean;
@@ -201,6 +202,51 @@ export interface Product {
   category?: ProductCategory;
   attribute_values?: ProductAttributeValueEntry[];
   serials?: ProductSerial[];
+}
+
+/**
+ * A product submitted by an external scraping script (e.g. startech_scrap.ipynb, run on the
+ * user's own machine) waiting for admin review — see /scraped-products. Category is left unset
+ * until an admin manually maps it; brand is auto-matched/created at ingest time.
+ */
+export interface ScrapedProduct {
+  id: number;
+  batch?: string | null;
+  source_site: string;
+  source_url?: string | null;
+  source_product_id?: string | null;
+  category_raw?: string | null;
+  category_id?: number | null;
+  category?: ProductCategory | null;
+  brand_raw?: string | null;
+  brand_id?: number | null;
+  brand?: ProductBrand | null;
+  sku?: string | null;
+  name: string;
+  name_bn?: string | null;
+  price?: number | null;
+  discount_price?: number | null;
+  stock_qty?: number | null;
+  stock_status_raw?: string | null;
+  current_cost?: number | null;
+  unit?: string | null;
+  short_description?: string | null;
+  description?: string | null;
+  specifications?: Record<string, string> | null;
+  image?: string | null;
+  gallery?: string[];
+  model?: string | null;
+  warranty_value?: number | null;
+  warranty_unit?: 'day' | 'week' | 'month' | 'year' | null;
+  status: 'pending' | 'promoted' | 'rejected';
+  can_promote?: boolean;
+  promoted_product_id?: number | null;
+  reject_reason?: string | null;
+  reviewed_by?: number | null;
+  reviewer?: { id: number; name: string } | null;
+  reviewed_at?: string | null;
+  created_at: string;
+  updated_at?: string;
 }
 
 export interface ProductSerial {
