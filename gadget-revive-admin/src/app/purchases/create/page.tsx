@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Plus, Trash2, Search, Package, FileText, Save, Sparkles } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import {
-  Card, CardContent, CardHeader, CardTitle,
   Button, Input, SearchableSelect, LoadingSpinner,
 } from '@/components/ui';
 import { Product, ProductCategory, Supplier } from '@/types';
@@ -268,6 +267,35 @@ function ProductSearchModal({ onSelect, onClose }: ProductSearchModalProps) {
   );
 }
 
+const FIELD_CLASS = 'h-8 w-full rounded-lg border border-gray-300 bg-white px-2.5 text-xs tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500';
+const NUM_FIELD = 'h-8 rounded-lg border border-gray-300 bg-white px-2 text-xs tabular-nums focus:outline-none focus:ring-2 focus:ring-primary-500';
+const LABEL_CLASS = 'mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500';
+
+const SECTION_TONE = {
+  indigo: 'border-indigo-100 bg-indigo-50 text-indigo-800',
+  sky: 'border-sky-100 bg-sky-50 text-sky-800',
+  amber: 'border-amber-100 bg-amber-50 text-amber-800',
+  emerald: 'border-emerald-100 bg-emerald-50 text-emerald-800',
+};
+
+function Section({ title, tone, icon, action, children }: {
+  title: string;
+  tone: keyof typeof SECTION_TONE;
+  icon?: React.ReactNode;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-xl border border-gray-200 bg-white">
+      <header className={`flex items-center justify-between gap-2 rounded-t-xl border-b px-3 py-2 ${SECTION_TONE[tone]}`}>
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold">{icon}{title}</h2>
+        {action}
+      </header>
+      <div className="p-3">{children}</div>
+    </section>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 function CreatePurchaseOrderContent() {
@@ -431,227 +459,184 @@ function CreatePurchaseOrderContent() {
 
   return (
     <AdminLayout>
-      <div className="space-y-6">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm" onClick={() => router.back()}>
-            <ArrowLeft className="w-4 h-4 mr-1" />
-            Back
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Create Purchase Order</h1>
-            <p className="text-sm text-gray-500 mt-0.5">Record a new stock procurement order from a supplier</p>
-          </div>
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <Button variant="ghost" size="sm" onClick={() => router.back()}>
+          <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+          Back
+        </Button>
+        <div className="flex flex-wrap items-baseline gap-2">
+          <h1 className="text-lg font-bold text-gray-900">Create Purchase Order</h1>
+          <p className="text-xs text-gray-500">Record a new stock procurement order from a supplier</p>
+        </div>
+      </div>
+
+      {linkedOrderId && (
+        <div className="mb-3 flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs text-blue-700">
+          <Package className="h-3.5 w-3.5 shrink-0" />
+          Sourcing stock for Order #{linkedOrderId} — this PO will link back to it once saved.
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="grid grid-cols-1 items-start gap-3 lg:grid-cols-3">
+        <div className="space-y-3 lg:col-span-2">
+          <Section title="Supplier" tone="indigo">
+            <div className="max-w-md">
+              <SearchableSelect
+                required
+                value={supplierId}
+                onChange={setSupplierId}
+                placeholder="Select a supplier…"
+                options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
+              />
+            </div>
+          </Section>
+
+          <Section
+            title="Order items"
+            tone="sky"
+            icon={<Package className="h-3.5 w-3.5" />}
+            action={
+              <Button type="button" variant="outline" size="sm" onClick={() => setSearchModalOpen(true)}>
+                <Plus className="mr-1 h-3.5 w-3.5" /> Add product
+              </Button>
+            }
+          >
+            {items.length === 0 ? (
+              <p className="py-6 text-center text-xs text-gray-400">No items yet. Add a product to begin.</p>
+            ) : (
+              <div className="max-h-[60vh] overflow-auto rounded-lg border border-gray-200">
+                <table className="min-w-full text-sm">
+                  <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226,232,240)]">
+                    <tr>
+                      <th className="px-2.5 py-2 text-left">Product</th>
+                      <th className="w-20 px-2.5 py-2 text-left">Qty</th>
+                      <th className="w-28 px-2.5 py-2 text-left">Unit cost (৳)</th>
+                      <th className="w-44 px-2.5 py-2 text-left">Warranty</th>
+                      <th className="px-2.5 py-2 text-right">Line total</th>
+                      <th className="w-9 px-2.5 py-2" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {items.map((item, i) => (
+                      <tr key={item.id} className={i % 2 ? 'bg-slate-50/50' : 'bg-white'}>
+                        <td className="px-2.5 py-1.5">
+                          <p className="font-semibold text-gray-900">{item.product_name}</p>
+                          <p className="font-mono text-[11px] text-gray-500">{item.product_sku}</p>
+                        </td>
+                        <td className="px-2.5 py-1.5">
+                          <input
+                            type="number"
+                            min={1}
+                            value={item.quantity}
+                            onChange={(e) => updateItem(item.id, 'quantity', Math.max(1, parseInt(e.target.value) || 1))}
+                            className={`${NUM_FIELD} w-20`}
+                          />
+                        </td>
+                        <td className="px-2.5 py-1.5">
+                          <input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={item.unit_cost}
+                            onChange={(e) => updateItem(item.id, 'unit_cost', parseFloat(e.target.value) || 0)}
+                            className={`${NUM_FIELD} w-28`}
+                          />
+                        </td>
+                        <td className="px-2.5 py-1.5">
+                          <div className="flex gap-1">
+                            <input
+                              type="number"
+                              min={0}
+                              value={item.warranty_value ?? ''}
+                              onChange={(e) => updateItem(item.id, 'warranty_value', e.target.value ? parseInt(e.target.value) : null)}
+                              placeholder="—"
+                              className={`${NUM_FIELD} w-14`}
+                            />
+                            <select
+                              value={item.warranty_unit ?? ''}
+                              onChange={(e) => updateItem(item.id, 'warranty_unit', e.target.value || null)}
+                              className={`${NUM_FIELD} min-w-0 flex-1`}
+                            >
+                              <option value="">Unit</option>
+                              <option value="day">Day(s)</option>
+                              <option value="week">Week(s)</option>
+                              <option value="month">Month(s)</option>
+                              <option value="year">Year(s)</option>
+                            </select>
+                          </div>
+                        </td>
+                        <td className="whitespace-nowrap px-2.5 py-1.5 text-right font-semibold tabular-nums text-gray-900">
+                          {formatCurrency(item.quantity * item.unit_cost)}
+                        </td>
+                        <td className="px-2.5 py-1.5 text-right">
+                          <button
+                            type="button"
+                            onClick={() => removeItem(item.id)}
+                            title="Remove"
+                            className="rounded-md p-1 text-rose-500 hover:bg-rose-50 hover:text-rose-700"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Section>
+
+          <Section title="Notes" tone="amber" icon={<FileText className="h-3.5 w-3.5" />}>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              placeholder="Optional notes about this purchase order"
+              className="w-full resize-none rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </Section>
         </div>
 
-        {linkedOrderId && (
-          <div className="flex items-center gap-2 text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5">
-            <Package className="w-4 h-4 flex-shrink-0" />
-            Sourcing stock for Order #{linkedOrderId} — this PO will link back to it once saved.
-          </div>
-        )}
+        <div className="space-y-3 lg:sticky lg:top-3">
+          <Section title="Order summary" tone="emerald">
+            <div className="space-y-2.5">
+              <div>
+                <label className={LABEL_CLASS}>Expected date</label>
+                <input type="date" className={FIELD_CLASS} value={expectedDate} onChange={(e) => setExpectedDate(e.target.value)} />
+              </div>
 
-        <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* ── Left column ── */}
-          <div className="lg:col-span-2 space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Supplier</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <SearchableSelect
-                  label="Supplier *"
-                  required
-                  value={supplierId}
-                  onChange={setSupplierId}
-                  placeholder="Select a supplier..."
-                  options={suppliers.map((s) => ({ value: s.id, label: s.name }))}
-                />
-              </CardContent>
-            </Card>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-gray-600">Subtotal</span>
+                <span className="font-medium tabular-nums">{formatCurrency(subtotal)}</span>
+              </div>
 
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <Package className="w-4 h-4" /> Order Items
-                  </CardTitle>
-                  <Button type="button" variant="outline" size="sm" onClick={() => setSearchModalOpen(true)}>
-                    <Plus className="w-3.5 h-3.5 mr-1" /> Add Product
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {items.length === 0 ? (
-                  <p className="text-center text-gray-400 py-6 text-sm">No items yet. Add a product to begin.</p>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-gray-200 text-left">
-                          <th className="pb-2 pr-4 font-semibold text-gray-600">Product</th>
-                          <th className="pb-2 pr-4 font-semibold text-gray-600 w-28">Qty</th>
-                          <th className="pb-2 pr-4 font-semibold text-gray-600 w-36">Unit Cost (৳)</th>
-                          <th className="pb-2 pr-4 font-semibold text-gray-600 w-40">Warranty</th>
-                          <th className="pb-2 pr-4 font-semibold text-gray-600 text-right">Line Total</th>
-                          <th className="pb-2 w-10"></th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {items.map((item) => (
-                          <tr key={item.id}>
-                            <td className="py-2 pr-4">
-                              <p className="font-medium text-gray-900">{item.product_name}</p>
-                              <p className="text-xs text-gray-500">{item.product_sku}</p>
-                            </td>
-                            <td className="py-2 pr-4">
-                              <input
-                                type="number"
-                                min={1}
-                                value={item.quantity}
-                                onChange={(e) => updateItem(item.id, 'quantity', Math.max(1, parseInt(e.target.value) || 1))}
-                                className="w-20 px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                              />
-                            </td>
-                            <td className="py-2 pr-4">
-                              <input
-                                type="number"
-                                min={0}
-                                step="0.01"
-                                value={item.unit_cost}
-                                onChange={(e) => updateItem(item.id, 'unit_cost', parseFloat(e.target.value) || 0)}
-                                className="w-28 px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                              />
-                            </td>
-                            <td className="py-2 pr-4">
-                              <div className="flex gap-1">
-                                <input
-                                  type="number"
-                                  min={0}
-                                  value={item.warranty_value ?? ''}
-                                  onChange={(e) => updateItem(item.id, 'warranty_value', e.target.value ? parseInt(e.target.value) : null)}
-                                  placeholder="—"
-                                  className="w-14 px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                                />
-                                <select
-                                  value={item.warranty_unit ?? ''}
-                                  onChange={(e) => updateItem(item.id, 'warranty_unit', e.target.value || null)}
-                                  className="flex-1 px-1.5 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                                >
-                                  <option value="">Unit</option>
-                                  <option value="day">Day(s)</option>
-                                  <option value="week">Week(s)</option>
-                                  <option value="month">Month(s)</option>
-                                  <option value="year">Year(s)</option>
-                                </select>
-                              </div>
-                            </td>
-                            <td className="py-2 pr-4 text-right font-medium">
-                              {formatCurrency(item.quantity * item.unit_cost)}
-                            </td>
-                            <td className="py-2 text-right">
-                              <button
-                                type="button"
-                                onClick={() => removeItem(item.id)}
-                                className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+              <div>
+                <label className={LABEL_CLASS}>Tax (৳)</label>
+                <input type="number" min={0} step="0.01" value={tax} onChange={(e) => setTax(e.target.value)} placeholder="0" className={FIELD_CLASS} />
+              </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <FileText className="w-4 h-4" /> Notes
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  rows={3}
-                  placeholder="Optional notes about this purchase order"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
-                />
-              </CardContent>
-            </Card>
-          </div>
+              <div>
+                <label className={LABEL_CLASS}>Shipping (৳)</label>
+                <input type="number" min={0} step="0.01" value={shippingCost} onChange={(e) => setShippingCost(e.target.value)} placeholder="0" className={FIELD_CLASS} />
+              </div>
 
-          {/* ── Right column (sidebar) ── */}
-          <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Order Summary</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Input
-                  label="Expected Date"
-                  type="date"
-                  value={expectedDate}
-                  onChange={(e) => setExpectedDate(e.target.value)}
-                />
+              <div className="flex items-center justify-between border-t border-gray-100 pt-2.5">
+                <span className="text-sm font-semibold text-gray-900">Total</span>
+                <span className="text-base font-bold tabular-nums text-emerald-700">{formatCurrency(total)}</span>
+              </div>
+            </div>
+          </Section>
 
-                <div className="flex justify-between text-sm pt-2">
-                  <span className="text-gray-600">Subtotal</span>
-                  <span className="font-medium">{formatCurrency(subtotal)}</span>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Tax (৳)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={tax}
-                    onChange={(e) => setTax(e.target.value)}
-                    placeholder="0"
-                    className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Shipping (৳)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={shippingCost}
-                    onChange={(e) => setShippingCost(e.target.value)}
-                    placeholder="0"
-                    className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  />
-                </div>
-
-                <div className="border-t pt-3 flex justify-between">
-                  <span className="font-semibold text-gray-900">Total</span>
-                  <span className="font-bold text-lg text-primary-600">{formatCurrency(total)}</span>
-                </div>
-              </CardContent>
-            </Card>
-
+          <div className="space-y-2">
             <Button type="submit" className="w-full" isLoading={isSaving}>
-              <Save className="w-4 h-4 mr-2" /> Create Purchase Order
+              <Save className="mr-2 h-3.5 w-3.5" /> Create purchase order
             </Button>
-
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full"
-              onClick={() => router.back()}
-              disabled={isSaving}
-            >
+            <Button type="button" variant="outline" className="w-full" onClick={() => router.back()} disabled={isSaving}>
               Cancel
             </Button>
           </div>
-        </form>
-      </div>
+        </div>
+      </form>
 
       {searchModalOpen && (
         <ProductSearchModal onSelect={addProduct} onClose={() => setSearchModalOpen(false)} />

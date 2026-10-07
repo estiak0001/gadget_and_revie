@@ -64,8 +64,12 @@
             font-size: 12.5px; color: #6b7280; font-weight: 400; letter-spacing: 2px;
             text-transform: uppercase; margin-top: 4px;
         }
-        .company-contact { font-size: 13.5px; color: #374151; line-height: 1.75; }
+        .company-contact { font-size: 13.5px; color: #1f2937; line-height: 1.45; }
         .company-contact .cc-name { font-size: 15.5px; font-weight: 700; color: #000000; margin-bottom: 3px; }
+        /* Internal-use barcode — a 1D laser scanner can't read the footer QR, so this gives
+           staff a Code128 of the order number too, tucked under the contact details. */
+        .header-barcode { margin-top: 6px; }
+        .header-barcode img { height: 32px; width: auto; }
 
         /* ── META STRIPE ─────────────────────────────── */
         .meta-stripe { background: #f3f4f6; padding: 8px 32px; display: table; width: 100%; position: relative; z-index: 1; }
@@ -153,8 +157,11 @@
             display: table; width: 100%;
         }
         .legal { padding: 0 32px 10px; }
-        .footer-left { display: table-cell; vertical-align: middle; width: 60%; }
-        .footer-right { display: table-cell; vertical-align: middle; text-align: right; width: 40%; }
+        .footer-left { display: table-cell; vertical-align: middle; width: 46%; }
+        /* The empty gap between the brand block and the reference block — centers the QR there. */
+        .footer-mid { display: table-cell; vertical-align: middle; text-align: center; width: 16%; }
+        .footer-right { display: table-cell; vertical-align: middle; text-align: right; width: 38%; }
+        .footer-qr { width: 58px; height: 58px; border: 2px solid #92400e; border-radius: 4px; }
         .footer-brand { font-size: 16.5px; font-weight: 700; color: #000000; margin-bottom: 3px; }
         .footer-sub { font-size: 15px; color: #000000; line-height: 1.7; }
         .footer-ref-label { font-size: 13.5px; color: #000000; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 3px; }
@@ -196,6 +203,9 @@
                 {{ $settings['address'] ?? '' }}<br>
                 Mobile: {{ $settings['phone'] ?? '' }}<br>
                 {{ $settings['email'] ?? '' }}
+                @if (!empty($barcodeDataUri))
+                <div class="header-barcode"><img src="{{ $barcodeDataUri }}" alt="Order barcode"></div>
+                @endif
             </div>
         </div>
     </div>
@@ -331,6 +341,11 @@
                     {{ $settings['footer_address'] ?? '' }}<br>
                     Phone: {{ $settings['footer_phone'] ?? '' }} | Email: {{ $settings['footer_email'] ?? '' }}
                 </div>
+            </div>
+            <div class="footer-mid">
+                @if (!empty($qrDataUri))
+                    <img class="footer-qr" src="{{ $qrDataUri }}" alt="Scan to open order">
+                @endif
             </div>
             <div class="footer-right">
                 <div class="footer-ref-label">Against Order</div>

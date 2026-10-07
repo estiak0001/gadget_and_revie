@@ -5,14 +5,14 @@ import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, Plus, Trash2, Search, Package, Wrench, FileText, User, MapPin, CreditCard, Save,
-  CheckCircle2, X, Sparkles, Lock, ShieldAlert, ChevronDown, ChevronUp, Check, Pencil,
+  CheckCircle2, X, Sparkles, Lock, ShieldAlert, ChevronDown, ChevronUp, Check, Pencil, Eye, EyeOff,
 } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import {
   Card, CardContent, CardHeader, CardTitle,
   Button, Input, Select, SearchableSelect, Badge, LoadingSpinner, ConfirmModal,
 } from '@/components/ui';
-import { Product, Service, User as UserType, ProductCategory, Order, OrderItem } from '@/types';
+import { Product, Service, User as UserType, ProductCategory, Order, OrderItem, ServiceProblemType } from '@/types';
 import { formatCurrency, getErrorMessage } from '@/lib/utils';
 import adminService from '@/lib/adminService';
 import { useAuthStore } from '@/store/auth';
@@ -40,6 +40,9 @@ interface OrderLineItem {
   notes: string;
   /** Which specific in-stock unit(s) of the product are being sold — optional. */
   serials?: string[];
+  /** Service items only (Repair, Recovery, ...) -- same managed list Service Intake items pick
+   *  from. Null for product/custom lines. */
+  problem_type_id: number | null;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -99,6 +102,7 @@ function newLineItem(type: ItemType = 'custom'): OrderLineItem {
     warranty_unit: null,
     notes: '',
     serials: [],
+    problem_type_id: null,
   };
 }
 
@@ -640,9 +644,21 @@ export default function OrderForm({ orderId }: OrderFormProps) {
   // Each item row collapses to a single summary line; only one can be open for editing at a
   // time — opening another closes whichever was open, since this is a single id, not a set.
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
+  // Cost/margin are hidden by default while building an order -- an icon reveals them on
+  // demand rather than always showing a number staff shouldn't see at a glance.
+  const [showCostDetails, setShowCostDetails] = useState(false);
   function toggleExpand(id: string) {
     setExpandedItemId((prev) => (prev === id ? null : id));
   }
+
+  // Problem type (Repair, Recovery, ...) -- service items only, same managed list Service
+  // Intake items pick from.
+  const [problemTypes, setProblemTypes] = useState<ServiceProblemType[]>([]);
+  useEffect(() => {
+    adminService.getServiceProblemTypes()
+      .then((res) => setProblemTypes(res.data.data ?? []))
+      .catch(() => setProblemTypes([]));
+  }, []);
 
   // Order meta
   const [meta, setMeta] = useState({
@@ -736,6 +752,7 @@ export default function OrderForm({ orderId }: OrderFormProps) {
           warranty_unit: item.warranty_unit ?? null,
           notes: item.notes ?? '',
           serials: (item.serials ?? []).map(s => s.serial_number),
+          problem_type_id: item.problem_type_id ?? null,
         })));
       } catch (err) {
         toast.error(getErrorMessage(err));
@@ -1073,6 +1090,7 @@ export default function OrderForm({ orderId }: OrderFormProps) {
             warranty_unit: i.warranty_unit,
             notes: i.notes || null,
             serials: i.serials && i.serials.length > 0 ? i.serials : undefined,
+            problem_type_id: i.problem_type_id ?? null,
           }));
         }
 
@@ -1123,6 +1141,7 @@ export default function OrderForm({ orderId }: OrderFormProps) {
           warranty_unit: i.warranty_unit,
           notes: i.notes || null,
           serials: i.serials && i.serials.length > 0 ? i.serials : undefined,
+          problem_type_id: i.problem_type_id ?? null,
         })),
       };
 
@@ -1162,7 +1181,7 @@ export default function OrderForm({ orderId }: OrderFormProps) {
               <ArrowLeft className="w-4 h-4 mr-1" />
               Back
             </Button>
-            <h1 className="text-2xl font-bold text-gray-900">Edit Order</h1>
+            <h1 className="text-lg font-bold text-gray-900">Edit Order</h1>
           </div>
           <Card>
             <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
@@ -1180,15 +1199,15 @@ export default function OrderForm({ orderId }: OrderFormProps) {
 
   return (
     <AdminLayout>
-      <div className="space-y-4">
+      <div className="space-y-3">
         {/* Header */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" onClick={() => router.back()}>
             <ArrowLeft className="w-4 h-4 mr-1" />
             Back
           </Button>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">
+            <h1 className="text-lg font-bold text-gray-900">
               {isEditMode ? `Edit Order ${loadedOrder?.order_number ?? ''}` : 'Create Manual Order'}
             </h1>
             <p className="text-sm text-gray-500 mt-0.5">
@@ -1285,16 +1304,16 @@ export default function OrderForm({ orderId }: OrderFormProps) {
           className="grid grid-cols-1 lg:grid-cols-3 gap-4"
         >
           {/* ── Left column ── */}
-          <div className="lg:col-span-2 space-y-4">
+          <div className="lg:col-span-2 space-y-3">
 
             {/* Customer section */}
-            <Card className="bg-sky-50/60 border-sky-100">
-              <CardHeader className="border-sky-100">
-                <CardTitle className="flex items-center gap-2 text-base">
+            <Card className="border-gray-200 bg-white shadow-sm">
+              <CardHeader className="border-gray-100 bg-slate-50/70 px-3 py-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
                   <User className="w-4 h-4" /> Customer
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3 p-3">
                 {isEditMode ? (
                   <>
                     {loadedOrder?.customer_id && (
@@ -1303,7 +1322,7 @@ export default function OrderForm({ orderId }: OrderFormProps) {
                         Linked to customer account &mdash; editing these fields only updates this order&apos;s details.
                       </div>
                     )}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                       <Input
                         label="Customer Name"
                         value={customerInfo.customer_name}
@@ -1427,25 +1446,37 @@ export default function OrderForm({ orderId }: OrderFormProps) {
             </Card>
 
             {/* Items section */}
-            <Card className="bg-violet-50/60 border-violet-100">
-              <CardHeader className="border-violet-100">
+            <Card className="border-gray-200 bg-white shadow-sm">
+              <CardHeader className="border-gray-100 bg-slate-50/70 px-3 py-2">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="flex items-center gap-2 text-base">
+                  <CardTitle className="flex items-center gap-2 text-sm">
                     <Package className="w-4 h-4" /> Order Items
                   </CardTitle>
-                  {canEditItemsAndPricing && (
-                    <div className="flex items-center gap-2">
-                      <Button type="button" variant="outline" size="sm" onClick={openAddProduct}>
-                        <Search className="w-3.5 h-3.5 mr-1" /> Add Product
-                      </Button>
-                      <Button type="button" variant="outline" size="sm" onClick={openAddService}>
-                        <Search className="w-3.5 h-3.5 mr-1" /> Add Service
-                      </Button>
-                      <Button type="button" variant="ghost" size="sm" onClick={addCustomItem}>
-                        <Plus className="w-3.5 h-3.5 mr-1" /> Custom Charge
-                      </Button>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowCostDetails((v) => !v)}
+                      title={showCostDetails ? 'Hide cost / margin' : 'Show cost / margin'}
+                    >
+                      {showCostDetails ? <EyeOff className="w-3.5 h-3.5 mr-1" /> : <Eye className="w-3.5 h-3.5 mr-1" />}
+                      Cost
+                    </Button>
+                    {canEditItemsAndPricing && (
+                      <>
+                        <Button type="button" variant="outline" size="sm" onClick={openAddProduct}>
+                          <Search className="w-3.5 h-3.5 mr-1" /> Add Product
+                        </Button>
+                        <Button type="button" variant="outline" size="sm" onClick={openAddService}>
+                          <Search className="w-3.5 h-3.5 mr-1" /> Add Service
+                        </Button>
+                        <Button type="button" variant="ghost" size="sm" onClick={addCustomItem}>
+                          <Plus className="w-3.5 h-3.5 mr-1" /> Custom Charge
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
                 {canEditItemsAndPricing && (
                   <p className="text-xs text-gray-500 mt-1">
@@ -1453,7 +1484,7 @@ export default function OrderForm({ orderId }: OrderFormProps) {
                   </p>
                 )}
               </CardHeader>
-              <CardContent className="space-y-2.5">
+              <CardContent className="space-y-2 p-3">
                 {items.length === 0 && (
                   <p className="text-center text-gray-400 py-6 text-sm">No items yet — add a product, a service, or a custom charge.</p>
                 )}
@@ -1492,7 +1523,8 @@ export default function OrderForm({ orderId }: OrderFormProps) {
                           <input
                             value={item.item_sku}
                             onChange={e => updateItem(item.id, 'item_sku', e.target.value)}
-                            placeholder="SKU"
+                            placeholder={item.item_type === 'service' ? 'Serial' : 'SKU'}
+                            title={item.item_type === 'service' ? 'Device serial number' : 'SKU'}
                             disabled={!canEditItemsAndPricing}
                             className="w-20 flex-shrink-0 bg-transparent text-xs text-gray-500 text-right focus:outline-none disabled:text-gray-400"
                           />
@@ -1551,8 +1583,8 @@ export default function OrderForm({ orderId }: OrderFormProps) {
 
                     {isExpanded && (
                     <div className="p-3 space-y-2.5">
-                      {/* Pricing row: qty + price + cost + total */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 items-end">
+                      {/* Pricing row: qty + price + (cost, only when revealed) + total */}
+                      <div className={`grid grid-cols-2 ${showCostDetails ? 'sm:grid-cols-4' : 'sm:grid-cols-3'} gap-2.5 items-end`}>
                         <Input
                           label="Qty *"
                           type="number"
@@ -1572,15 +1604,17 @@ export default function OrderForm({ orderId }: OrderFormProps) {
                           required
                           disabled={!canEditItemsAndPricing}
                         />
-                        <Input
-                          label="Cost (৳)"
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          value={item.cost_price}
-                          onChange={e => updateItem(item.id, 'cost_price', parseFloat(e.target.value) || 0)}
-                          disabled={!canEditItemsAndPricing}
-                        />
+                        {showCostDetails && (
+                          <Input
+                            label="Cost (৳)"
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={item.cost_price}
+                            onChange={e => updateItem(item.id, 'cost_price', parseFloat(e.target.value) || 0)}
+                            disabled={!canEditItemsAndPricing}
+                          />
+                        )}
                         <div>
                           <label className="block text-xs font-medium text-gray-700 mb-1">Line Total</label>
                           <div className="px-2.5 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-semibold text-gray-700">
@@ -1614,9 +1648,47 @@ export default function OrderForm({ orderId }: OrderFormProps) {
                             <option value="month">Month(s)</option>
                             <option value="year">Year(s)</option>
                           </select>
-                          <span className={`ml-auto text-xs font-medium ${margin >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                            Margin {formatCurrency(margin)}
-                          </span>
+                          {showCostDetails && (
+                            <span className={`ml-auto text-xs font-medium ${margin >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                              Margin {formatCurrency(margin)}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Problem type + serial — soft emerald panel, service lines only. Same
+                          managed problem-type list Service Intake items pick from, and the same
+                          serial-number field (item_sku, reused for services) -- both carried
+                          over automatically when an intake is converted to an order, and just as
+                          editable by hand here for a manually-created service order. */}
+                      {item.item_type === 'service' && (
+                        <div className="flex flex-wrap items-center gap-3 bg-emerald-50/70 border border-emerald-100 rounded-lg px-3 py-2">
+                          <span className="text-xs font-medium text-emerald-800 flex-shrink-0">Problem Type</span>
+                          <select
+                            value={item.problem_type_id ?? ''}
+                            onChange={e => updateItem(item.id, 'problem_type_id', e.target.value ? Number(e.target.value) : null)}
+                            disabled={!canEditItemsAndPricing}
+                            className="px-2 py-1 border border-emerald-200 rounded-md text-xs bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400 disabled:bg-gray-50"
+                          >
+                            <option value="">— None —</option>
+                            {problemTypes.map((t) => (
+                              <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                          </select>
+                          <span className="text-xs font-medium text-emerald-800 flex-shrink-0">Serial No.</span>
+                          <input
+                            type="text"
+                            value={item.item_sku}
+                            onChange={e => updateItem(item.id, 'item_sku', e.target.value)}
+                            placeholder="Device serial number"
+                            disabled={!canEditItemsAndPricing}
+                            className="w-36 px-2 py-1 border border-emerald-200 rounded-md text-xs bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400 disabled:bg-gray-50"
+                          />
+                          {showCostDetails && (
+                            <span className={`ml-auto text-xs font-medium ${margin >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                              Margin {formatCurrency(margin)}
+                            </span>
+                          )}
                         </div>
                       )}
 
@@ -1651,13 +1723,13 @@ export default function OrderForm({ orderId }: OrderFormProps) {
             </Card>
 
             {/* Notes section */}
-            <Card className="bg-rose-50/60 border-rose-100">
-              <CardHeader className="border-rose-100">
-                <CardTitle className="flex items-center gap-2 text-base">
+            <Card className="border-gray-200 bg-white shadow-sm">
+              <CardHeader className="border-gray-100 bg-slate-50/70 px-3 py-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
                   <FileText className="w-4 h-4" /> Notes
                 </CardTitle>
               </CardHeader>
-              <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Admin Notes</label>
                   <textarea
@@ -1683,14 +1755,14 @@ export default function OrderForm({ orderId }: OrderFormProps) {
           </div>
 
           {/* ── Right column (sidebar) ── */}
-          <div className="space-y-4">
+          <div className="space-y-3">
 
             {/* Order summary */}
-            <Card className="bg-emerald-50/60 border-emerald-100">
-              <CardHeader className="border-emerald-100">
-                <CardTitle className="text-base">Order Summary</CardTitle>
+            <Card className="border-gray-200 bg-white shadow-sm">
+              <CardHeader className="border-gray-100 bg-slate-50/70 px-3 py-2">
+                <CardTitle className="text-sm">Order Summary</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="space-y-2 p-3">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Subtotal</span>
                   <span className="font-medium">{formatCurrency(subtotal)}</span>
@@ -1746,13 +1818,13 @@ export default function OrderForm({ orderId }: OrderFormProps) {
             </Card>
 
             {/* Payment & Status */}
-            <Card className="bg-indigo-50/60 border-indigo-100">
-              <CardHeader className="border-indigo-100">
-                <CardTitle className="flex items-center gap-2 text-base">
+            <Card className="border-gray-200 bg-white shadow-sm">
+              <CardHeader className="border-gray-100 bg-slate-50/70 px-3 py-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
                   <CreditCard className="w-4 h-4" /> Payment & Status
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3 p-3">
                 <Select
                   label="Payment Method *"
                   value={meta.payment_method}
@@ -1761,15 +1833,19 @@ export default function OrderForm({ orderId }: OrderFormProps) {
                 />
                 {isEditMode ? (
                   <>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Payment Status</label>
-                      <Badge variant="default" className="capitalize">{meta.payment_status.replace('_', ' ')}</Badge>
-                      <p className="text-xs text-gray-400 mt-1">Change from the order page (Record Payment / status actions).</p>
+                    <div className="rounded-lg border border-gray-200 bg-slate-50/60 px-3 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-gray-600">Payment Status</span>
+                        <Badge variant="default" className="capitalize">{meta.payment_status.replace('_', ' ')}</Badge>
+                      </div>
+                      <p className="mt-1 text-[11px] text-gray-400">Change from the order page (Record Payment / status actions).</p>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Order Status</label>
-                      <Badge variant="default" className="capitalize">{meta.order_status.replace('_', ' ')}</Badge>
-                      <p className="text-xs text-gray-400 mt-1">Change from the order page.</p>
+                    <div className="rounded-lg border border-gray-200 bg-slate-50/60 px-3 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-gray-600">Order Status</span>
+                        <Badge variant="default" className="capitalize">{meta.order_status.replace('_', ' ')}</Badge>
+                      </div>
+                      <p className="mt-1 text-[11px] text-gray-400">Change from the order page.</p>
                     </div>
                   </>
                 ) : (
@@ -1792,9 +1868,9 @@ export default function OrderForm({ orderId }: OrderFormProps) {
             </Card>
 
             {/* Delivery info */}
-            <Card className="bg-cyan-50/60 border-cyan-100">
-              <CardHeader className="border-cyan-100">
-                <CardTitle className="flex items-center gap-2 text-base">
+            <Card className="border-gray-200 bg-white shadow-sm">
+              <CardHeader className="border-gray-100 bg-slate-50/70 px-3 py-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
                   <MapPin className="w-4 h-4" /> Delivery
                 </CardTitle>
               </CardHeader>
@@ -1805,7 +1881,8 @@ export default function OrderForm({ orderId }: OrderFormProps) {
               </CardContent>
             </Card>
 
-            {/* Actions */}
+            {/* Actions — pinned so Save stays reachable on a long form */}
+            <div className="sticky bottom-3 space-y-2 rounded-xl border border-gray-200 bg-white p-2.5 shadow-lg">
             <Button type="submit" className="w-full" disabled={isSaving}>
               {isSaving ? (
                 <>
@@ -1827,6 +1904,7 @@ export default function OrderForm({ orderId }: OrderFormProps) {
             >
               Cancel
             </Button>
+            </div>
           </div>
         </form>
       </div>

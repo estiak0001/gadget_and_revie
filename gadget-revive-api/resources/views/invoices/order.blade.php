@@ -97,8 +97,8 @@
         /* Company contact (header right) */
         .company-contact {
             font-size: 13.5px;
-            color: #e2e2e2;
-            line-height: 1.75;
+            color: #f2f3f5;
+            line-height: 1.45;
         }
         .company-contact .cc-name {
             font-size: 15.5px;
@@ -106,6 +106,10 @@
             color: #ffffff;
             margin-bottom: 3px;
         }
+        /* Internal-use barcode — a 1D laser scanner can't read the footer QR, so this gives
+           staff a Code128 of the order number too, tucked under the contact details. */
+        .header-barcode { margin-top: 6px; }
+        .header-barcode img { height: 32px; width: auto; }
 
         /* ── META STRIPE ─────────────────────────────── */
         .meta-stripe {
@@ -491,13 +495,25 @@
         .footer-left {
             display: table-cell;
             vertical-align: middle;
-            width: 60%;
+            width: 46%;
+        }
+        /* The empty gap between the brand block and the reference block — centers the QR there
+           instead of crowding either side, and keeps both text blocks exactly as they were. */
+        .footer-mid {
+            display: table-cell;
+            vertical-align: middle;
+            text-align: center;
+            width: 16%;
         }
         .footer-right {
             display: table-cell;
             vertical-align: middle;
             text-align: right;
-            width: 40%;
+            width: 38%;
+        }
+        .footer-qr {
+            width: 58px;
+            height: 58px;
         }
         .footer-brand {
             font-size: 16px;
@@ -574,6 +590,11 @@
                     Phone: {{ $settings['footer_phone'] ?? '+880 1800-000000' }} | Email: {{ $settings['footer_email'] ?? 'support@gadgetrevive.com' }}
                 </div>
             </div>
+            <div class="footer-mid">
+                @if (!empty($qrDataUri))
+                    <img class="footer-qr" src="{{ $qrDataUri }}" alt="Scan to open order">
+                @endif
+            </div>
             <div class="footer-right">
                 <div class="footer-ref-label">Document Reference</div>
                 <div class="footer-ref-code">{{ $order->order_number }}</div>
@@ -615,6 +636,9 @@
                 Mobile: {{ $settings['phone'] ?? '' }}<br>
                 {{ $settings['email'] ?? '' }}
                 @if(!empty($settings['website'])) &nbsp;|&nbsp; {{ $settings['website'] }} @endif
+                @if (!empty($barcodeDataUri))
+                <div class="header-barcode"><img src="{{ $barcodeDataUri }}" alt="Order barcode"></div>
+                @endif
             </div>
         </div>
     </div>
@@ -745,6 +769,9 @@
                             <div class="item-sub"><strong>SN:</strong> {{ $realSerials }}</div>
                             @elseif($item->item_type === 'service' && $item->item_sku)
                             <div class="item-sub"><strong>SN:</strong> {{ $item->item_sku }}</div>
+                            @endif
+                            @if($item->item_type === 'service' && $item->problemType)
+                            <div class="item-sub"><strong>Type:</strong> {{ $item->problemType->name }}</div>
                             @endif
                             @if($item->notes)
                             <div class="item-sub"><strong>{{ $item->item_type === 'service' ? 'Problem Reported' : 'Note' }}:</strong> {{ $item->notes }}</div>

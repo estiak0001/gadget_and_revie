@@ -12,6 +12,12 @@ import {
   PackageSearch,
   RefreshCw,
   ArrowRight,
+  Filter,
+  Play,
+  Loader2,
+  AlertCircle,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import {
@@ -19,6 +25,7 @@ import {
   CardContent,
   Button,
   Input,
+  SearchableSelect,
   Badge,
   LoadingSpinner,
   Pagination,
@@ -26,7 +33,7 @@ import {
   ErrorState,
   ActionsMenu,
 } from '@/components/ui';
-import { ScrapedProduct } from '@/types';
+import { ScrapedProduct, ProductCategory, ProductBrand, ScrapeRun } from '@/types';
 import { formatCurrency, getErrorMessage } from '@/lib/utils';
 import adminService from '@/lib/adminService';
 import toast from 'react-hot-toast';
@@ -42,6 +49,16 @@ function getImageUrl(image?: string | null): string {
 const STATUS_TABS = ['pending', 'promoted', 'rejected'] as const;
 type StatusTab = (typeof STATUS_TABS)[number];
 
+// What ingest() did the last time a (re-)scrape touched this row -- lets a re-scraped row read
+// as "Updated"/"Synced" at a glance instead of looking identical to a brand-new one. Undefined
+// for a row from before this was tracked, or one a human created by hand on the review page.
+const INGEST_ACTION_BADGES: Record<string, { label: string; variant: 'default' | 'info' | 'warning' | 'success' }> = {
+  created: { label: 'New', variant: 'default' },
+  updated: { label: 'Updated', variant: 'info' },
+  reactivated: { label: 'Reactivated', variant: 'warning' },
+  synced_to_product: { label: 'Synced', variant: 'success' },
+};
+
 export default function ScrapedProductsPage() {
   const router = useRouter();
 
@@ -51,20 +68,47 @@ export default function ScrapedProductsPage() {
 
   const [activeTab, setActiveTab] = useState<StatusTab>('pending');
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterCategory, setFilterCategory] = useState('');
+  const [filterBrand, setFilterBrand] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [categories, setCategories] = useState<ProductCategory[]>([]);
+  const [brands, setBrands] = useState<ProductBrand[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalRows, setTotalRows] = useState(0);
 
   const [stats, setStats] = useState({ pending: 0, promoted: 0, rejected: 0 });
 
+  // Bulk selection — "select all N matching" (see handleSelectAllMatching) works the same way
+  // as the Products list: expand from "everything on this page" to every row matching the
+  // current tab/search/category/brand filters, across all pages.
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [selectAllMatching, setSelectAllMatching] = useState(false);
   const selectAllCheckboxRef = React.useRef<HTMLInputElement>(null);
   const [isBulkRejectModalOpen, setIsBulkRejectModalOpen] = useState(false);
   const [isBulkRejecting, setIsBulkRejecting] = useState(false);
+  const [isBulkPromoteModalOpen, setIsBulkPromoteModalOpen] = useState(false);
+  const [isBulkPromoting, setIsBulkPromoting] = useState(false);
+  const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
   const [rowPendingAction, setRowPendingAction] = useState<ScrapedProduct | null>(null);
   const [rejectModalRow, setRejectModalRow] = useState<ScrapedProduct | null>(null);
   const [deleteModalRow, setDeleteModalRow] = useState<ScrapedProduct | null>(null);
+
+  // "Run Scraper" trigger — only actually succeeds where this API process itself has an IP
+  // Star Tech hasn't Cloudflare-blocked (i.e. run this locally, not against production — see
+  // the hint rendered in the card below). activeRun is polled every 3s until its status moves
+  // off 'running'; recentRuns is just the last few for visibility across page reloads.
+  const [showRunPanel, setShowRunPanel] = useState(false);
+  const [runCategoryUrl, setRunCategoryUrl] = useState('');
+  const [runCategoryName, setRunCategoryName] = useState('');
+  const [runTemplateCategory, setRunTemplateCategory] = useState('');
+  const [runBrandFilter, setRunBrandFilter] = useState('');
+  const [runProductLimit, setRunProductLimit] = useState('');
+  const [isStartingRun, setIsStartingRun] = useState(false);
+  const [activeRun, setActiveRun] = useState<ScrapeRun | null>(null);
+  const [recentRuns, setRecentRuns] = useState<ScrapeRun[]>([]);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -75,16 +119,43 @@ export default function ScrapedProductsPage() {
     }
   }, []);
 
+  const fetchCategories = useCallback(async () => {
+    try {
+      const res = await adminService.getProductCategories();
+      setCategories((res.data as { data?: ProductCategory[] }).data || (res.data as unknown as ProductCategory[]) || []);
+    } catch (err) {
+      console.error('Error fetching categories:', err);
+    }
+  }, []);
+
+  const fetchBrands = useCallback(async () => {
+    try {
+      const res = await adminService.getProductBrands({ per_page: 200 });
+      setBrands(res.data.data?.data || []);
+    } catch (err) {
+      console.error('Error fetching brands:', err);
+    }
+  }, []);
+
+  // Shared by the list fetch and "select all matching" bulk-promote, so a select-all can never
+  // target a different set of rows than what's actually on screen.
+  const buildFilterParams = useCallback((): Record<string, string | number> => {
+    const params: Record<string, string | number> = { status: activeTab };
+    if (searchQuery) params.q = searchQuery;
+    if (filterCategory) params.category_id = filterCategory;
+    if (filterBrand) params.brand_id = filterBrand;
+    return params;
+  }, [activeTab, searchQuery, filterCategory, filterBrand]);
+
   const fetchRows = useCallback(async () => {
     setIsLoading(true);
     setError(false);
     try {
       const params: Record<string, string | number> = {
-        status: activeTab,
+        ...buildFilterParams(),
         page: currentPage,
         per_page: 20,
       };
-      if (searchQuery) params.q = searchQuery;
 
       const res = await adminService.getScrapedProducts(params);
       setRows(res.data.data);
@@ -98,34 +169,112 @@ export default function ScrapedProductsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [activeTab, currentPage, searchQuery]);
+  }, [currentPage, buildFilterParams]);
+
+  const fetchRecentRuns = useCallback(async () => {
+    try {
+      const res = await adminService.getScrapeRuns();
+      setRecentRuns(res.data.data.slice(0, 5));
+    } catch (err) {
+      console.error('Error fetching scrape runs:', err);
+    }
+  }, []);
+
+  const startRun = async () => {
+    if (!runCategoryUrl.trim() || !runCategoryName.trim() || !runTemplateCategory) {
+      toast.error('Category URL, category name, and a mapped category are all required.');
+      return;
+    }
+    setIsStartingRun(true);
+    try {
+      const res = await adminService.runScrape({
+        category_url: runCategoryUrl.trim(),
+        category_name: runCategoryName.trim(),
+        template_category: runTemplateCategory,
+        brand_filter: runBrandFilter.trim() || undefined,
+        product_limit: runProductLimit ? Number(runProductLimit) : undefined,
+      });
+      setActiveRun(res.data.data);
+      toast.success('Scrape started — this only works when running locally (see the note above).');
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setIsStartingRun(false);
+    }
+  };
+
+  // Polls the one active run every 3s until it's no longer 'running', then refreshes everything
+  // a completed/failed run could have changed (the staged list, stats, and the history panel).
+  useEffect(() => {
+    if (!activeRun || activeRun.status !== 'running') return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await adminService.getScrapeRun(activeRun.id);
+        const updated = res.data.data;
+        setActiveRun(updated);
+        if (updated.status !== 'running') {
+          clearInterval(interval);
+          fetchRecentRuns();
+          fetchRows();
+          fetchStats();
+          if (updated.status === 'completed') {
+            toast.success(
+              `Scrape finished — ${updated.created_count ?? 0} created, ${updated.updated_count ?? 0} updated, ` +
+                `${updated.synced_count ?? 0} synced, ${updated.skipped_count ?? 0} skipped, ${updated.failed_count ?? 0} failed.`
+            );
+          } else {
+            toast.error(`Scrape failed${updated.error_message ? `: ${updated.error_message}` : ''}`);
+          }
+        }
+      } catch (err) {
+        console.error('Error polling scrape run:', err);
+        clearInterval(interval);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeRun?.id, activeRun?.status]);
+
+  useEffect(() => { fetchRecentRuns(); }, [fetchRecentRuns]);
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
+  useEffect(() => { fetchCategories(); fetchBrands(); }, [fetchCategories, fetchBrands]);
   useEffect(() => { fetchRows(); }, [fetchRows]);
 
   useEffect(() => {
     setSelectedIds(new Set());
+    setSelectAllMatching(false);
   }, [rows]);
 
   useEffect(() => {
     if (selectAllCheckboxRef.current) {
       const allSelected = rows.length > 0 && selectedIds.size === rows.length;
-      selectAllCheckboxRef.current.indeterminate = selectedIds.size > 0 && !allSelected;
+      selectAllCheckboxRef.current.indeterminate = !selectAllMatching && selectedIds.size > 0 && !allSelected;
     }
-  }, [selectedIds, rows]);
+  }, [selectedIds, rows, selectAllMatching]);
 
   const toggleSelectAll = () => {
+    setSelectAllMatching(false);
     setSelectedIds((prev) => (prev.size === rows.length ? new Set() : new Set(rows.map((r) => r.id))));
   };
 
   const toggleSelectOne = (id: number) => {
     setSelectedIds((prev) => {
-      const next = new Set(prev);
+      // If "select all matching" was active, materialize it as "everything on this page"
+      // before toggling off the specific row just unchecked — simpler to reason about than
+      // trying to express "all matching, except this one." Otherwise (the common case) this
+      // is a plain add/remove against whatever's already checked.
+      const next = new Set(selectAllMatching ? rows.map((r) => r.id) : prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+    setSelectAllMatching(false);
   };
+
+  const handleSelectAllMatching = () => setSelectAllMatching(true);
 
   const handlePromote = async (row: ScrapedProduct) => {
     setRowPendingAction(row);
@@ -176,16 +325,65 @@ export default function ScrapedProductsPage() {
   const handleBulkReject = async () => {
     setIsBulkRejecting(true);
     try {
-      const res = await adminService.bulkRejectScrapedProducts(Array.from(selectedIds));
+      const res = selectAllMatching
+        ? await adminService.bulkRejectScrapedProductsMatching(buildFilterParams())
+        : await adminService.bulkRejectScrapedProducts(Array.from(selectedIds));
       toast.success(`${res.data.data.rejected} rejected` + (res.data.data.skipped ? `, ${res.data.data.skipped} skipped` : ''));
       setIsBulkRejectModalOpen(false);
       setSelectedIds(new Set());
+      setSelectAllMatching(false);
       fetchRows();
       fetchStats();
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
       setIsBulkRejecting(false);
+    }
+  };
+
+  const handleBulkPromote = async () => {
+    setIsBulkPromoting(true);
+    try {
+      const res = selectAllMatching
+        ? await adminService.bulkPromoteScrapedProductsMatching(buildFilterParams())
+        : await adminService.bulkPromoteScrapedProducts(Array.from(selectedIds));
+      const { promoted, skipped, errors } = res.data.data;
+      toast.success(`${promoted} promoted` + (skipped ? `, ${skipped} skipped` : ''));
+      if (errors?.length) {
+        toast.error(
+          `Skipped (needs review): ${errors.slice(0, 3).map((e) => `"${e.name}" — ${e.reason}`).join('; ')}` +
+            (errors.length > 3 ? `, +${errors.length - 3} more` : ''),
+          { duration: 8000 }
+        );
+      }
+      setIsBulkPromoteModalOpen(false);
+      setSelectedIds(new Set());
+      setSelectAllMatching(false);
+      fetchRows();
+      fetchStats();
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setIsBulkPromoting(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    setIsBulkDeleting(true);
+    try {
+      const res = selectAllMatching
+        ? await adminService.bulkDeleteScrapedProductsMatching(buildFilterParams())
+        : await adminService.bulkDeleteScrapedProducts(Array.from(selectedIds));
+      toast.success(`${res.data.data.deleted} deleted` + (res.data.data.skipped ? `, ${res.data.data.skipped} skipped` : ''));
+      setIsBulkDeleteModalOpen(false);
+      setSelectedIds(new Set());
+      setSelectAllMatching(false);
+      fetchRows();
+      fetchStats();
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setIsBulkDeleting(false);
     }
   };
 
@@ -208,10 +406,121 @@ export default function ScrapedProductsPage() {
             Staged products submitted by a scraping script, waiting for review before they become real (Inactive) products.
           </p>
         </div>
-        <Link href="/products/bulk-import">
-          <Button variant="outline">Bulk Import from Excel instead</Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setShowRunPanel(!showRunPanel)}>
+            <Play className="w-4 h-4 mr-1.5" />
+            Run Scraper
+            {showRunPanel ? <ChevronUp className="w-4 h-4 ml-1.5" /> : <ChevronDown className="w-4 h-4 ml-1.5" />}
+          </Button>
+          <Link href="/products/bulk-import">
+            <Button variant="outline">Bulk Import from Excel instead</Button>
+          </Link>
+        </div>
       </div>
+
+      {/* Run Scraper — triggers scraper/run_scrape.py, which regenerates and runs the notebook's
+          own code fresh (never a hand-duplicated copy of the scraping logic). Only succeeds where
+          this API process itself has an IP Star Tech hasn't Cloudflare-blocked. */}
+      {showRunPanel && (
+        <Card className="mb-4 border-emerald-200 bg-emerald-50/30">
+          <CardContent className="p-4 space-y-4">
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+              Only works when this admin and its API are running on a machine Star Tech hasn&apos;t
+              Cloudflare-blocked — in practice, run this locally, not against the live production site.
+            </p>
+
+            {activeRun && (
+              <div
+                className={`flex items-center gap-2 text-sm rounded px-3 py-2 ${
+                  activeRun.status === 'running'
+                    ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                    : activeRun.status === 'completed'
+                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                    : 'bg-red-50 text-red-800 border border-red-200'
+                }`}
+              >
+                {activeRun.status === 'running' && <Loader2 className="w-4 h-4 animate-spin shrink-0" />}
+                {activeRun.status === 'completed' && <CheckCircle2 className="w-4 h-4 shrink-0" />}
+                {activeRun.status === 'failed' && <AlertCircle className="w-4 h-4 shrink-0" />}
+                <span>
+                  {activeRun.status === 'running' && `Running — scraping "${activeRun.category_name}"...`}
+                  {activeRun.status === 'completed' &&
+                    `Done — ${activeRun.created_count ?? 0} created, ${activeRun.updated_count ?? 0} updated, ` +
+                      `${activeRun.synced_count ?? 0} synced, ${activeRun.skipped_count ?? 0} skipped, ${activeRun.failed_count ?? 0} failed.`}
+                  {activeRun.status === 'failed' && `Failed${activeRun.error_message ? `: ${activeRun.error_message}` : '.'}`}
+                </span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Category URL *</label>
+                <Input
+                  placeholder="https://www.startech.com.bd/component/processor"
+                  value={runCategoryUrl}
+                  onChange={(e) => setRunCategoryUrl(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Category Name (tag) *</label>
+                <Input placeholder="processor" value={runCategoryName} onChange={(e) => setRunCategoryName(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Maps to Category *</label>
+                <SearchableSelect
+                  placeholder="Select a real category"
+                  searchPlaceholder="Search categories..."
+                  options={categories.map((c) => ({ value: c.name, label: c.name }))}
+                  value={runTemplateCategory}
+                  onChange={(v) => setRunTemplateCategory(String(v))}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Brand Filter (optional)</label>
+                <Input placeholder="e.g. Samsung" value={runBrandFilter} onChange={(e) => setRunBrandFilter(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Limit (optional)</label>
+                <Input
+                  type="number"
+                  min={1}
+                  placeholder="e.g. 20"
+                  value={runProductLimit}
+                  onChange={(e) => setRunProductLimit(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <Button onClick={startRun} isLoading={isStartingRun} disabled={activeRun?.status === 'running'}>
+                <Play className="w-4 h-4 mr-1.5" />
+                Run
+              </Button>
+            </div>
+
+            {recentRuns.length > 0 && (
+              <div className="pt-3 border-t">
+                <p className="text-xs font-medium text-gray-500 uppercase mb-2">Recent runs</p>
+                <div className="space-y-1.5">
+                  {recentRuns.map((run) => (
+                    <div key={run.id} className="flex items-center justify-between gap-2 text-xs text-gray-600">
+                      <span className="truncate flex-1">
+                        {run.category_name} → {run.template_category}
+                      </span>
+                      <Badge variant={run.status === 'completed' ? 'success' : run.status === 'failed' ? 'danger' : 'info'}>
+                        {run.status}
+                      </Badge>
+                      <span className="text-gray-400 whitespace-nowrap">
+                        {run.created_count ?? 0}c / {run.updated_count ?? 0}u / {run.synced_count ?? 0}s / {run.failed_count ?? 0}f
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Tabs + Search */}
       <Card className="mb-4">
@@ -244,26 +553,80 @@ export default function ScrapedProductsPage() {
                   className="pl-10"
                 />
               </div>
+              <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)}>
+                <Filter className="w-4 h-4 mr-1" />
+                Filters
+              </Button>
               <Button variant="ghost" size="sm" onClick={fetchRows} title="Refresh">
                 <RefreshCw className="w-4 h-4" />
               </Button>
             </div>
+            {showFilters && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4 pt-4 border-t">
+                <SearchableSelect
+                  placeholder="All Categories"
+                  searchPlaceholder="Search categories..."
+                  options={categories.map((c) => ({ value: c.id, label: c.name }))}
+                  value={filterCategory}
+                  onChange={(v) => { setFilterCategory(String(v)); setCurrentPage(1); }}
+                  allowClear
+                />
+                <SearchableSelect
+                  placeholder="All Brands"
+                  searchPlaceholder="Search brands..."
+                  options={brands.map((b) => ({ value: b.id, label: b.name }))}
+                  value={filterBrand}
+                  onChange={(v) => { setFilterBrand(String(v)); setCurrentPage(1); }}
+                  allowClear
+                />
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
 
-      {/* Bulk toolbar — reject only applies to pending rows, so it's only offered on that tab. */}
-      {selectedIds.size > 0 && activeTab === 'pending' && (
+      {/* Bulk toolbar — Promote/Reject only apply to pending rows; Delete works from either
+          selectable tab (Pending or Rejected — never Promoted, see the checkbox column below). */}
+      {selectedIds.size > 0 && activeTab !== 'promoted' && (
         <Card className="mb-4 border-red-200 bg-red-50/60">
-          <CardContent className="p-3 flex items-center justify-between">
-            <p className="text-sm font-medium text-red-800">{selectedIds.size} selected</p>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setSelectedIds(new Set())}>Clear</Button>
-              <Button variant="danger" size="sm" onClick={() => setIsBulkRejectModalOpen(true)}>
-                <XCircle className="w-4 h-4 mr-1.5" />
-                Reject Selected
-              </Button>
+          <CardContent className="p-3 flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-red-800">
+                {selectAllMatching ? `All ${totalRows} matching selected` : `${selectedIds.size} selected`}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={() => { setSelectedIds(new Set()); setSelectAllMatching(false); }}>
+                  Clear
+                </Button>
+                {activeTab === 'pending' && (
+                  <Button variant="danger" size="sm" onClick={() => setIsBulkRejectModalOpen(true)}>
+                    <XCircle className="w-4 h-4 mr-1.5" />
+                    Reject {selectAllMatching ? `All ${totalRows}` : 'Selected'}
+                  </Button>
+                )}
+                <Button variant="danger" size="sm" onClick={() => setIsBulkDeleteModalOpen(true)}>
+                  <Trash2 className="w-4 h-4 mr-1.5" />
+                  Delete {selectAllMatching ? `All ${totalRows}` : 'Selected'}
+                </Button>
+                {activeTab === 'pending' && (
+                  <Button size="sm" onClick={() => setIsBulkPromoteModalOpen(true)}>
+                    <ArrowRight className="w-4 h-4 mr-1.5" />
+                    Promote {selectAllMatching ? `All ${totalRows}` : 'Selected'}
+                  </Button>
+                )}
+              </div>
             </div>
+            {/* Only offered once every row on the current page is checked and there's more than
+                one page to expand into — this is what makes "promote this whole brand/category,
+                or everything" possible in one click instead of clicking through each page. */}
+            {!selectAllMatching && selectedIds.size === rows.length && totalRows > rows.length && (
+              <p className="text-sm text-red-700">
+                All {rows.length} rows on this page are selected.{' '}
+                <button type="button" className="font-medium underline hover:no-underline" onClick={handleSelectAllMatching}>
+                  Select all {totalRows} matching this view instead
+                </button>
+              </p>
+            )}
           </CardContent>
         </Card>
       )}
@@ -289,7 +652,7 @@ export default function ScrapedProductsPage() {
               <table className="w-full">
                 <thead className="bg-gray-50 border-y">
                   <tr>
-                    {activeTab === 'pending' && (
+                    {activeTab !== 'promoted' && (
                       <th className="w-10 px-4 py-2">
                         <input
                           ref={selectAllCheckboxRef}
@@ -313,7 +676,7 @@ export default function ScrapedProductsPage() {
                 <tbody className="divide-y divide-gray-200">
                   {rows.map((row) => (
                     <tr key={row.id} className={`hover:bg-gray-50 transition-colors ${selectedIds.has(row.id) ? 'bg-red-50/40' : ''}`}>
-                      {activeTab === 'pending' && (
+                      {activeTab !== 'promoted' && (
                         <td className="px-4 py-2.5">
                           <input
                             type="checkbox"
@@ -363,7 +726,14 @@ export default function ScrapedProductsPage() {
                       </td>
                       <td className="px-4 py-2.5 text-sm text-gray-600">{row.stock_status_raw || '-'}</td>
                       <td className="px-4 py-2.5">
-                        <Badge variant="info">{row.source_site}</Badge>
+                        <div className="flex items-center gap-1">
+                          <Badge variant="info">{row.source_site}</Badge>
+                          {row.last_ingest_action && INGEST_ACTION_BADGES[row.last_ingest_action] && (
+                            <Badge variant={INGEST_ACTION_BADGES[row.last_ingest_action].variant}>
+                              {INGEST_ACTION_BADGES[row.last_ingest_action].label}
+                            </Badge>
+                          )}
+                        </div>
                         {row.status === 'rejected' && row.reject_reason && (
                           <p className="text-xs text-gray-400 mt-1 max-w-[10rem] truncate" title={row.reject_reason}>{row.reject_reason}</p>
                         )}
@@ -456,10 +826,43 @@ export default function ScrapedProductsPage() {
         onClose={() => setIsBulkRejectModalOpen(false)}
         onConfirm={handleBulkReject}
         title="Reject Selected"
-        message={`Reject ${selectedIds.size} selected row(s)?`}
-        confirmLabel={`Reject ${selectedIds.size}`}
+        message={
+          selectAllMatching
+            ? `Reject all ${totalRows} rows matching the current filters?`
+            : `Reject ${selectedIds.size} selected row(s)?`
+        }
+        confirmLabel={selectAllMatching ? `Reject All ${totalRows}` : `Reject ${selectedIds.size}`}
         variant="danger"
         isLoading={isBulkRejecting}
+      />
+
+      <ConfirmModal
+        isOpen={isBulkPromoteModalOpen}
+        onClose={() => setIsBulkPromoteModalOpen(false)}
+        onConfirm={handleBulkPromote}
+        title="Promote Selected to Products"
+        message={
+          selectAllMatching
+            ? `Move all ${totalRows} rows matching the current filters into the live catalog? Each becomes a new Inactive product — any without a mapped category or price will be skipped and stay here for review.`
+            : `Move ${selectedIds.size} selected row(s) into the live catalog? Each becomes a new Inactive product — any without a mapped category or price will be skipped and stay here for review.`
+        }
+        confirmLabel={selectAllMatching ? `Promote All ${totalRows}` : `Promote ${selectedIds.size}`}
+        isLoading={isBulkPromoting}
+      />
+
+      <ConfirmModal
+        isOpen={isBulkDeleteModalOpen}
+        onClose={() => setIsBulkDeleteModalOpen(false)}
+        onConfirm={handleBulkDelete}
+        title="Delete Selected"
+        message={
+          selectAllMatching
+            ? `Permanently delete all ${totalRows} rows matching the current filters from the staging list? This cannot be undone.`
+            : `Permanently delete ${selectedIds.size} selected row(s) from the staging list? This cannot be undone.`
+        }
+        confirmLabel={selectAllMatching ? `Delete All ${totalRows}` : `Delete ${selectedIds.size}`}
+        variant="danger"
+        isLoading={isBulkDeleting}
       />
     </AdminLayout>
   );

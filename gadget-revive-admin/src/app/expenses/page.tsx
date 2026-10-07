@@ -1,18 +1,22 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { Plus, Pencil, Trash2, Search, RefreshCw, Filter, ArrowUpCircle, Undo2, History } from 'lucide-react';
+import Link from 'next/link';
+import toast from 'react-hot-toast';
+import {
+  Plus, Pencil, Trash2, ArrowUpCircle, Undo2, History, Download, Search,
+  Receipt, Trophy, AlertTriangle, TrendingUp, TrendingDown,
+} from 'lucide-react';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+} from 'recharts';
 import { AdminLayout } from '@/components/layout';
 import {
-  Card, CardContent, CardHeader, CardTitle,
-  Button, Input, Select, Modal, Badge,
-  LoadingSpinner, Pagination, EmptyState, ErrorState, HistoryModal,
+  Button, Input, Select, Modal, Badge, LoadingSpinner, Pagination, EmptyState, ErrorState, HistoryModal,
 } from '@/components/ui';
-import { Expense, ExpenseCategory, PaginatedResponse } from '@/types';
-import { formatCurrency, formatDate, getErrorMessage } from '@/lib/utils';
+import { Expense, ExpenseCategory, ExpenseAnalytics } from '@/types';
+import { formatCurrency, formatDate, getErrorMessage, downloadBlob } from '@/lib/utils';
 import adminService from '@/lib/adminService';
-import toast from 'react-hot-toast';
-import Link from 'next/link';
 
 const EMPTY_FORM = {
   expense_category_id: '',
@@ -23,23 +27,255 @@ const EMPTY_FORM = {
   reference: '',
 };
 
+type Tab = 'list' | 'report';
+type ListView = 'active' | 'reversed';
+type Preset = 'all' | 'today' | '7d' | 'month' | 'last_month' | 'year' | 'custom';
+type LedgerFilter = '' | 'synced' | 'unsynced';
+type GroupBy = 'auto' | 'day' | 'week' | 'month';
+
+interface Filters {
+  preset: Preset;
+  start: string;
+  end: string;
+  categories: number[];
+  ledger: LedgerFilter;
+  search: string;
+  minAmount: string;
+  maxAmount: string;
+}
+
+const EMPTY_FILTERS: Filters = {
+  preset: 'all', start: '', end: '', categories: [], ledger: '', search: '', minAmount: '', maxAmount: '',
+};
+
+const PRESETS: { value: Preset; label: string }[] = [
+  { value: 'all', label: 'All time' },
+  { value: 'today', label: 'Today' },
+  { value: '7d', label: 'Last 7 days' },
+  { value: 'month', label: 'This month' },
+  { value: 'last_month', label: 'Last month' },
+  { value: 'year', label: 'This year' },
+  { value: 'custom', label: 'Custom' },
+];
+
+const GROUP_OPTIONS: { value: GroupBy; label: string }[] = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'day', label: 'Daily' },
+  { value: 'week', label: 'Weekly' },
+  { value: 'month', label: 'Monthly' },
+];
+
+const CHART_COLORS = ['#6366F1', '#0EA5E9', '#10B981', '#F59E0B', '#F43F5E', '#8B5CF6', '#14B8A6', '#F97316', '#EC4899', '#84CC16'];
+
+const FIELD = 'h-8 rounded-lg border border-gray-300 bg-white px-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500';
+
+function chipClass(on: boolean) {
+  return `rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${
+    on ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+  }`;
+}
+
+function ymd(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function presetRange(preset: Preset): { start: string; end: string } | null {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  switch (preset) {
+    case 'today':
+      return { start: ymd(now), end: ymd(now) };
+    case '7d': {
+      const s = new Date(now);
+      s.setDate(s.getDate() - 6);
+      return { start: ymd(s), end: ymd(now) };
+    }
+    case 'month':
+      return { start: ymd(new Date(y, m, 1)), end: ymd(now) };
+    case 'last_month':
+      return { start: ymd(new Date(y, m - 1, 1)), end: ymd(new Date(y, m, 0)) };
+    case 'year':
+      return { start: ymd(new Date(y, 0, 1)), end: ymd(now) };
+    default:
+      return null;
+  }
+}
+
+function buildFilterParams(f: Filters): Record<string, string | number> {
+  const p: Record<string, string | number> = {};
+  if (f.start) p.start_date = f.start;
+  if (f.end) p.end_date = f.end;
+  if (f.categories.length) p.expense_category_ids = f.categories.join(',');
+  if (f.ledger) p.ledger_status = f.ledger;
+  if (f.search.trim()) p.search = f.search.trim();
+  if (f.minAmount) p.min_amount = f.minAmount;
+  if (f.maxAmount) p.max_amount = f.maxAmount;
+  return p;
+}
+
+function resolveGroupBy(groupBy: GroupBy, start: string, end: string): 'day' | 'week' | 'month' {
+  if (groupBy !== 'auto') return groupBy;
+  if (!start || !end) return 'month';
+  const days = (new Date(end).getTime() - new Date(start).getTime()) / 86400000 + 1;
+  if (days <= 62) return 'day';
+  if (days <= 366) return 'week';
+  return 'month';
+}
+
+function hasActiveFilters(f: Filters) {
+  return f.preset !== 'all' || f.categories.length > 0 || !!f.ledger || !!f.search || !!f.minAmount || !!f.maxAmount;
+}
+
+function FilterBar({
+  filters, setFilters, categories, onExport, exporting,
+}: {
+  filters: Filters;
+  setFilters: React.Dispatch<React.SetStateAction<Filters>>;
+  categories: ExpenseCategory[];
+  onExport: () => void;
+  exporting: boolean;
+}) {
+  const patch = (p: Partial<Filters>) => setFilters((f) => ({ ...f, ...p }));
+
+  const choosePreset = (preset: Preset) => {
+    if (preset === 'all') return patch({ preset, start: '', end: '' });
+    const range = presetRange(preset);
+    if (range) return patch({ preset, ...range });
+    patch({ preset });
+  };
+
+  const setDate = (key: 'start' | 'end', value: string) => patch({ [key]: value, preset: 'custom' } as Partial<Filters>);
+
+  const toggleCategory = (id: number) =>
+    patch({
+      categories: filters.categories.includes(id)
+        ? filters.categories.filter((c) => c !== id)
+        : [...filters.categories, id],
+    });
+
+  return (
+    <div className="space-y-2 rounded-xl border border-gray-200 bg-white p-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-1.5">
+          {PRESETS.map((p) => (
+            <button key={p.value} type="button" onClick={() => choosePreset(p.value)} className={chipClass(filters.preset === p.value)}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          {hasActiveFilters(filters) && (
+            <Button size="sm" variant="ghost" onClick={() => setFilters(EMPTY_FILTERS)}>Reset</Button>
+          )}
+          <Button size="sm" variant="outline" onClick={onExport} isLoading={exporting} leftIcon={<Download className="h-3.5 w-3.5" />}>
+            Export CSV
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+          From
+          <input type="date" value={filters.start} onChange={(e) => setDate('start', e.target.value)} className={`${FIELD} w-36`} />
+        </label>
+        <label className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+          To
+          <input type="date" value={filters.end} onChange={(e) => setDate('end', e.target.value)} className={`${FIELD} w-36`} />
+        </label>
+        <div className="relative min-w-[200px] flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+          <input
+            value={filters.search}
+            onChange={(e) => patch({ search: e.target.value })}
+            placeholder="Search title, reference or description…"
+            className={`${FIELD} w-full pl-8`}
+          />
+        </div>
+        <select value={filters.ledger} onChange={(e) => patch({ ledger: e.target.value as LedgerFilter })} className={`${FIELD} w-40`}>
+          <option value="">All ledger status</option>
+          <option value="synced">Posted to ledger</option>
+          <option value="unsynced">Not posted</option>
+        </select>
+        <input
+          type="number"
+          min={0}
+          value={filters.minAmount}
+          onChange={(e) => patch({ minAmount: e.target.value })}
+          placeholder="Min ৳"
+          className={`${FIELD} w-24`}
+        />
+        <input
+          type="number"
+          min={0}
+          value={filters.maxAmount}
+          onChange={(e) => patch({ maxAmount: e.target.value })}
+          placeholder="Max ৳"
+          className={`${FIELD} w-24`}
+        />
+      </div>
+
+      {categories.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {categories.map((c) => (
+            <button key={c.id} type="button" onClick={() => toggleCategory(c.id)} className={chipClass(filters.categories.includes(c.id))}>
+              {c.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function KpiTile({
+  label, value, sub, tone, icon,
+}: {
+  label: string;
+  value: string;
+  sub?: React.ReactNode;
+  tone: 'rose' | 'indigo' | 'amber' | 'orange' | 'emerald';
+  icon: React.ReactNode;
+}) {
+  const tones: Record<typeof tone, string> = {
+    rose: 'border-rose-200 bg-rose-50/60 text-rose-800',
+    indigo: 'border-indigo-200 bg-indigo-50/60 text-indigo-800',
+    amber: 'border-amber-200 bg-amber-50/60 text-amber-800',
+    orange: 'border-orange-200 bg-orange-50/60 text-orange-800',
+    emerald: 'border-emerald-200 bg-emerald-50/60 text-emerald-800',
+  };
+  return (
+    <div className={`rounded-xl border p-3 ${tones[tone]}`}>
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] font-semibold uppercase tracking-wide opacity-70">{label}</p>
+        {icon}
+      </div>
+      <p className="mt-1 text-lg font-bold tabular-nums">{value}</p>
+      {sub && <div className="mt-0.5 text-[11px] opacity-80">{sub}</div>}
+    </div>
+  );
+}
+
 export default function ExpensesPage() {
-  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [tab, setTab] = useState<Tab>('list');
+  const [listView, setListView] = useState<ListView>('active');
+  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [applied, setApplied] = useState<Filters>(EMPTY_FILTERS);
+  const [groupBy, setGroupBy] = useState<GroupBy>('auto');
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(false);
+
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [listLoading, setListLoading] = useState(true);
+  const [listError, setListError] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
 
-  // Filters
-  const [filterCategory, setFilterCategory] = useState('');
-  const [filterStart, setFilterStart] = useState('');
-  const [filterEnd, setFilterEnd] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'all' | 'reversed'>('all');
+  const [analytics, setAnalytics] = useState<ExpenseAnalytics | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
-  // Modals
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
@@ -50,48 +286,64 @@ export default function ExpensesPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [syncingId, setSyncingId] = useState<number | null>(null);
 
-  const fetchCategories = useCallback(async () => {
-    try {
-      const res = await adminService.getExpenseCategories({ active_only: true });
-      const payload = res.data?.data as unknown;
-      const list = Array.isArray(payload)
-        ? payload
-        : (payload as { data?: ExpenseCategory[] })?.data;
-      setCategories(Array.isArray(list) ? (list as ExpenseCategory[]) : []);
-    } catch {
-      // silent — categories may still load on next refresh
-    }
+  useEffect(() => {
+    adminService.getExpenseCategories()
+      .then((res) => {
+        const payload = res.data?.data as unknown;
+        const list = Array.isArray(payload) ? payload : (payload as { data?: ExpenseCategory[] })?.data;
+        setCategories(Array.isArray(list) ? (list as ExpenseCategory[]) : []);
+      })
+      .catch(() => setCategories([]));
   }, []);
 
-  const fetchExpenses = useCallback(async () => {
-    setIsLoading(true);
-    setError(false);
-    try {
-      const params: Record<string, string | number> = { page: currentPage, per_page: 20 };
-      if (filterCategory) params.expense_category_id = filterCategory;
-      if (filterStart) params.start_date = filterStart;
-      if (filterEnd) params.end_date = filterEnd;
-      if (activeTab === 'reversed') params.reversed = 'true';
+  // Filters apply after a short pause so typing in search or amount doesn't fire a request per keystroke.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setApplied(filters);
+      setCurrentPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [filters]);
 
+  const fetchExpenses = useCallback(async () => {
+    setListLoading(true);
+    setListError(false);
+    try {
+      const params: Record<string, string | number> = { ...buildFilterParams(applied), page: currentPage, per_page: 15 };
+      if (listView === 'reversed') params.reversed = 'true';
       const res = await adminService.getExpenses(params);
-      const payload = res.data?.data as unknown;
-      const paged: Partial<PaginatedResponse<Expense>> = (Array.isArray(payload)
-        ? { data: payload }
-        : (payload as PaginatedResponse<Expense>)) ?? { data: [] };
-      setExpenses(Array.isArray(paged.data) ? paged.data : []);
-      setTotalPages(paged.meta?.last_page || 1);
-      setTotalCount(paged.meta?.total || 0);
+      setExpenses(res.data.data ?? []);
+      setTotalPages(res.data.meta?.last_page || 1);
+      setTotalCount(res.data.meta?.total || 0);
     } catch (err) {
       toast.error(getErrorMessage(err));
-      setError(true);
+      setListError(true);
       setExpenses([]);
     } finally {
-      setIsLoading(false);
+      setListLoading(false);
     }
-  }, [currentPage, filterCategory, filterStart, filterEnd, activeTab]);
+  }, [applied, currentPage, listView]);
 
-  useEffect(() => { fetchCategories(); }, [fetchCategories]);
-  useEffect(() => { fetchExpenses(); }, [fetchExpenses]);
+  const fetchAnalytics = useCallback(async () => {
+    setReportLoading(true);
+    setReportError(false);
+    try {
+      const res = await adminService.getExpenseAnalytics({
+        ...buildFilterParams(applied),
+        group_by: resolveGroupBy(groupBy, applied.start, applied.end),
+      });
+      setAnalytics(res.data.data);
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+      setReportError(true);
+      setAnalytics(null);
+    } finally {
+      setReportLoading(false);
+    }
+  }, [applied, groupBy]);
+
+  useEffect(() => { if (tab === 'list') fetchExpenses(); }, [tab, fetchExpenses]);
+  useEffect(() => { if (tab === 'report') fetchAnalytics(); }, [tab, fetchAnalytics]);
 
   const openCreate = () => {
     setSelectedExpense(null);
@@ -130,6 +382,11 @@ export default function ExpensesPage() {
     return Object.keys(errors).length === 0;
   };
 
+  const refreshCurrentTab = () => {
+    if (tab === 'list') fetchExpenses();
+    else fetchAnalytics();
+  };
+
   const handleSave = async () => {
     if (!validateForm()) return;
     setIsSaving(true);
@@ -151,7 +408,7 @@ export default function ExpensesPage() {
         toast.success('Expense recorded.');
       }
       setIsFormOpen(false);
-      fetchExpenses();
+      refreshCurrentTab();
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -171,17 +428,12 @@ export default function ExpensesPage() {
           : 'Expense reversed.'
       );
       setIsDeleteOpen(false);
-      fetchExpenses();
+      refreshCurrentTab();
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
       setIsDeleting(false);
     }
-  };
-
-  const handleFilter = () => {
-    setCurrentPage(1);
-    fetchExpenses();
   };
 
   const handleSyncToLedger = async (expense: Expense) => {
@@ -190,6 +442,7 @@ export default function ExpensesPage() {
       await adminService.processExpenseSync(expense.id);
       toast.success(`Synced "${expense.title}" to the ledger.`);
       setExpenses((prev) => prev.map((e) => (e.id === expense.id ? { ...e, is_ledger_synced: true } : e)));
+      if (analytics) fetchAnalytics();
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -197,232 +450,392 @@ export default function ExpensesPage() {
     }
   };
 
-  const clearFilters = () => {
-    setFilterCategory('');
-    setFilterStart('');
-    setFilterEnd('');
-    setSearchQuery('');
-    setCurrentPage(1);
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const params: Record<string, string | number> = { ...buildFilterParams(applied) };
+      if (tab === 'list' && listView === 'reversed') params.reversed = 'true';
+      const res = await adminService.exportExpenses(params);
+      const stamp = ymd(new Date());
+      downloadBlob(new Blob([res.data], { type: 'text/csv' }), `expenses_${stamp}.csv`);
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setExporting(false);
+    }
   };
+
+  const formCategories = categories.filter((c) => c.is_active || String(c.id) === form.expense_category_id);
+
+  const summary = analytics?.summary;
+  const previous = analytics?.previous ?? null;
+  const delta = summary && previous && previous.total > 0
+    ? ((summary.total - previous.total) / previous.total) * 100
+    : null;
+  const headerCount = tab === 'list' ? totalCount : (summary?.count ?? 0);
 
   return (
     <AdminLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Expenses</h1>
-            <p className="text-sm text-gray-500 mt-1">{totalCount} record{totalCount !== 1 ? 's' : ''}</p>
-          </div>
-          <div className="flex gap-2 flex-wrap">
-            <Link href="/expenses/categories">
-              <Button variant="outline" size="sm">Manage Categories</Button>
-            </Link>
-            <Link href="/reports/revenue">
-              <Button variant="outline" size="sm">Revenue Report</Button>
-            </Link>
-            <Button onClick={openCreate} leftIcon={<Plus className="w-4 h-4" />}>
-              Add Expense
-            </Button>
-          </div>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2.5">
+          <h1 className="text-lg font-bold text-gray-900">Expenses</h1>
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-600">
+            {headerCount} record{headerCount !== 1 ? 's' : ''}
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href="/expenses/categories">
+            <Button variant="outline" size="sm">Manage categories</Button>
+          </Link>
+          <Link href="/reports/revenue">
+            <Button variant="outline" size="sm">Revenue report</Button>
+          </Link>
+          <Button size="sm" onClick={openCreate} leftIcon={<Plus className="h-3.5 w-3.5" />}>Add expense</Button>
+        </div>
+      </div>
+
+      <div className="mb-3">
+        <FilterBar
+          filters={filters}
+          setFilters={setFilters}
+          categories={categories}
+          onExport={handleExport}
+          exporting={exporting}
+        />
+      </div>
+
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex gap-1.5">
+          <button
+            type="button"
+            onClick={() => setTab('list')}
+            className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+              tab === 'list' ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50'
+            }`}
+          >
+            Expense list
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('report')}
+            className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
+              tab === 'report' ? 'border-violet-600 bg-violet-600 text-white' : 'border-violet-200 bg-white text-violet-700 hover:bg-violet-50'
+            }`}
+          >
+            Reporting
+          </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-gray-200">
-          {(['all', 'reversed'] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => { setActiveTab(tab); setCurrentPage(1); }}
-              className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-                activeTab === tab
-                  ? 'border-primary-600 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-              title={tab === 'reversed' ? 'Expenses deleted (reversed) from the ledger' : undefined}
-            >
-              {tab === 'all' ? 'All' : 'Reversed'}
-            </button>
-          ))}
-        </div>
+        {tab === 'list' && (
+          <div className="flex gap-1.5">
+            {(['active', 'reversed'] as const).map((view) => (
+              <button
+                key={view}
+                type="button"
+                onClick={() => { setListView(view); setCurrentPage(1); }}
+                title={view === 'reversed' ? 'Expenses deleted (reversed) from the ledger' : undefined}
+                className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${
+                  listView === view
+                    ? (view === 'reversed' ? 'border-amber-500 bg-amber-500 text-white' : 'border-slate-700 bg-slate-700 text-white')
+                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                {view === 'active' ? 'Active' : 'Reversed'}
+              </button>
+            ))}
+          </div>
+        )}
 
-        {/* Filters */}
-        <Card>
-          <CardContent className="pt-4">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <Select
-                label="Category"
-                value={filterCategory}
-                onChange={(e) => setFilterCategory(e.target.value)}
-                options={[
-                  { value: '', label: 'All Categories' },
-                  ...categories.map((c) => ({ value: String(c.id), label: c.name })),
-                ]}
-              />
-              <Input
-                label="From Date"
-                type="date"
-                value={filterStart}
-                onChange={(e) => setFilterStart(e.target.value)}
-              />
-              <Input
-                label="To Date"
-                type="date"
-                value={filterEnd}
-                onChange={(e) => setFilterEnd(e.target.value)}
-              />
-              <div className="flex items-end gap-2">
-                <Button onClick={handleFilter} leftIcon={<Filter className="w-4 h-4" />} className="flex-1">
-                  Filter
-                </Button>
-                <Button variant="ghost" onClick={clearFilters} size="sm">
-                  Clear
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        {tab === 'report' && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Group by</span>
+            {GROUP_OPTIONS.map((g) => (
+              <button key={g.value} type="button" onClick={() => setGroupBy(g.value)} className={chipClass(groupBy === g.value)}>
+                {g.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
-        {/* Table */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Expense Records</CardTitle>
-            <Button variant="ghost" size="sm" onClick={fetchExpenses} leftIcon={<RefreshCw className="w-4 h-4" />}>
-              Refresh
-            </Button>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="flex justify-center py-12"><LoadingSpinner /></div>
-            ) : error ? (
+      {tab === 'list' && (
+        <>
+          <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+            {listLoading ? (
+              <div className="flex justify-center py-10"><LoadingSpinner /></div>
+            ) : listError ? (
               <ErrorState message="Failed to load expenses." onRetry={fetchExpenses} />
             ) : expenses.length === 0 ? (
               <EmptyState
-                title={activeTab === 'reversed' ? 'No reversed expenses' : 'No expenses found'}
+                title={listView === 'reversed' ? 'No reversed expenses' : 'No expenses found'}
                 description={
-                  activeTab === 'reversed'
-                    ? "Expenses you delete show up here, along with their reversed journal entry."
-                    : 'Add your first expense to start tracking.'
+                  listView === 'reversed'
+                    ? 'Expenses you delete show up here, along with their reversed journal entry.'
+                    : hasActiveFilters(applied) ? 'Try clearing a filter.' : 'Add your first expense to start tracking.'
                 }
-                action={activeTab === 'all' ? <Button onClick={openCreate} leftIcon={<Plus className="w-4 h-4" />}>Add Expense</Button> : undefined}
+                action={listView === 'active' && !hasActiveFilters(applied) ? <Button onClick={openCreate} leftIcon={<Plus className="h-4 w-4" />}>Add expense</Button> : undefined}
               />
             ) : (
-              <>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-gray-200 text-left">
-                        <th className="pb-3 pr-4 font-semibold text-gray-600">Title</th>
-                        <th className="pb-3 pr-4 font-semibold text-gray-600">Category</th>
-                        <th className="pb-3 pr-4 font-semibold text-gray-600 text-right">Amount</th>
-                        <th className="pb-3 pr-4 font-semibold text-gray-600">Date</th>
-                        <th className="pb-3 pr-4 font-semibold text-gray-600">Reference</th>
-                        {activeTab === 'reversed' ? (
-                          <th className="pb-3 font-semibold text-gray-600">Reversed</th>
-                        ) : (
-                          <th className="pb-3 font-semibold text-gray-600 text-right">Actions</th>
+              <div className="max-h-[calc(100vh-19rem)] overflow-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226,232,240)]">
+                    <tr>
+                      <th className="whitespace-nowrap px-3 py-2 text-left font-semibold">Date</th>
+                      <th className="px-3 py-2 text-left font-semibold">Title</th>
+                      <th className="px-3 py-2 text-left font-semibold">Category</th>
+                      <th className="px-3 py-2 text-left font-semibold">Reference</th>
+                      {listView === 'active' && <th className="px-3 py-2 text-left font-semibold">Ledger</th>}
+                      <th className="px-3 py-2 text-right font-semibold">Amount</th>
+                      <th className="px-3 py-2 text-right font-semibold">{listView === 'reversed' ? 'Reversed' : 'Actions'}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {expenses.map((expense, i) => (
+                      <tr key={expense.id} className={`${i % 2 ? 'bg-slate-50/50' : 'bg-white'} hover:bg-indigo-50/40`}>
+                        <td className="whitespace-nowrap px-3 py-2 text-xs tabular-nums text-gray-500">{formatDate(expense.expense_date)}</td>
+                        <td className="px-3 py-2">
+                          <p className="font-semibold text-gray-900">{expense.title}</p>
+                          {expense.description && (
+                            <p className="max-w-[260px] truncate text-[11px] text-gray-500">{expense.description}</p>
+                          )}
+                        </td>
+                        <td className="px-3 py-2"><Badge variant="default">{expense.category?.name ?? '—'}</Badge></td>
+                        <td className="px-3 py-2 font-mono text-[11px] text-gray-500">{expense.reference || '—'}</td>
+                        {listView === 'active' && (
+                          <td className="px-3 py-2">
+                            {expense.is_ledger_synced
+                              ? <Badge variant="success">Posted</Badge>
+                              : <Badge variant="warning">Not posted</Badge>}
+                          </td>
                         )}
+                        <td className="whitespace-nowrap px-3 py-2 text-right font-semibold tabular-nums text-rose-600">
+                          {formatCurrency(Number(expense.amount))}
+                        </td>
+                        <td className="px-3 py-2">
+                          {listView === 'reversed' ? (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <Badge variant="warning" className="inline-flex items-center gap-1">
+                                <Undo2 className="h-3 w-3" /> Reversed
+                              </Badge>
+                              {expense.reversed_at && (
+                                <span className="whitespace-nowrap text-[11px] text-gray-500">
+                                  {formatDate(expense.reversed_at)}
+                                  {expense.reverser?.name ? ` by ${expense.reverser.name}` : ''}
+                                </span>
+                              )}
+                              <button type="button" title="View history" onClick={() => setHistoryExpense(expense)} className="rounded-md p-1 text-slate-500 hover:bg-slate-100">
+                                <History className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-end gap-0.5">
+                              <button type="button" title="View history" onClick={() => setHistoryExpense(expense)} className="rounded-md p-1 text-slate-500 hover:bg-slate-100">
+                                <History className="h-3.5 w-3.5" />
+                              </button>
+                              {!expense.is_ledger_synced && (
+                                <button
+                                  type="button"
+                                  title="Not yet posted to the ledger — post it now"
+                                  onClick={() => handleSyncToLedger(expense)}
+                                  disabled={syncingId === expense.id}
+                                  className="rounded-md p-1 text-amber-600 hover:bg-amber-50 disabled:opacity-50"
+                                >
+                                  <ArrowUpCircle className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                title={expense.is_ledger_synced ? 'Posted to the ledger — delete and add a new expense to change it' : 'Edit'}
+                                onClick={() => openEdit(expense)}
+                                disabled={expense.is_ledger_synced}
+                                className="rounded-md p-1 text-sky-600 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                              <button type="button" title="Delete" onClick={() => openDelete(expense)} className="rounded-md p-1 text-rose-500 hover:bg-rose-50">
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {totalCount > 0 && (
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+              <span>
+                Showing <span className="font-semibold text-gray-700">{(currentPage - 1) * 15 + 1}–{Math.min(totalCount, currentPage * 15)}</span> of{' '}
+                <span className="font-semibold text-gray-700">{totalCount}</span>
+              </span>
+              {totalPages > 1 && (
+                <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === 'report' && (
+        <div className="space-y-3">
+          {reportLoading && !analytics ? (
+            <div className="flex justify-center py-16"><LoadingSpinner /></div>
+          ) : reportError || !analytics ? (
+            <ErrorState message="Failed to load the expense report." onRetry={fetchAnalytics} />
+          ) : summary && summary.count === 0 ? (
+            <EmptyState title="No expenses for these filters" description="Widen the date range or clear a filter to see spending." />
+          ) : summary && (
+            <>
+              <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                <KpiTile
+                  label="Total spent"
+                  value={formatCurrency(summary.total)}
+                  tone="rose"
+                  icon={<Receipt className="h-4 w-4 opacity-60" />}
+                  sub={
+                    delta !== null ? (
+                      <span className="inline-flex items-center gap-1">
+                        {delta >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                        {delta >= 0 ? '+' : ''}{delta.toFixed(1)}% vs previous period
+                      </span>
+                    ) : previous ? (
+                      previous.total === 0 ? 'Nothing spent in the previous period' : null
+                    ) : (
+                      'Pick a date range to compare'
+                    )
+                  }
+                />
+                <KpiTile
+                  label="Transactions"
+                  value={String(summary.count)}
+                  tone="indigo"
+                  icon={<Receipt className="h-4 w-4 opacity-60" />}
+                  sub={`Average ${formatCurrency(summary.average)} each`}
+                />
+                <KpiTile
+                  label="Largest single expense"
+                  value={summary.largest ? formatCurrency(summary.largest.amount) : '—'}
+                  tone="amber"
+                  icon={<Trophy className="h-4 w-4 opacity-60" />}
+                  sub={summary.largest ? `${summary.largest.title} · ${formatDate(summary.largest.expense_date)}` : undefined}
+                />
+                <KpiTile
+                  label="Not posted to ledger"
+                  value={formatCurrency(summary.unposted_total)}
+                  tone={summary.unposted_count > 0 ? 'orange' : 'emerald'}
+                  icon={<AlertTriangle className="h-4 w-4 opacity-60" />}
+                  sub={
+                    summary.unposted_count > 0
+                      ? `${summary.unposted_count} expense${summary.unposted_count === 1 ? '' : 's'} missing from the books — use Sync in the list`
+                      : 'Everything in this view is posted'
+                  }
+                />
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+                <section className="overflow-hidden rounded-xl border border-gray-200 bg-white lg:col-span-2">
+                  <header className="flex items-center justify-between border-b border-gray-100 px-3 py-2">
+                    <h2 className="text-sm font-semibold text-gray-900">Spending over time</h2>
+                    <span className="text-[11px] text-gray-500">Grouped {analytics.period.group_by === 'day' ? 'daily' : analytics.period.group_by === 'week' ? 'weekly' : 'monthly'}</span>
+                  </header>
+                  <div className="p-3">
+                    <ResponsiveContainer width="100%" height={230}>
+                      <BarChart data={analytics.trend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                        <XAxis dataKey="period" tick={{ fontSize: 11 }} />
+                        <YAxis
+                          tick={{ fontSize: 11 }}
+                          width={56}
+                          tickFormatter={(v: number) => (v >= 1000 ? `৳${(v / 1000).toFixed(0)}k` : `৳${v}`)}
+                        />
+                        <Tooltip
+                          formatter={(value: number, _name: string, item) => [
+                            `${formatCurrency(value)} · ${item?.payload?.count ?? 0} expense(s)`,
+                            'Spent',
+                          ]}
+                          labelFormatter={(label) => `Period ${label}`}
+                        />
+                        <Bar dataKey="total" name="Spent" fill="#6366F1" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </section>
+
+                <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+                  <header className="border-b border-gray-100 px-3 py-2">
+                    <h2 className="text-sm font-semibold text-gray-900">By category</h2>
+                  </header>
+                  <div className="space-y-2.5 p-3">
+                    {analytics.by_category.length === 0 && <p className="text-xs text-gray-400">No categorised spending.</p>}
+                    {analytics.by_category.map((c, i) => {
+                      const share = summary.total > 0 ? (c.total / summary.total) * 100 : 0;
+                      return (
+                        <div key={c.id}>
+                          <div className="flex items-center justify-between gap-2 text-xs">
+                            <span className="flex min-w-0 items-center gap-1.5">
+                              <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
+                              <span className="truncate font-semibold text-gray-800">{c.name}</span>
+                              <span className="text-gray-400">· {c.count}</span>
+                            </span>
+                            <span className="whitespace-nowrap font-semibold tabular-nums text-gray-900">
+                              {formatCurrency(c.total)} <span className="font-normal text-gray-400">({share.toFixed(1)}%)</span>
+                            </span>
+                          </div>
+                          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-100">
+                            <div className="h-full rounded-full" style={{ width: `${share}%`, background: CHART_COLORS[i % CHART_COLORS.length] }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              </div>
+
+              <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+                <header className="flex items-center justify-between border-b border-gray-100 px-3 py-2">
+                  <h2 className="text-sm font-semibold text-gray-900">Top spend by title</h2>
+                  <span className="text-[11px] text-gray-500">Top {analytics.top_titles.length}</span>
+                </header>
+                <div className="max-h-[calc(100vh-30rem)] overflow-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226,232,240)]">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-semibold">#</th>
+                        <th className="px-3 py-2 text-left font-semibold">Title</th>
+                        <th className="px-3 py-2 text-right font-semibold">Count</th>
+                        <th className="px-3 py-2 text-right font-semibold">Total</th>
+                        <th className="px-3 py-2 text-right font-semibold">Share</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {expenses.map((expense) => (
-                        <tr key={expense.id} className="hover:bg-gray-50">
-                          <td className="py-3 pr-4">
-                            <p className="font-medium text-gray-900">{expense.title}</p>
-                            {expense.description && (
-                              <p className="text-xs text-gray-500 truncate max-w-[180px]">{expense.description}</p>
-                            )}
+                      {analytics.top_titles.map((t, i) => (
+                        <tr key={`${t.title}-${i}`} className={`${i % 2 ? 'bg-slate-50/50' : 'bg-white'} hover:bg-violet-50/40`}>
+                          <td className="px-3 py-2 text-xs tabular-nums text-gray-400">{i + 1}</td>
+                          <td className="px-3 py-2 font-semibold text-gray-900">{t.title}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-gray-600">{t.count}</td>
+                          <td className="px-3 py-2 text-right font-semibold tabular-nums text-rose-600">{formatCurrency(t.total)}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-gray-500">
+                            {summary.total > 0 ? `${((t.total / summary.total) * 100).toFixed(1)}%` : '—'}
                           </td>
-                          <td className="py-3 pr-4">
-                            <Badge variant="default">{expense.category?.name ?? '—'}</Badge>
-                          </td>
-                          <td className="py-3 pr-4 text-right font-semibold text-red-600">
-                            {formatCurrency(Number(expense.amount))}
-                          </td>
-                          <td className="py-3 pr-4 text-gray-600">{formatDate(expense.expense_date)}</td>
-                          <td className="py-3 pr-4 text-gray-500 text-xs">{expense.reference || '—'}</td>
-                          {activeTab === 'reversed' ? (
-                            <td className="py-3">
-                              <div className="flex items-center gap-1.5">
-                                <Badge variant="warning" className="inline-flex items-center gap-1">
-                                  <Undo2 className="w-3 h-3" /> Reversed
-                                </Badge>
-                                {expense.reversed_at && (
-                                  <span className="text-xs text-gray-500">
-                                    {formatDate(expense.reversed_at)}
-                                    {expense.reverser?.name ? ` by ${expense.reverser.name}` : ''}
-                                  </span>
-                                )}
-                                <Button variant="ghost" size="sm" onClick={() => setHistoryExpense(expense)} title="View History">
-                                  <History className="w-3.5 h-3.5 text-gray-400" />
-                                </Button>
-                              </div>
-                            </td>
-                          ) : (
-                            <td className="py-3 text-right">
-                              <div className="flex justify-end gap-1">
-                                <Button variant="ghost" size="sm" onClick={() => setHistoryExpense(expense)} leftIcon={<History className="w-3.5 h-3.5" />} title="View History">
-                                  History
-                                </Button>
-                                {!expense.is_ledger_synced && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleSyncToLedger(expense)}
-                                    isLoading={syncingId === expense.id}
-                                    className="text-amber-600 hover:text-amber-700 hover:bg-amber-50"
-                                    leftIcon={<ArrowUpCircle className="w-3.5 h-3.5" />}
-                                    title="Not yet posted to the ledger"
-                                  >
-                                    Sync
-                                  </Button>
-                                )}
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => openEdit(expense)}
-                                  disabled={expense.is_ledger_synced}
-                                  leftIcon={<Pencil className="w-3.5 h-3.5" />}
-                                  title={
-                                    expense.is_ledger_synced
-                                      ? 'Posted to the ledger — delete and add a new expense to change it'
-                                      : undefined
-                                  }
-                                >
-                                  Edit
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => openDelete(expense)}
-                                  className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                                  leftIcon={<Trash2 className="w-3.5 h-3.5" />}
-                                >
-                                  Delete
-                                </Button>
-                              </div>
-                            </td>
-                          )}
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
-                {totalPages > 1 && (
-                  <div className="mt-4">
-                    <Pagination
-                      currentPage={currentPage}
-                      totalPages={totalPages}
-                      onPageChange={setCurrentPage}
-                    />
-                  </div>
-                )}
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+              </section>
 
-      {/* Add / Edit Modal */}
+              <p className="text-[11px] text-gray-400">
+                Reversed expenses are excluded from reporting. Export CSV gives the full row detail behind these figures.
+              </p>
+            </>
+          )}
+        </div>
+      )}
+
       <Modal
         isOpen={isFormOpen}
         onClose={() => setIsFormOpen(false)}
@@ -437,7 +850,7 @@ export default function ExpensesPage() {
             error={formErrors.expense_category_id}
             options={[
               { value: '', label: 'Select category…' },
-              ...categories.map((c) => ({ value: String(c.id), label: c.name })),
+              ...formCategories.map((c) => ({ value: String(c.id), label: c.name })),
             ]}
           />
           <Input
@@ -473,7 +886,7 @@ export default function ExpensesPage() {
             placeholder="Optional"
           />
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <label className="mb-1 block text-sm font-medium text-gray-700">Description</label>
             <textarea
               className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
               rows={3}
@@ -491,14 +904,13 @@ export default function ExpensesPage() {
         </div>
       </Modal>
 
-      {/* Delete Confirm Modal */}
       <Modal
         isOpen={isDeleteOpen}
         onClose={() => setIsDeleteOpen(false)}
         title="Delete Expense"
         size="sm"
       >
-        <p className="text-sm text-gray-600 mb-4">
+        <p className="mb-4 text-sm text-gray-600">
           Delete <strong>{selectedExpense?.title}</strong> ({formatCurrency(Number(selectedExpense?.amount))})?
         </p>
         <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
@@ -508,7 +920,7 @@ export default function ExpensesPage() {
                 {formatCurrency(Number(selectedExpense?.amount))}). Deleting it will automatically post a
                 reversing journal entry so your account balances stay correct.</>
               : 'This expense was never posted to the ledger, so there\'s nothing to reverse there.'}
-            {' '}It won&apos;t be permanently erased — you can still find it under the <strong>Reversed</strong> filter.
+            {' '}It won&apos;t be permanently erased — you can still find it under the <strong>Reversed</strong> view.
           </p>
         </div>
         <div className="flex justify-end gap-2">

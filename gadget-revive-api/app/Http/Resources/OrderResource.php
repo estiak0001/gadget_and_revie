@@ -25,6 +25,9 @@ class OrderResource extends JsonResource
             'payment_method' => $this->payment_method,
             'payment_status' => $this->payment_status,
             'order_status' => $this->order_status,
+            // Only present when the query did ->withCount('items') — cheap item-count display
+            // (e.g. the dashboard's recent orders list) without eager-loading every item row.
+            'items_count' => $this->when(isset($this->items_count), fn () => (int) $this->items_count),
             'is_payment_ledger_synced' => $this->isPaymentLedgerSynced(),
             'customer_notes' => $this->customer_notes,
             'vendor_notes' => $this->when($this->shouldShowVendorNotes($request), $this->vendor_notes),
@@ -74,6 +77,10 @@ class OrderResource extends JsonResource
             // behalf) both stamp the acting user's id; the guest flow is the only one that never
             // does, since there's no authenticated actor to stamp.
             'is_guest' => is_null($this->created_by),
+            // Separate from is_guest above -- this tells "an admin/staff member placed this
+            // order manually" apart from "placed through the storefront" (logged-in or guest).
+            // See Order::isManualOrder().
+            'is_manual_order' => $this->isManualOrder(),
             'accepted_at' => $this->accepted_at,
             'completed_at' => $this->completed_at,
             'cancelled_at' => $this->cancelled_at,

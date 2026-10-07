@@ -23,6 +23,7 @@ class OrderItem extends Model
         'warranty_unit',
         'total_price',
         'notes',
+        'problem_type_id',
     ];
 
     protected $casts = [
@@ -46,6 +47,12 @@ class OrderItem extends Model
     public function service()
     {
         return $this->belongsTo(Service::class);
+    }
+
+    /** The problem type (Repair, Recovery, ...) picked at intake, for service line items. */
+    public function problemType()
+    {
+        return $this->belongsTo(ServiceProblemType::class, 'problem_type_id');
     }
 
     /** Physical units sold under this line item (only meaningful for item_type === 'product'). */

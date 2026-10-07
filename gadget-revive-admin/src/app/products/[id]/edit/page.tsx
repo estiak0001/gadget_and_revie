@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { ArrowLeft, Save, Plus, Trash2, RefreshCw, Tag, GripVertical, Edit2, Check, X, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Trash2, RefreshCw, Tag, GripVertical, Edit2, Check, X, ChevronRight, ExternalLink } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import { Card, CardContent, CardHeader, CardTitle, Button, Input, Textarea, Select, SearchableSelect, LoadingSpinner, RichTextEditor, Modal, ImageUpload } from '@/components/ui';
 import { Product, ProductCategory, ProductBrand, CategoryAttribute, ProductAttributeValueEntry, ProductSerial } from '@/types';
@@ -14,6 +14,18 @@ export default function EditProductPage() {
   const router = useRouter();
   const params = useParams();
   const productId = parseInt(params?.id as string);
+
+  // Returns to the list at whichever tab/filter it was left on (that's what's in browser
+  // history from arriving here) instead of always resetting to the default "All" tab -- falls
+  // back to a plain push only if this page was opened with no prior in-app history at all
+  // (e.g. a direct link).
+  const goBackToList = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push('/products');
+    }
+  };
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -559,7 +571,7 @@ export default function EditProductPage() {
       }
 
       toast.success('Product updated successfully');
-      router.push('/products');
+      goBackToList();
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -582,12 +594,12 @@ export default function EditProductPage() {
       <form onSubmit={handleSubmit}>
         {/* Header */}
         <div className="page-header flex items-center justify-between mb-6">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <Button
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => router.back()}
+              onClick={goBackToList}
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back
@@ -601,7 +613,7 @@ export default function EditProductPage() {
             <Button
               type="button"
               variant="outline"
-              onClick={() => router.push('/products')}
+              onClick={goBackToList}
             >
               Cancel
             </Button>
@@ -612,16 +624,16 @@ export default function EditProductPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           {/* Main Content - Left Side (2/3) */}
-          <div className="lg:col-span-2 space-y-4">
+          <div className="lg:col-span-2 space-y-3">
             {/* Basic Information */}
             <Card className="bg-sky-50/60 border-sky-100">
-              <CardHeader className="border-sky-100">
-                <CardTitle>Basic Information</CardTitle>
+              <CardHeader className="border-sky-100 px-3 py-2">
+                <CardTitle className="text-sm">Basic Information</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <CardContent className="space-y-3 p-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Product Name <span className="text-red-500">*</span>
@@ -774,10 +786,10 @@ export default function EditProductPage() {
 
             {/* Images */}
             <Card className="bg-violet-50/60 border-violet-100">
-              <CardHeader className="border-violet-100">
-                <CardTitle>Product Images</CardTitle>
+              <CardHeader className="border-violet-100 px-3 py-2">
+                <CardTitle className="text-sm">Product Images</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3 p-3">
                 {/* Main Image */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Main Image</label>
@@ -835,11 +847,11 @@ export default function EditProductPage() {
 
             {/* Specifications */}
             <Card className="bg-teal-50/60 border-teal-100">
-              <CardHeader className="border-teal-100">
-                <CardTitle>Technical Specifications</CardTitle>
+              <CardHeader className="border-teal-100 px-3 py-2">
+                <CardTitle className="text-sm">Technical Specifications</CardTitle>
                 <p className="text-sm text-gray-500 mt-1">Drag items to reorder, click to edit</p>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3 p-3">
                 {specSuggestions.length > 0 && (() => {
                   const usedKeys = new Set(specifications.map((s) => s.key.toLowerCase()));
                   const available = specSuggestions.filter((s) => !usedKeys.has(s.key.toLowerCase()));
@@ -989,14 +1001,14 @@ export default function EditProductPage() {
 
             {/* Category Filter Attributes */}
             <Card className="bg-rose-50/60 border-rose-100">
-              <CardHeader className="border-rose-100">
-                <CardTitle>Category Filter Attributes</CardTitle>
+              <CardHeader className="border-rose-100 px-3 py-2">
+                <CardTitle className="text-sm">Category Filter Attributes</CardTitle>
                 <p className="text-sm text-gray-500 mt-1">
                   Attributes defined on the selected category (and inherited from its parents).
                   These drive the filter sidebar on the storefront.
                 </p>
               </CardHeader>
-              <CardContent>
+              <CardContent className="p-3">
                 {!formData.category_id ? (
                   <div className="text-center py-8 text-gray-400 border-2 border-dashed border-gray-200 rounded-lg">
                     <p className="text-sm">Select a category to load its filter attributes</p>
@@ -1013,7 +1025,7 @@ export default function EditProductPage() {
                     </p>
                   </div>
                 ) : (
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     {categoryAttributes.map((attr) => {
                       const current = selectedAttributeValues[attr.id];
                       return (
@@ -1104,13 +1116,13 @@ export default function EditProductPage() {
           </div>
 
           {/* Sidebar - Right Side (1/3) */}
-          <div className="space-y-4">
+          <div className="space-y-3">
             {/* Pricing */}
             <Card className="bg-emerald-50/60 border-emerald-100">
-              <CardHeader className="border-emerald-100">
-                <CardTitle>Pricing</CardTitle>
+              <CardHeader className="border-emerald-100 px-3 py-2">
+                <CardTitle className="text-sm">Pricing</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3 p-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Price (৳) <span className="text-red-500">*</span>
@@ -1146,10 +1158,10 @@ export default function EditProductPage() {
 
             {/* Inventory */}
             <Card className="bg-cyan-50/60 border-cyan-100">
-              <CardHeader className="border-cyan-100">
-                <CardTitle>Inventory</CardTitle>
+              <CardHeader className="border-cyan-100 px-3 py-2">
+                <CardTitle className="text-sm">Inventory</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3 p-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Stock Quantity <span className="text-red-500">*</span>
@@ -1216,10 +1228,10 @@ export default function EditProductPage() {
             {/* Serial Numbers */}
             {product && (
               <Card className="bg-orange-50/60 border-orange-100">
-                <CardHeader className="border-orange-100">
-                  <CardTitle>Serial Numbers</CardTitle>
+                <CardHeader className="border-orange-100 px-3 py-2">
+                  <CardTitle className="text-sm">Serial Numbers</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-3 p-3">
                   {(() => {
                     const inStockCount = serials.filter((s) => s.status === 'in_stock').length;
                     const untracked = Math.max(0, product.stock_qty - inStockCount);
@@ -1274,10 +1286,10 @@ export default function EditProductPage() {
 
             {/* Product Details */}
             <Card className="bg-slate-50/60 border-slate-200">
-              <CardHeader className="border-slate-200">
-                <CardTitle>Product Details</CardTitle>
+              <CardHeader className="border-slate-200 px-3 py-2">
+                <CardTitle className="text-sm">Product Details</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3 p-3">
                 <div>
                   <div className="flex items-end gap-2">
                     <div className="flex-1">
@@ -1357,10 +1369,10 @@ export default function EditProductPage() {
 
             {/* Status */}
             <Card className="bg-indigo-50/60 border-indigo-100">
-              <CardHeader className="border-indigo-100">
-                <CardTitle>Status</CardTitle>
+              <CardHeader className="border-indigo-100 px-3 py-2">
+                <CardTitle className="text-sm">Status</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3 p-3">
                 <label className="flex items-center gap-3 cursor-pointer">
                   <div className="relative">
                     <input
@@ -1389,6 +1401,52 @@ export default function EditProductPage() {
                 </label>
               </CardContent>
             </Card>
+
+            {/* Source — only ever set for a product promoted from a scraped staging row; manual
+                and Excel bulk-upload products have no source URL, so this card just doesn't
+                render for them. Read-only: this is provenance, not something to hand-edit, and
+                editing the form above never touches these fields anyway (only what's listed in
+                the update payload changes, so they survive every save untouched). */}
+            {(product?.source_site || product?.source_url || product?.source_product_id) && (
+              <Card className="bg-slate-50/60 border-slate-200">
+                <CardHeader className="border-slate-200 px-3 py-2">
+                  <CardTitle className="text-sm">Source</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  {product.source_site && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-500">Site</span>
+                      <span className="font-medium text-gray-800 capitalize">{product.source_site}</span>
+                    </div>
+                  )}
+                  {product.source_product_id && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-500">Source Product ID</span>
+                      <span className="font-mono text-xs text-gray-700">{product.source_product_id}</span>
+                    </div>
+                  )}
+                  {product.bulk_upload_batch && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-500">Batch</span>
+                      <span className="font-mono text-xs text-gray-700 truncate max-w-[60%]" title={product.bulk_upload_batch}>
+                        {product.bulk_upload_batch}
+                      </span>
+                    </div>
+                  )}
+                  {product.source_url && (
+                    <a
+                      href={product.source_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-start gap-1.5 text-primary-600 hover:underline break-all pt-1 border-t border-slate-200"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      {product.source_url}
+                    </a>
+                  )}
+                </CardContent>
+              </Card>
+            )}
           </div>
         </div>
       </form>

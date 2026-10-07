@@ -352,10 +352,11 @@
                 <thead>
                     <tr>
                         <th style="width:4%;">#</th>
-                        <th style="width:40%;">Item / Device</th>
-                        <th style="width:22%;">Serial No.</th>
+                        <th style="width:34%;">Item / Device</th>
+                        <th style="width:18%;">Serial No.</th>
+                        <th style="width:12%;">Type</th>
                         <th class="c" style="width:6%;">Qty</th>
-                        <th style="width:28%;">Problem Reported</th>
+                        <th style="width:26%;">Problem Reported</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -372,12 +373,13 @@
                             @endif
                         </td>
                         <td class="serial-cell">{{ $item->serial_number ?: '—' }}</td>
+                        <td>{{ $item->problemType->name ?? '—' }}</td>
                         <td class="c">{{ $item->quantity }}</td>
                         <td>{{ $item->problem_reported ?: '—' }}</td>
                     </tr>
                     @empty
                     <tr>
-                        <td colspan="5" style="text-align:center; color:#000000; padding:20px;">No items recorded.</td>
+                        <td colspan="6" style="text-align:center; color:#000000; padding:20px;">No items recorded.</td>
                     </tr>
                     @endforelse
                 </tbody>

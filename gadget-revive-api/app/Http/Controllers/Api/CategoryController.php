@@ -190,7 +190,7 @@ class CategoryController extends BaseController
 
     public function adminServiceCategories(Request $request): JsonResponse
     {
-        $query = ServiceCategory::query()->orderBy('sort_order');
+        $query = ServiceCategory::query()->orderBy('sort_order')->orderBy('id');
 
         if ($request->has('is_active')) {
             $query->where('is_active', $request->boolean('is_active'));
@@ -305,7 +305,7 @@ class CategoryController extends BaseController
 
     public function adminProductCategories(Request $request): JsonResponse
     {
-        $query = ProductCategory::query()->orderBy('sort_order');
+        $query = ProductCategory::query()->orderBy('sort_order')->orderBy('id');
 
         if ($request->has('is_active')) {
             $query->where('is_active', $request->boolean('is_active'));

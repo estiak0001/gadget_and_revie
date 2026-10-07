@@ -20,6 +20,7 @@ import {
     ArrowUpCircle,
     Wallet,
     Eye,
+    EyeOff,
     Plus,
     Undo2,
     DollarSign,
@@ -31,6 +32,7 @@ import {
     MessageSquare,
     Star,
 } from 'lucide-react';
+import { KpiTile } from '@/components/reports/shared';
 import { AdminLayout } from '@/components/layout';
 import {
     Card,
@@ -93,6 +95,9 @@ export default function OrderDetailPage() {
 
     const [order, setOrder] = useState<Order | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    // Cost/margin/profit figures are hidden by default -- an icon reveals them on demand
+    // rather than always showing a number staff shouldn't see at a glance.
+    const [showProfitDetails, setShowProfitDetails] = useState(false);
     const [error, setError] = useState(false);
     const [newStatus, setNewStatus] = useState('');
     const [showStatusConfirm, setShowStatusConfirm] = useState(false);
@@ -806,11 +811,14 @@ export default function OrderDetailPage() {
         );
     }
 
+    // Mirrors Order::isUnconfirmed() on the API -- no bill while still pending/rejected.
+    const isOrderUnconfirmed = !!order && ['pending', 'rejected'].includes(order.order_status);
+
     return (
         <AdminLayout>
             {/* Header */}
-            <div className="page-header">
-                <div className="flex items-center gap-4 mb-2">
+            <div className="mb-3">
+                <div className="flex items-center gap-4 mb-1">
                     <Button variant="ghost" size="sm" onClick={() => router.push('/orders')}>
                         <ArrowLeft className="w-4 h-4 mr-1" />
                         Back to Orders
@@ -819,8 +827,8 @@ export default function OrderDetailPage() {
                 {!isLoading && order && (
                     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                         <div>
-                            <h1 className="page-title">Order {order.order_number}</h1>
-                            <p className="page-description">
+                            <h1 className="font-mono text-lg font-bold text-gray-900">Order {order.order_number}</h1>
+                            <p className="text-[11px] text-gray-500">
                                 Placed on {safeFormatDate(order.created_at)}
                             </p>
                         </div>
@@ -833,8 +841,8 @@ export default function OrderDetailPage() {
                                 {(order.status || order.order_status || 'N/A').replace('_', ' ')}
                             </Badge>
                             <Badge variant={
-                                order.payment_status === 'paid' ? 'success' :
-                                    order.payment_status === 'failed' ? 'danger' :
+                                order.payment_status === 'paid' || order.payment_status === 'verified' ? 'success' :
+                                    order.payment_status === 'failed' || order.payment_status === 'cancelled' ? 'danger' :
                                         order.payment_status === 'partially_paid' || order.payment_status === 'pending' || order.payment_status === 'awaiting_confirmation' ? 'warning' : 'default'
                             }>
                                 Payment: {(order.payment_status || 'N/A').replace('_', ' ')}
@@ -852,28 +860,48 @@ export default function OrderDetailPage() {
                 )}
             </div>
 
+            {!isLoading && order && (
+                    <div className="mb-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
+                        <KpiTile label="Order total" value={formatCurrency(order.total)} tone="indigo" sub={`${order.items?.length ?? 0} item${(order.items?.length ?? 0) === 1 ? '' : 's'}`} />
+                        <KpiTile label="Paid" value={formatCurrency(order.paid_amount ?? 0)} tone="emerald" sub={order.payment_method ? order.payment_method.replace(/_/g, ' ') : 'No payment yet'} />
+                        <KpiTile label="Outstanding" value={formatCurrency(order.outstanding_receivable ?? 0)} tone={Number(order.outstanding_receivable ?? 0) > 0 ? 'amber' : 'emerald'} sub={Number(order.outstanding_receivable ?? 0) > 0 ? 'Still to collect' : 'Fully settled'} />
+                        <KpiTile label="Status" value={(order.status || order.order_status || 'N/A').replace(/_/g, ' ')} tone="sky" sub={`Payment: ${(order.payment_status || 'N/A').replace(/_/g, ' ')}`} />
+                    </div>
+            )}
+
             {isLoading ? (
                 <div className="flex items-center justify-center py-16">
                     <LoadingSpinner size="lg" text="Loading order details..." />
                 </div>
             ) : order ? (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                     {/* Main Content */}
-                    <div className="lg:col-span-2 space-y-6">
+                    <div className="lg:col-span-2 space-y-4">
                         {/* Order Items */}
                         <Card>
                             <CardHeader>
                                 <div className="flex items-center justify-between gap-3">
-                                    <CardTitle className="flex items-center gap-2">
+                                    <CardTitle className="flex items-center gap-2 text-sm">
                                         <Package className="w-5 h-5" />
                                         Order Items
                                     </CardTitle>
-                                    {outOfStockItems.length > 0 && (
-                                        <Button variant="outline" size="sm" onClick={openBulkPOModal} className="border-orange-300 text-orange-700 hover:bg-orange-50">
-                                            <Truck className="w-4 h-4 mr-1.5" />
-                                            Create Purchase Order
+                                    <div className="flex items-center gap-2">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => setShowProfitDetails((v) => !v)}
+                                            title={showProfitDetails ? 'Hide cost / profit details' : 'Show cost / profit details'}
+                                        >
+                                            {showProfitDetails ? <EyeOff className="w-4 h-4 mr-1.5" /> : <Eye className="w-4 h-4 mr-1.5" />}
+                                            Profit
                                         </Button>
-                                    )}
+                                        {outOfStockItems.length > 0 && (
+                                            <Button variant="outline" size="sm" onClick={openBulkPOModal} className="border-orange-300 text-orange-700 hover:bg-orange-50">
+                                                <Truck className="w-4 h-4 mr-1.5" />
+                                                Create Purchase Order
+                                            </Button>
+                                        )}
+                                    </div>
                                 </div>
                             </CardHeader>
                             {order.purchase_orders && order.purchase_orders.length > 0 && (
@@ -897,11 +925,13 @@ export default function OrderDetailPage() {
                                         <table className="w-full">
                                             <thead className="bg-gray-50 border-y">
                                                 <tr>
-                                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
-                                                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">Qty</th>
-                                                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">Price</th>
-                                                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
-                                                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase">Cost / Margin</th>
+                                                    <th className="px-4 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Item</th>
+                                                    <th className="px-3 py-2 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Qty</th>
+                                                    <th className="px-3 py-2 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Price</th>
+                                                    <th className="px-3 py-2 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Total</th>
+                                                    {showProfitDetails && (
+                                                        <th className="px-3 py-2 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Cost / Margin</th>
+                                                    )}
                                                     <th className="pl-2 pr-4 py-3"></th>
                                                 </tr>
                                             </thead>
@@ -912,29 +942,34 @@ export default function OrderDetailPage() {
                                                     const linkedPO = item.item_type === 'product' ? linkedPOForProduct(item.product_id) : null;
                                                     return (
                                                     <tr key={item.id} className="hover:bg-gray-50">
-                                                        <td className="px-4 py-4">
-                                                            <p className="font-medium text-gray-900">{item.item_name || item.name}</p>
+                                                        <td className="px-4 py-2.5">
+                                                            <p className="text-sm font-medium text-gray-900">{item.item_name || item.name}</p>
                                                             <div className="flex items-center gap-1.5 mt-0.5">
                                                                 <Badge variant="default" className="text-[10px]">{item.item_type}</Badge>
+                                                                {item.item_type === 'service' && item.problem_type?.name && (
+                                                                    <Badge variant="success" className="text-[10px]">{item.problem_type.name}</Badge>
+                                                                )}
                                                                 {item.item_sku && <p className="text-xs text-gray-400">{item.item_sku}</p>}
                                                             </div>
                                                         </td>
-                                                        <td className="px-3 py-4 text-right text-gray-600 whitespace-nowrap">{item.quantity}</td>
-                                                        <td className="px-3 py-4 text-right text-gray-600 whitespace-nowrap">{formatCurrency(item.unit_price ?? item.price ?? 0)}</td>
-                                                        <td className="px-3 py-4 text-right font-semibold whitespace-nowrap">{formatCurrency(item.total_price ?? item.total ?? 0)}</td>
-                                                        <td className="px-3 py-4 text-right whitespace-nowrap">
-                                                            {totalCost > 0 ? (
-                                                                <>
-                                                                    <p className="text-xs text-gray-500">Cost {formatCurrency(totalCost)}</p>
-                                                                    <p className={`text-sm font-medium ${margin >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                                                        {formatCurrency(margin)}
-                                                                    </p>
-                                                                </>
-                                                            ) : (
-                                                                <span className="text-gray-300 text-sm">—</span>
-                                                            )}
-                                                        </td>
-                                                        <td className="pl-2 pr-4 py-4 text-right">
+                                                        <td className="px-3 py-2.5 text-right text-sm text-gray-600 whitespace-nowrap">{item.quantity}</td>
+                                                        <td className="px-3 py-2.5 text-right text-sm text-gray-600 whitespace-nowrap">{formatCurrency(item.unit_price ?? item.price ?? 0)}</td>
+                                                        <td className="px-3 py-2.5 text-right font-semibold whitespace-nowrap">{formatCurrency(item.total_price ?? item.total ?? 0)}</td>
+                                                        {showProfitDetails && (
+                                                            <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                                                                {totalCost > 0 ? (
+                                                                    <>
+                                                                        <p className="text-xs text-gray-500">Cost {formatCurrency(totalCost)}</p>
+                                                                        <p className={`text-sm font-medium ${margin >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                                                            {formatCurrency(margin)}
+                                                                        </p>
+                                                                    </>
+                                                                ) : (
+                                                                    <span className="text-gray-300 text-sm">—</span>
+                                                                )}
+                                                            </td>
+                                                        )}
+                                                        <td className="pl-2 pr-3 py-2 text-right">
                                                             <div className="flex items-center justify-end gap-1">
                                                                 <Button
                                                                     variant="ghost"
@@ -976,7 +1011,7 @@ export default function OrderDetailPage() {
                                         </div>
 
                                         {/* Pricing Summary */}
-                                        <div className="px-6 py-4 bg-gray-50 space-y-2">
+                                        <div className="px-4 py-3 bg-slate-50 space-y-1">
                                             <div className="flex justify-between text-sm text-gray-600">
                                                 <span>Subtotal</span>
                                                 <span>{formatCurrency(order.subtotal)}</span>
@@ -999,11 +1034,11 @@ export default function OrderDetailPage() {
                                                     <span>-{formatCurrency(order.discount ?? 0)}</span>
                                                 </div>
                                             )}
-                                            <div className="flex justify-between font-bold text-lg border-t pt-2">
+                                            <div className="flex justify-between font-bold text-base border-t pt-1.5">
                                                 <span>Total</span>
                                                 <span>{formatCurrency(order.total)}</span>
                                             </div>
-                                            {(() => {
+                                            {showProfitDetails && (() => {
                                                 const totalCost = order.items.reduce((sum, i) => sum + (i.total_cost ?? 0), 0);
                                                 if (totalCost <= 0) return null;
                                                 const netProfit = order.total - totalCost;
@@ -1031,11 +1066,12 @@ export default function OrderDetailPage() {
                         </Card>
 
                         {/* Cost Breakdown — every individual cost recorded across all items on
-                            this order, so revenue vs. cost is fully auditable in one place. */}
-                        {(order.items ?? []).some((i) => (i.costs?.length ?? 0) > 0) && (
+                            this order, so revenue vs. cost is fully auditable in one place.
+                            Hidden by default along with the rest of the profit figures above. */}
+                        {showProfitDetails && (order.items ?? []).some((i) => (i.costs?.length ?? 0) > 0) && (
                             <Card>
                                 <CardHeader>
-                                    <CardTitle className="flex items-center gap-2">
+                                    <CardTitle className="flex items-center gap-2 text-sm">
                                         <DollarSign className="w-5 h-5" />
                                         Cost Breakdown
                                     </CardTitle>
@@ -1088,47 +1124,42 @@ export default function OrderDetailPage() {
 
                         {/* Update Status */}
                         <Card>
-                            <CardHeader>
-                                <CardTitle className="flex items-center gap-2">
-                                    <RefreshCw className="w-5 h-5" />
-                                    Update Order Status
+                            <CardHeader className="flex items-center justify-between gap-2 py-2">
+                                <CardTitle className="flex items-center gap-2 text-sm">
+                                    <RefreshCw className="w-4 h-4" />
+                                    Update status
                                 </CardTitle>
+                                <span className="text-[11px] text-gray-500">
+                                    Current:{' '}
+                                    <span className={`inline-block rounded px-1.5 py-px text-[11px] font-semibold ${getStatusColor(order.status || order.order_status || 'pending')}`}>
+                                        {(order.status || order.order_status || 'N/A').replace('_', ' ')}
+                                    </span>
+                                </span>
                             </CardHeader>
-                            <CardContent>
-                                <div className="space-y-4">
-                                    <div className="bg-gray-50 p-3 rounded-lg">
-                                        <p className="text-sm text-gray-600">
-                                            Current Status: <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${getStatusColor(order.status || order.order_status || 'pending')}`}>
-                                                {(order.status || order.order_status || 'N/A').replace('_', ' ')}
-                                            </span>
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">New Status</label>
+                            <CardContent className="space-y-2 py-3">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <div className="min-w-[200px] flex-1">
                                         <Select
                                             options={ORDER_STATUSES.map(s => ({ value: s.value, label: s.label }))}
                                             value={newStatus}
                                             onChange={(e) => setNewStatus(e.target.value)}
                                         />
                                     </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Admin Notes (Optional)</label>
-                                        <Textarea
-                                            value={adminNotes}
-                                            onChange={(e) => setAdminNotes(e.target.value)}
-                                            placeholder="Add notes about this status change..."
-                                            rows={3}
-                                        />
-                                    </div>
                                     <Button
+                                        size="sm"
                                         onClick={() => setShowStatusConfirm(true)}
                                         isLoading={isSaving}
                                         disabled={newStatus === (order.status || order.order_status)}
-                                        className="w-full"
                                     >
-                                        Update Status
+                                        Update status
                                     </Button>
                                 </div>
+                                <Textarea
+                                    value={adminNotes}
+                                    onChange={(e) => setAdminNotes(e.target.value)}
+                                    placeholder="Admin note for this change (optional)"
+                                    rows={2}
+                                />
                             </CardContent>
                         </Card>
 
@@ -1136,7 +1167,7 @@ export default function OrderDetailPage() {
                         {(order.customer_notes || order.admin_notes) && (
                             <Card>
                                 <CardHeader>
-                                    <CardTitle className="flex items-center gap-2">
+                                    <CardTitle className="flex items-center gap-2 text-sm">
                                         <FileText className="w-5 h-5" />
                                         Notes
                                     </CardTitle>
@@ -1162,7 +1193,7 @@ export default function OrderDetailPage() {
                     </div>
 
                     {/* Sidebar */}
-                    <div className="space-y-6">
+                    <div className="space-y-4">
                         {/* Payment Status */}
                         {Number(order.paid_amount ?? 0) > 0 || order.payment_status === 'partially_paid' ? (
                             <Card>
@@ -1173,7 +1204,7 @@ export default function OrderDetailPage() {
                                     </CardTitle>
                                 </CardHeader>
                                 <CardContent>
-                                    <dl className="space-y-2 text-sm">
+                                    <dl className="space-y-1.5 text-sm">
                                         <div className="flex justify-between">
                                             <dt className="text-gray-500">Order Total</dt>
                                             <dd className="font-medium">{formatCurrency(order.total)}</dd>
@@ -1213,7 +1244,7 @@ export default function OrderDetailPage() {
                                 <CardTitle className="text-sm">Order Details</CardTitle>
                             </CardHeader>
                             <CardContent>
-                                <dl className="space-y-4">
+                                <dl className="grid grid-cols-2 gap-x-3 gap-y-2.5">
                                     <div>
                                         <dt className="text-xs text-gray-500">Order Number</dt>
                                         <dd className="text-sm font-medium">{order.order_number}</dd>
@@ -1273,7 +1304,7 @@ export default function OrderDetailPage() {
                                 </CardTitle>
                             </CardHeader>
                             <CardContent>
-                                <dl className="space-y-3">
+                                <dl className="space-y-2">
                                     <div className="flex items-center gap-2">
                                         <User className="w-4 h-4 text-gray-400" />
                                         <span className="text-sm">{order.customer_name || order.customer?.name}</span>
@@ -1331,23 +1362,23 @@ export default function OrderDetailPage() {
                                 <CardTitle className="text-sm">Quick Actions</CardTitle>
                             </CardHeader>
                             <CardContent>
-                                <div className="space-y-2">
+                                <div className="grid grid-cols-2 gap-1.5">
                                     <Link href="/orders" className="block">
-                                        <Button variant="outline" className="w-full justify-start">
+                                        <Button variant="outline" className="w-full justify-start text-xs">
                                             <Package className="w-4 h-4 mr-2" />
                                             All Orders
                                         </Button>
                                     </Link>
                                     {order.customer && (
                                         <Link href={`/users`} className="block">
-                                            <Button variant="outline" className="w-full justify-start">
+                                            <Button variant="outline" className="w-full justify-start text-xs">
                                                 <User className="w-4 h-4 mr-2" />
                                                 View Customer
                                             </Button>
                                         </Link>
                                     )}
                                     {(order.outstanding_receivable ?? 0) > 0 && !['cancelled', 'refunded', 'rejected'].includes(order.order_status) && (
-                                        <Button onClick={openRecordPayment} className="w-full justify-start bg-blue-600 hover:bg-blue-700">
+                                        <Button onClick={openRecordPayment} className="w-full justify-start text-xs bg-blue-600 hover:bg-blue-700">
                                             <Wallet className="w-4 h-4 mr-2" />
                                             Record Payment
                                         </Button>
@@ -1357,7 +1388,7 @@ export default function OrderDetailPage() {
                                             onClick={() => openSmsPreview('due')}
                                             isLoading={loadingPreviewKey === 'due'}
                                             variant="outline"
-                                            className="w-full justify-start border-amber-300 text-amber-700 hover:bg-amber-50"
+                                            className="w-full justify-start text-xs border-amber-300 text-amber-700 hover:bg-amber-50"
                                             title="Manually remind the customer about their outstanding balance."
                                         >
                                             <MessageSquare className="w-4 h-4 mr-2" />
@@ -1365,7 +1396,7 @@ export default function OrderDetailPage() {
                                         </Button>
                                     )}
                                     {order.requires_super_admin_to_amend && hasPermission('correct_payment_amounts') && (
-                                        <Button onClick={openCorrectPayment} variant="outline" className="w-full justify-start border-indigo-300 text-indigo-700 hover:bg-indigo-50">
+                                        <Button onClick={openCorrectPayment} variant="outline" className="w-full justify-start text-xs border-indigo-300 text-indigo-700 hover:bg-indigo-50">
                                             <Edit3 className="w-4 h-4 mr-2" />
                                             Correct Payment Amount
                                         </Button>
@@ -1374,7 +1405,7 @@ export default function OrderDetailPage() {
                                         <Button
                                             onClick={handleSyncLedger}
                                             isLoading={isSyncingLedger}
-                                            className="w-full justify-start bg-amber-500 hover:bg-amber-600 text-white"
+                                            className="w-full justify-start text-xs bg-amber-500 hover:bg-amber-600 text-white"
                                         >
                                             <ArrowUpCircle className="w-4 h-4 mr-2" />
                                             Sync to Ledger
@@ -1385,7 +1416,7 @@ export default function OrderDetailPage() {
                                             onClick={() => openSmsPreview('status')}
                                             isLoading={loadingPreviewKey === 'status'}
                                             variant="outline"
-                                            className="w-full justify-start border-gray-300 text-gray-700 hover:bg-gray-50"
+                                            className="w-full justify-start text-xs border-gray-300 text-gray-700 hover:bg-gray-50"
                                             title={`Manually notify the customer the order is now "${order.order_status}" — not sent automatically on status change.`}
                                         >
                                             <MessageSquare className="w-4 h-4 mr-2" />
@@ -1397,7 +1428,7 @@ export default function OrderDetailPage() {
                                             onClick={() => openSmsPreview('delivered')}
                                             isLoading={loadingPreviewKey === 'delivered'}
                                             variant="outline"
-                                            className="w-full justify-start border-green-300 text-green-700 hover:bg-green-50"
+                                            className="w-full justify-start text-xs border-green-300 text-green-700 hover:bg-green-50"
                                             title="Manually notify the customer their order has arrived — not tied to any status change."
                                         >
                                             <MessageSquare className="w-4 h-4 mr-2" />
@@ -1409,7 +1440,7 @@ export default function OrderDetailPage() {
                                             onClick={() => openSmsPreview('feedback')}
                                             isLoading={loadingPreviewKey === 'feedback'}
                                             variant="outline"
-                                            className="w-full justify-start border-yellow-300 text-yellow-700 hover:bg-yellow-50"
+                                            className="w-full justify-start text-xs border-yellow-300 text-yellow-700 hover:bg-yellow-50"
                                             title="Text the customer a link to rate and review this order — reviews stay hidden until approved."
                                         >
                                             <Star className="w-4 h-4 mr-2" />
@@ -1421,7 +1452,7 @@ export default function OrderDetailPage() {
                                             onClick={openFeedbackPageOnThisScreen}
                                             isLoading={isOpeningFeedbackPage}
                                             variant="outline"
-                                            className="w-full justify-start border-yellow-300 text-yellow-700 hover:bg-yellow-50"
+                                            className="w-full justify-start text-xs border-yellow-300 text-yellow-700 hover:bg-yellow-50"
                                             title="For a walk-in customer at the counter — opens the feedback page right here, no phone number needed."
                                         >
                                             <Star className="w-4 h-4 mr-2" />
@@ -1429,7 +1460,7 @@ export default function OrderDetailPage() {
                                         </Button>
                                     )}
                                     {Number(order.paid_amount ?? 0) > 0 && !['cancelled', 'refunded', 'rejected'].includes(order.order_status) && (
-                                        <Button onClick={openReturn} variant="outline" className="w-full justify-start border-red-300 text-red-700 hover:bg-red-50">
+                                        <Button onClick={openReturn} variant="outline" className="w-full justify-start text-xs border-red-300 text-red-700 hover:bg-red-50">
                                             <RefreshCw className="w-4 h-4 mr-2" />
                                             Process Return
                                         </Button>
@@ -1461,14 +1492,17 @@ export default function OrderDetailPage() {
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-0.5 flex-shrink-0">
-                                        <Button variant="ghost" size="sm" onClick={handlePreviewInvoice} isLoading={previewingInvoice} title="Preview & Print Invoice">
+                                        {/* No bill while the order is still pending/rejected -- standard practice, it isn't a
+                                            confirmed sale yet. Matches Order::invoiceAvailable() on the API side, which 422s the
+                                            same action anyway; disabling here just saves the round-trip and explains why. */}
+                                        <Button variant="ghost" size="sm" onClick={handlePreviewInvoice} isLoading={previewingInvoice} disabled={isOrderUnconfirmed} title={isOrderUnconfirmed ? 'Invoice not available until the order is confirmed/accepted' : 'Preview & Print Invoice'}>
                                             <Eye className="w-4 h-4" />
                                         </Button>
-                                        <Button variant="ghost" size="sm" onClick={handleDownloadInvoice} isLoading={downloadingInvoice} title="Download Invoice PDF">
+                                        <Button variant="ghost" size="sm" onClick={handleDownloadInvoice} isLoading={downloadingInvoice} disabled={isOrderUnconfirmed} title={isOrderUnconfirmed ? 'Invoice not available until the order is confirmed/accepted' : 'Download Invoice PDF'}>
                                             <Download className="w-4 h-4" />
                                         </Button>
                                         {(order.customer_email || order.customer?.email) && (
-                                            <Button variant="ghost" size="sm" onClick={handleSendInvoiceEmail} isLoading={sendingInvoice} title="Email Invoice to Customer">
+                                            <Button variant="ghost" size="sm" onClick={handleSendInvoiceEmail} isLoading={sendingInvoice} disabled={isOrderUnconfirmed} title={isOrderUnconfirmed ? 'Invoice not available until the order is confirmed/accepted' : 'Email Invoice to Customer'}>
                                                 <Mail className="w-4 h-4" />
                                             </Button>
                                         )}

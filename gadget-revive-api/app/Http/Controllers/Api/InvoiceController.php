@@ -10,7 +10,10 @@ use App\Services\SmsService;
 use App\Traits\ResolvesBrandingSettings;
 use App\Traits\StampsPdfPageNumbers;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Endroid\QrCode\Builder\Builder;
+use Endroid\QrCode\Writer\PngWriter;
 use Illuminate\Http\JsonResponse;
+use Picqer\Barcode\BarcodeGeneratorPNG;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Mail;
@@ -34,7 +37,7 @@ class InvoiceController extends BaseController
         }
 
         if (!$order->invoiceAvailable()) {
-            return $this->error('Invoice is not available yet. The price for this service order has not been confirmed.', 422);
+            return $this->error('Invoice is not available yet. ' . $order->invoiceUnavailableReason(), 422);
         }
 
         $pdf = $this->generatePdf($order);
@@ -59,7 +62,7 @@ class InvoiceController extends BaseController
         }
 
         if (!$order->invoiceAvailable()) {
-            return $this->error('Invoice is not available yet. The price for this service order has not been confirmed.', 422);
+            return $this->error('Invoice is not available yet. ' . $order->invoiceUnavailableReason(), 422);
         }
 
         $pdf = $this->generatePdf($order);
@@ -82,7 +85,7 @@ class InvoiceController extends BaseController
         }
 
         if (!$order->invoiceAvailable()) {
-            return $this->error('Invoice is not available yet. The price for this service order has not been confirmed.', 422);
+            return $this->error('Invoice is not available yet. ' . $order->invoiceUnavailableReason(), 422);
         }
 
         // Determine recipient email (admin can override, otherwise use order/customer email)
@@ -127,7 +130,7 @@ class InvoiceController extends BaseController
         }
 
         if (!$order->invoiceAvailable()) {
-            return $this->error('Invoice is not available yet. The price for this service order has not been confirmed.', 422);
+            return $this->error('Invoice is not available yet. ' . $order->invoiceUnavailableReason(), 422);
         }
 
         $pdf = $this->generatePdf($order);
@@ -159,7 +162,7 @@ class InvoiceController extends BaseController
         }
 
         if (!$order->invoiceAvailable()) {
-            return $this->error('Invoice is not available yet. The price for this service order has not been confirmed.', 422);
+            return $this->error('Invoice is not available yet. ' . $order->invoiceUnavailableReason(), 422);
         }
 
         $pdf = $this->generatePdf($order);
@@ -438,6 +441,49 @@ class InvoiceController extends BaseController
         return $query->where('customer_id', $user->id)->find($id);
     }
 
+    /**
+     * QR code (PNG data URI) that opens the order in the admin panel — scanning a printed invoice,
+     * receipt or chalan with a phone (or the admin top-bar scan box) jumps straight to that order.
+     */
+    private function documentQrDataUri(Order $order): string
+    {
+        // The order number rides along as a query param purely so an unauthenticated scan (a
+        // customer, who has no admin login) can be bounced straight to the storefront's order
+        // tracking page pre-filled — see AdminLayout's redirect on an unauthenticated /orders/{id}
+        // hit. Staff scanning this with the admin panel open just land on the order as before.
+        $url = rtrim((string) config('app.admin_url'), '/') . '/orders/' . $order->id
+            . '?on=' . urlencode($order->order_number);
+
+        return (new Builder(
+            writer: new PngWriter(),
+            data: $url,
+            size: 180,
+            margin: 4,
+        ))->build()->getDataUri();
+    }
+
+    /**
+     * Code128 barcode (PNG data URI) of the order number — for a 1D laser scanner that can't
+     * read the QR above it. Generated at a generous native resolution and then scaled down to a
+     * few mm tall in the template, so the printed bars stay crisp instead of upscaling blur.
+     *
+     * The library renders the bars on a transparent background, so the caller must pick a bar
+     * color that actually shows up against whatever it's placed on — white for a dark header
+     * (the invoice's), black (the default) everywhere else.
+     */
+    private function documentBarcodeDataUri(Order $order, array $barColor = [0, 0, 0]): string
+    {
+        $png = (new BarcodeGeneratorPNG())->getBarcode(
+            $order->order_number,
+            BarcodeGeneratorPNG::TYPE_CODE_128,
+            widthFactor: 3,
+            height: 120,
+            foregroundColor: $barColor,
+        );
+
+        return 'data:image/png;base64,' . base64_encode($png);
+    }
+
     private function generatePdf(Order $order): \Barryvdh\DomPDF\PDF
     {
         // DomPDF can be memory-hungry — bump the limit for this request
@@ -448,6 +494,7 @@ class InvoiceController extends BaseController
             'items.product',
             'items.service',
             'items.serials',
+            'items.problemType',
             'customer',
             'division',
             'district',
@@ -455,8 +502,11 @@ class InvoiceController extends BaseController
         ]);
 
         $pdf = Pdf::loadView('invoices.order', [
-            'order'    => $order,
-            'settings' => $this->brandingSettings(),
+            'order'     => $order,
+            'settings'  => $this->brandingSettings(),
+            'qrDataUri' => $this->documentQrDataUri($order),
+            // Invoice header is dark — white bars so they're actually visible on it.
+            'barcodeDataUri' => $this->documentBarcodeDataUri($order, [255, 255, 255]),
         ]);
 
         $pdf->setPaper('A4', 'portrait');
@@ -489,6 +539,8 @@ class InvoiceController extends BaseController
             'settings'       => $this->brandingSettings(),
             'receiptNumber'  => "MR-{$order->order_number}",
             'receiptAmount'  => $receiptAmount,
+            'qrDataUri'      => $this->documentQrDataUri($order),
+            'barcodeDataUri' => $this->documentBarcodeDataUri($order),
             'paidToDate'     => $paidToDate,
             'balanceDue'     => $balanceDue,
         ]);
@@ -514,6 +566,8 @@ class InvoiceController extends BaseController
             'order'        => $order,
             'settings'     => $this->brandingSettings(),
             'chalanNumber' => "DC-{$order->order_number}",
+            'qrDataUri'    => $this->documentQrDataUri($order),
+            'barcodeDataUri' => $this->documentBarcodeDataUri($order),
         ]);
 
         $pdf->setPaper('A4', 'portrait');

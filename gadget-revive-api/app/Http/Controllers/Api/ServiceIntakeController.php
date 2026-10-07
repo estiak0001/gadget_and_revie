@@ -23,6 +23,7 @@ class ServiceIntakeController extends BaseController
 
     private const RELATIONS = [
         'items.service',
+        'items.problemType',
         'customer',
         'branchLocation',
         'division',
@@ -34,10 +35,18 @@ class ServiceIntakeController extends BaseController
 
     public function index(Request $request): JsonResponse
     {
-        $query = ServiceIntake::with(['items', 'customer', 'branchLocation', 'order', 'creator']);
+        $query = ServiceIntake::with(['items.problemType', 'customer', 'branchLocation', 'order', 'creator']);
 
         if ($request->filled('status')) {
             $query->where('status', $request->status);
+        }
+
+        if ($request->filled('work_status')) {
+            $query->where('work_status', $request->work_status);
+        }
+
+        if ($request->filled('branch_location_id')) {
+            $query->where('branch_location_id', $request->branch_location_id);
         }
 
         if ($request->filled('search')) {
@@ -45,7 +54,10 @@ class ServiceIntakeController extends BaseController
             $query->where(function ($q) use ($search) {
                 $q->where('receipt_number', 'like', "%{$search}%")
                     ->orWhere('customer_name', 'like', "%{$search}%")
-                    ->orWhere('customer_phone', 'like', "%{$search}%");
+                    ->orWhere('customer_phone', 'like', "%{$search}%")
+                    ->orWhereHas('items', function ($itemsQuery) use ($search) {
+                        $itemsQuery->where('serial_number', 'like', "%{$search}%");
+                    });
             });
         }
 
@@ -72,6 +84,25 @@ class ServiceIntakeController extends BaseController
         return $this->success($intake);
     }
 
+    /**
+     * A preview of what receipt_number the next created intake will get -- shown in the Create
+     * modal's header so the desk can see it before saving (ServiceIntake only actually assigns
+     * it after insert, once the row's own id is known -- see ServiceIntake::boot()). Reads
+     * MySQL's own AUTO_INCREMENT counter directly rather than MAX(id)+1, which would under-count
+     * after the most recent row is ever deleted (InnoDB doesn't reuse the id). This is a
+     * preview, not a reservation -- a concurrent create could still land first, so the real
+     * badge shown after saving is always the source of truth, not this one.
+     */
+    public function nextReceiptNumber(): JsonResponse
+    {
+        $nextId = DB::selectOne(
+            'SELECT AUTO_INCREMENT AS next_id FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
+            ['service_intakes']
+        )->next_id ?? ((int) ServiceIntake::max('id') + 1);
+
+        return $this->success(['next_receipt_number' => 'RCV-' . str_pad((string) $nextId, 8, '0', STR_PAD_LEFT)]);
+    }
+
     public function store(Request $request): JsonResponse
     {
         $data = $this->validateIntake($request);
@@ -79,8 +110,19 @@ class ServiceIntakeController extends BaseController
         try {
             DB::beginTransaction();
 
+            // Linking to a real customer record isn't optional here -- if the desk picked an
+            // existing customer from the name/phone suggestions, use that; otherwise find-by-
+            // phone/email-else-create one from what was typed, so every intake ends up attached
+            // to a real account from the moment it's created rather than only if/when it's
+            // later converted to an order (see convertToOrder(), which already did this).
+            $customerId = $data['customer_id'] ?? null;
+            if (!$customerId) {
+                $customer = User::findOrCreateCustomer($data['customer_name'], $data['customer_phone'], $data['customer_email'] ?? null);
+                $customerId = $customer?->id;
+            }
+
             $intake = ServiceIntake::create([
-                'customer_id'          => $data['customer_id'] ?? null,
+                'customer_id'          => $customerId,
                 'order_id'             => $data['order_id'] ?? null,
                 'customer_name'        => $data['customer_name'],
                 'customer_phone'       => $data['customer_phone'],
@@ -90,12 +132,23 @@ class ServiceIntakeController extends BaseController
                 'division_id'          => $data['division_id'] ?? null,
                 'district_id'          => $data['district_id'] ?? null,
                 'area_id'              => $data['area_id'] ?? null,
+                // Who received this intake at the desk -- always whoever's logged in creating
+                // it. Not client-controlled at all (no form field, no validation rule for it),
+                // so it can't be spoofed via a direct API call either.
+                'received_by_name'     => $request->user()?->name,
                 'status'               => $data['status'] ?? 'received',
+                'work_status'          => $data['work_status'] ?? 'pending',
                 'estimated_cost'       => $data['estimated_cost'] ?? null,
+                'amount'               => $data['amount'] ?? null,
+                'non_refundable_amount' => $data['non_refundable_amount'] ?? null,
+                'non_refundable_reason' => $data['non_refundable_reason'] ?? null,
+                'reference_name'       => $data['reference_name'] ?? null,
+                'commission_amount'    => $data['commission_amount'] ?? null,
                 'received_at'          => $data['received_at'] ?? now(),
                 'expected_delivery_at' => $data['expected_delivery_at'] ?? null,
                 'notes'                => $data['notes'] ?? null,
                 'admin_notes'          => $data['admin_notes'] ?? null,
+                'customer_feedback'    => $data['customer_feedback'] ?? null,
                 'created_by'           => $request->user()?->id,
             ]);
 
@@ -122,9 +175,10 @@ class ServiceIntakeController extends BaseController
             return $this->notFound('Service intake not found.');
         }
 
-        if ($intake->isLocked()) {
-            return $this->error('This intake is finalized or cancelled and can no longer be edited.', 422);
-        }
+        // Editable at any status/stage -- cancelled/returned/converted included. A record
+        // sometimes needs a correction (a wrong receipt detail, a note, a stray amount) long
+        // after it's reached a terminal status, and this endpoint is also what the table's
+        // inline cell edits call for every row regardless of status.
 
         $data = $this->validateIntake($request);
         $oldData = $intake->toArray();
@@ -143,12 +197,22 @@ class ServiceIntakeController extends BaseController
                 'division_id'          => $data['division_id'] ?? null,
                 'district_id'          => $data['district_id'] ?? null,
                 'area_id'              => $data['area_id'] ?? null,
+                // Fixed at creation time, permanently -- not client-controlled, so editing other
+                // fields later can never reassign who received it.
+                'received_by_name'     => $intake->received_by_name,
                 'status'               => $data['status'] ?? $intake->status,
+                'work_status'          => $data['work_status'] ?? $intake->work_status,
                 'estimated_cost'       => $data['estimated_cost'] ?? null,
+                'amount'               => $data['amount'] ?? null,
+                'non_refundable_amount' => $data['non_refundable_amount'] ?? null,
+                'non_refundable_reason' => $data['non_refundable_reason'] ?? null,
+                'reference_name'       => $data['reference_name'] ?? null,
+                'commission_amount'    => $data['commission_amount'] ?? null,
                 'received_at'          => $data['received_at'] ?? $intake->received_at,
                 'expected_delivery_at' => $data['expected_delivery_at'] ?? null,
                 'notes'                => $data['notes'] ?? null,
                 'admin_notes'          => $data['admin_notes'] ?? null,
+                'customer_feedback'    => $data['customer_feedback'] ?? null,
             ]);
 
             $intake->items()->delete();
@@ -174,7 +238,7 @@ class ServiceIntakeController extends BaseController
         }
 
         $request->validate([
-            'status' => 'required|in:received,in_progress,ready,converted,delivered,cancelled',
+            'status' => 'required|in:received,in_progress,ready,converted,delivered,cancelled,returned',
         ]);
 
         $oldStatus = $intake->status;
@@ -191,6 +255,29 @@ class ServiceIntakeController extends BaseController
             "Status changed from {$oldStatus} to {$intake->status}");
 
         return $this->success($intake->fresh(self::RELATIONS), 'Status updated successfully.');
+    }
+
+    public function updateWorkStatus(Request $request, int $id): JsonResponse
+    {
+        $intake = ServiceIntake::find($id);
+
+        if (!$intake) {
+            return $this->notFound('Service intake not found.');
+        }
+
+        $request->validate([
+            'work_status' => 'required|in:pending,in_progress,wait_for_feedback,done',
+        ]);
+
+        $oldWorkStatus = $intake->work_status;
+
+        $intake->update(['work_status' => $request->work_status]);
+
+        AuditLog::log($request->user(), 'update_service_intake_work_status', 'ServiceIntake', $intake->id,
+            ['work_status' => $oldWorkStatus], ['work_status' => $intake->work_status],
+            "Work status changed from {$oldWorkStatus} to {$intake->work_status}");
+
+        return $this->success($intake->fresh(self::RELATIONS), 'Work status updated successfully.');
     }
 
     public function destroy(int $id): JsonResponse
@@ -360,15 +447,16 @@ class ServiceIntakeController extends BaseController
             foreach ($itemsPayload as $p) {
                 $item = $p['item'];
                 OrderItem::create([
-                    'order_id'    => $order->id,
-                    'item_type'   => 'service',
-                    'service_id'  => $item->service_id,
-                    'item_name'   => $item->item_name,
-                    'item_sku'    => $item->serial_number,
-                    'quantity'    => $p['qty'],
-                    'unit_price'  => $p['unit'],
-                    'total_price' => $p['unit'] * $p['qty'],
-                    'notes'       => $item->problem_reported,
+                    'order_id'         => $order->id,
+                    'item_type'        => 'service',
+                    'service_id'       => $item->service_id,
+                    'item_name'        => $item->item_name,
+                    'item_sku'         => $item->serial_number,
+                    'quantity'         => $p['qty'],
+                    'unit_price'       => $p['unit'],
+                    'total_price'      => $p['unit'] * $p['qty'],
+                    'notes'            => $item->problem_reported,
+                    'problem_type_id'  => $item->problem_type_id,
                 ]);
                 $item->update(['status' => 'converted']);
             }
@@ -415,7 +503,7 @@ class ServiceIntakeController extends BaseController
 
             DB::commit();
 
-            $order->load(['customer', 'items.product', 'items.service', 'division', 'district', 'area']);
+            $order->load(['customer', 'items.product', 'items.service', 'items.problemType', 'division', 'district', 'area']);
 
             return $this->created([
                 'intake' => $intake->fresh(self::RELATIONS),
@@ -493,15 +581,16 @@ class ServiceIntakeController extends BaseController
                 $subtotal += $lineTotal;
 
                 OrderItem::create([
-                    'order_id'    => $order->id,
-                    'item_type'   => 'service',
-                    'service_id'  => $item->service_id,
-                    'item_name'   => $item->item_name,
-                    'item_sku'    => $item->serial_number,
-                    'quantity'    => $qty,
-                    'unit_price'  => $price,
-                    'total_price' => $lineTotal,
-                    'notes'       => $item->problem_reported,
+                    'order_id'         => $order->id,
+                    'item_type'        => 'service',
+                    'service_id'       => $item->service_id,
+                    'item_name'        => $item->item_name,
+                    'item_sku'         => $item->serial_number,
+                    'quantity'         => $qty,
+                    'unit_price'       => $price,
+                    'total_price'      => $lineTotal,
+                    'notes'            => $item->problem_reported,
+                    'problem_type_id'  => $item->problem_type_id,
                 ]);
             }
 
@@ -537,7 +626,7 @@ class ServiceIntakeController extends BaseController
 
             DB::commit();
 
-            $order->load(['items.service', 'paymentNotices']);
+            $order->load(['items.service', 'items.problemType', 'paymentNotices']);
 
             return $this->success([
                 'intake' => $intake->fresh(self::RELATIONS),
@@ -662,17 +751,27 @@ class ServiceIntakeController extends BaseController
             'division_id'          => 'nullable|exists:divisions,id',
             'district_id'          => 'nullable|exists:districts,id',
             'area_id'              => 'nullable|exists:areas,id',
-            'status'               => 'nullable|in:received,in_progress,ready,converted,delivered,cancelled',
+            'status'               => 'nullable|in:received,in_progress,ready,converted,delivered,cancelled,returned',
+            // received_by_name is never taken from client input -- always set server-side to
+            // whoever is logged in creating the intake. No validation rule for it on purpose.
+            'work_status'          => 'nullable|in:pending,in_progress,wait_for_feedback,done',
             'estimated_cost'       => 'nullable|numeric|min:0',
+            'amount'               => 'nullable|numeric|min:0',
+            'non_refundable_amount' => 'nullable|numeric|min:0',
+            'non_refundable_reason' => 'nullable|string|max:255',
+            'reference_name'       => 'nullable|string|max:255',
+            'commission_amount'    => 'nullable|numeric|min:0',
             'received_at'          => 'nullable|date',
             'expected_delivery_at' => 'nullable|date',
             'notes'                => 'nullable|string|max:1000',
             'admin_notes'          => 'nullable|string|max:1000',
+            'customer_feedback'    => 'nullable|string|max:2000',
             'items'                => 'required|array|min:1',
             'items.*.service_id'       => 'nullable|exists:services,id',
             'items.*.item_name'        => 'required|string|max:255',
             'items.*.serial_number'    => 'nullable|string|max:255',
             'items.*.problem_reported' => 'nullable|string|max:1000',
+            'items.*.problem_type_id'  => 'nullable|exists:service_problem_types,id',
             'items.*.accessories'      => 'nullable|string|max:255',
             'items.*.condition_notes'  => 'nullable|string|max:1000',
             'items.*.quantity'         => 'required|integer|min:1',
@@ -689,6 +788,7 @@ class ServiceIntakeController extends BaseController
                 'item_name'         => $item['item_name'],
                 'serial_number'     => $item['serial_number'] ?? null,
                 'problem_reported'  => $item['problem_reported'] ?? null,
+                'problem_type_id'   => $item['problem_type_id'] ?? null,
                 'accessories'       => $item['accessories'] ?? null,
                 'condition_notes'   => $item['condition_notes'] ?? null,
                 'quantity'          => $item['quantity'] ?? 1,
@@ -699,7 +799,7 @@ class ServiceIntakeController extends BaseController
 
     private function loadForPdf(int $id): ?ServiceIntake
     {
-        return ServiceIntake::with(['items', 'branchLocation', 'division', 'district', 'area', 'creator', 'customer'])->find($id);
+        return ServiceIntake::with(self::RELATIONS)->find($id);
     }
 
     private function buildReceiptPdf(ServiceIntake $intake): \Barryvdh\DomPDF\PDF

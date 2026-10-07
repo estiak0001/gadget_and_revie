@@ -1,460 +1,360 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import {
-  Users,
-  ShoppingCart,
-  DollarSign,
-  Wallet,
-  Clock,
-  TrendingUp,
-  TrendingDown,
-  Calendar,
-  Plus,
-  BarChart3,
-  BookOpen,
-  Wrench,
-} from 'lucide-react';
-import { AdminLayout } from '@/components/layout';
-import { Card, CardContent, CardHeader, CardTitle, Badge, LoadingSpinner, ErrorState } from '@/components/ui';
-import { formatCurrency, formatDate, getErrorMessage } from '@/lib/utils';
-import adminService from '@/lib/adminService';
-import { DashboardStatsWithTrends } from '@/types';
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-} from 'recharts';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
+import {
+  Wallet, ShoppingCart, Receipt, Users, Star, Ticket, Clock, Plus,
+  TrendingUp, TrendingDown, CircleDollarSign, Truck,
+} from 'lucide-react';
+import {
+  AreaChart, Area, BarChart, Bar, Legend, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+} from 'recharts';
+import { AdminLayout } from '@/components/layout';
+import { Badge, LoadingSpinner, ErrorState } from '@/components/ui';
+import { DateRange, DateRangeBar, KpiTile, Panel, presetRange } from '@/components/reports/shared';
+import { formatCurrency, formatDate, getErrorMessage } from '@/lib/utils';
+import adminService from '@/lib/adminService';
 
-interface StatTileProps {
-  title: string;
-  value: string;
-  icon: React.ReactNode;
-  iconBg: string;
-  change?: number;
-  href?: string;
+interface DashboardResponse {
+  statistics: {
+    users: { total: number; customers: number; new_customers: number };
+    orders: { total: number; sales: number; pending: number; completed: number; cancelled: number };
+    revenue: { total: number; expenses: number; net: number };
+    dues: {
+      receivable: { total: number; count: number };
+      payable: { total: number; count: number };
+    };
+    cash_balance: { current: number };
+    pending_actions: { tickets: number; reviews: number };
+  };
+  trends: { revenue_change: number | null; orders_change: number | null };
+  revenue_chart: { date: string; revenue: number; orders: number; sales_orders: number }[];
+  recent_orders: {
+    id: number;
+    order_number: string;
+    customer?: { name?: string } | null;
+    customer_name?: string | null;
+    customer_phone?: string | null;
+    total: number | string;
+    payment_status: string;
+    payment_method?: string | null;
+    order_status: string;
+    items_count?: number;
+    created_at: string;
+  }[];
 }
 
-const StatTile: React.FC<StatTileProps> = ({ title, value, icon, iconBg, change, href }) => {
-  const body = (
-    <Card className="rounded-xl border-gray-100 hover:shadow-md hover:border-primary-200 transition-all h-full">
-      <CardContent className="p-4">
-        <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${iconBg}`}>
-            {icon}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-xs font-medium text-gray-500 leading-tight">{title}</p>
-            <p className="text-base font-bold text-gray-900 leading-snug break-words">{value}</p>
-          </div>
-        </div>
-        {change !== undefined && (
-          <div className={`flex items-center gap-1 mt-2 text-xs font-medium ${change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-            {change >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-            {change >= 0 ? '+' : ''}{change}%
-            <span className="text-gray-400 font-normal">vs prev</span>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-  return href ? <Link href={href}>{body}</Link> : body;
-};
+const QUICK_LINKS = [
+  { title: 'Create order', href: '/orders/create', primary: true },
+  { title: 'Add product', href: '/products' },
+  { title: 'Add expense', href: '/expenses' },
+  { title: 'Cash book', href: '/accounts/cash-book' },
+  { title: 'Reports', href: '/reports/sales' },
+];
 
-interface QuickAction {
-  title: string;
-  href: string;
-  icon: React.ReactNode;
-  primary?: boolean;
+const DATE_PRESETS: DateRange['preset'][] = ['7d', '30d', 'month', '90d', 'custom'];
+
+function dayLabel(date: string): string {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
-const QUICK_ACTIONS: QuickAction[] = [
-  { title: 'Create Order', href: '/orders/create', icon: <Plus className="w-3.5 h-3.5" />, primary: true },
-  { title: 'Add Product', href: '/products', icon: <Plus className="w-3.5 h-3.5" /> },
-  { title: 'Add Expense', href: '/expenses', icon: <Plus className="w-3.5 h-3.5" /> },
-  { title: 'Cash Book', href: '/accounts/cash-book', icon: <Wallet className="w-3.5 h-3.5" /> },
-  { title: 'Reports', href: '/reports/sales', icon: <BarChart3 className="w-3.5 h-3.5" /> },
-  { title: 'Accounts', href: '/accounts', icon: <BookOpen className="w-3.5 h-3.5" /> },
-  { title: 'Services', href: '/services', icon: <Wrench className="w-3.5 h-3.5" /> },
-];
+function statusVariant(status: string): 'success' | 'danger' | 'warning' | 'info' {
+  if (status === 'completed') return 'success';
+  if (status === 'cancelled' || status === 'refunded') return 'danger';
+  if (status === 'pending') return 'warning';
+  return 'info';
+}
 
-const RANGE_PRESETS: { key: string; label: string }[] = [
-  { key: '7d', label: 'Last 7 days' },
-  { key: '30d', label: 'Last 30 days' },
-  { key: 'month', label: 'This month' },
-  { key: '90d', label: 'Last 90 days' },
-];
+function paymentVariant(status: string): 'success' | 'danger' | 'warning' | 'default' {
+  if (status === 'paid' || status === 'verified') return 'success';
+  if (status === 'failed' || status === 'cancelled') return 'danger';
+  if (status === 'refunded') return 'default';
+  return 'warning'; // pending, awaiting_confirmation, partially_paid
+}
 
-const fmtDate = (d: Date) => {
-  const tz = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-  return tz.toISOString().slice(0, 10);
-};
-
-function computeRange(key: string, customStart: string, customEnd: string): { start_date: string; end_date: string } {
-  if (key === 'custom' && customStart && customEnd) {
-    return { start_date: customStart, end_date: customEnd };
+function TrendNote({ change }: { change: number | null | undefined }) {
+  if (change === null || change === undefined) {
+    return <span className="opacity-70">No previous period to compare</span>;
   }
-  const end = new Date();
-  let start = new Date();
-  if (key === '7d') start.setDate(end.getDate() - 6);
-  else if (key === '90d') start.setDate(end.getDate() - 89);
-  else if (key === 'month') start = new Date(end.getFullYear(), end.getMonth(), 1);
-  else start.setDate(end.getDate() - 29); // 30d default
-  return { start_date: fmtDate(start), end_date: fmtDate(end) };
+  const up = change >= 0;
+  return (
+    <span className={`font-semibold ${up ? 'text-emerald-700' : 'text-rose-700'}`}>
+      {up ? '+' : ''}{change}% <span className="font-normal opacity-70">vs previous period</span>
+    </span>
+  );
 }
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState<DashboardStatsWithTrends | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [range, setRange] = useState<DateRange>(() => presetRange('30d'));
+  const [data, setData] = useState<DashboardResponse | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
-  // Date-range filter
-  const [rangeKey, setRangeKey] = useState('30d');
-  const [customStart, setCustomStart] = useState('');
-  const [customEnd, setCustomEnd] = useState('');
-
-  useEffect(() => {
-    // Wait for both custom dates before fetching a custom range.
-    if (rangeKey === 'custom' && (!customStart || !customEnd)) return;
-    fetchDashboardStats();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rangeKey, customStart, customEnd]);
-
-  // Safely extract a numeric count from a value that the API may return as
-  // a number, an array (use .length), or an object (fall back to 0).
-  const safeCount = (val: unknown): number => {
-    if (typeof val === 'number') return val;
-    if (Array.isArray(val)) return val.length;
-    return 0;
-  };
-
-  const fetchDashboardStats = async () => {
-    setIsLoading(true);
+  const fetchDashboard = useCallback(async () => {
+    if (!range.start || !range.end) return;
+    if (range.start > range.end) {
+      toast.error('The start date must be on or before the end date.');
+      return;
+    }
+    setLoading(true);
     setError(false);
     try {
-      const response = await adminService.getDashboardStats(computeRange(rangeKey, customStart, customEnd));
-      // Cast through unknown because the API response shape does not exactly
-      // match the DashboardStats type — it wraps counts in a `statistics` object.
-      const raw = response.data.data as unknown as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
-      // The API wraps all counts inside a `statistics` object.
-      // Fall back to direct fields for backward compatibility.
-      const stats = raw.statistics ?? raw;
-      setStats({
-        ...raw,
-        total_users: safeCount(stats.users?.total ?? raw.total_users),
-        total_vendors: safeCount(stats.vendors?.total ?? raw.total_vendors),
-        total_orders: safeCount(stats.orders?.total ?? raw.total_orders),
-        total_revenue: typeof (stats.revenue?.total ?? raw.total_revenue) === 'number'
-          ? (stats.revenue?.total ?? raw.total_revenue)
-          : 0,
-        current_cash_balance: typeof stats.cash_balance?.current === 'number' ? stats.cash_balance.current : 0,
-        pending_vendors: safeCount(stats.pending_actions?.vendors ?? stats.vendors?.pending ?? raw.pending_vendors),
-        pending_orders: safeCount(stats.orders?.pending ?? raw.pending_orders),
-        recent_orders: Array.isArray(raw.recent_orders) ? raw.recent_orders : [],
-        revenue_chart: Array.isArray(raw.revenue_chart) ? raw.revenue_chart : [],
-      });
+      const res = await adminService.getDashboardStats({ start_date: range.start, end_date: range.end });
+      setData(res.data.data as unknown as DashboardResponse);
     } catch (err) {
-      console.error('Error fetching dashboard stats:', err);
       toast.error(getErrorMessage(err));
       setError(true);
-      setStats(null);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
-  };
+  }, [range]);
 
-  if (isLoading && !stats) {
+  useEffect(() => { fetchDashboard(); }, [fetchDashboard]);
+
+  if (loading && !data) {
     return (
       <AdminLayout>
-        <div className="flex items-center justify-center h-96">
-          <LoadingSpinner size="lg" text="Loading dashboard..." />
-        </div>
+        <div className="flex h-96 items-center justify-center"><LoadingSpinner size="lg" text="Loading dashboard…" /></div>
       </AdminLayout>
     );
   }
 
-  if (error && !stats) {
+  if (error && !data) {
     return (
       <AdminLayout>
-        <ErrorState
-          title="Failed to load dashboard"
-          message="Could not fetch dashboard data. Please try again."
-          onRetry={fetchDashboardStats}
-        />
+        <ErrorState title="Failed to load dashboard" message="Could not fetch dashboard data. Please try again." onRetry={fetchDashboard} />
       </AdminLayout>
     );
   }
 
-  const setPreset = (key: string) => { setCustomStart(''); setCustomEnd(''); setRangeKey(key); };
-  const periodRevenueTotal = (stats?.revenue_chart || []).reduce((sum, r) => sum + (r.revenue || 0), 0);
+  const st = data?.statistics;
+  const chart = data?.revenue_chart ?? [];
+  const periodRevenue = chart.reduce((n, r) => n + r.revenue, 0);
+  const periodOrders = chart.reduce((n, r) => n + r.orders, 0);
+  const periodPaid = chart.reduce((n, r) => n + r.sales_orders, 0);
+  const averageOrder = st && st.orders.sales > 0 ? st.revenue.total / st.orders.sales : 0;
+
+  const attention = st
+    ? [
+        { label: 'Pending orders', value: st.orders.pending, href: '/orders?status=pending', kpiTone: 'orange' as const, icon: <Clock className="h-4 w-4 opacity-60" /> },
+        { label: 'Open tickets', value: st.pending_actions.tickets, href: '/tickets', kpiTone: 'rose' as const, icon: <Ticket className="h-4 w-4 opacity-60" /> },
+        { label: 'Pending reviews', value: st.pending_actions.reviews, href: '/reviews', kpiTone: 'amber' as const, icon: <Star className="h-4 w-4 opacity-60" /> },
+      ]
+    : [];
 
   return (
     <AdminLayout>
-      <div className="page-header flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-        <div>
-          <h1 className="page-title">Dashboard</h1>
-          <p className="page-description">Welcome to Gadget Revibe Admin Panel</p>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-baseline gap-2">
+          <h1 className="text-lg font-bold text-gray-900">Dashboard</h1>
+          <p className="text-xs text-gray-500">Sales, money and stock for the selected period</p>
         </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {QUICK_LINKS.map((l) => (
+            <Link
+              key={l.href}
+              href={l.href}
+              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold transition-colors ${
+                l.primary ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              {l.primary && <Plus className="h-3 w-3" />}
+              {l.title}
+            </Link>
+          ))}
+        </div>
+      </div>
 
-        {/* Date-range filter */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center rounded-lg border border-gray-200 bg-white p-0.5">
-            {RANGE_PRESETS.map((p) => (
-              <button
-                key={p.key}
-                onClick={() => setPreset(p.key)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  rangeKey === p.key ? 'bg-primary-600 text-white' : 'text-gray-600 hover:bg-gray-100'
-                }`}
-              >
-                {p.label}
-              </button>
+      <div className="mb-3">
+        <DateRangeBar
+          range={range}
+          onChange={setRange}
+          presets={DATE_PRESETS}
+          right={loading ? <span className="text-xs text-gray-400">Updating…</span> : undefined}
+        />
+      </div>
+
+      {st && (
+        <div className="space-y-2">
+          {/* One consistent grid for everything — backlog alerts (clickable) and money/order
+              stats side by side, same tile size throughout. The old split into a differently
+              styled "pills" row plus two unevenly-sized KPI rows (5 then 4 columns) left tile
+              edges misaligned row to row, which read as cluttered; one grid fixes that and is
+              shorter overall, which is what keeps the whole dashboard inside the viewport. */}
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+            {attention.map((a) => (
+              <Link key={a.label} href={a.href} className="block">
+                <KpiTile label={a.label} value={a.value.toLocaleString()} tone={a.kpiTone} icon={a.icon} />
+              </Link>
             ))}
-          </div>
-          <div className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2 py-1">
-            <Calendar className="w-4 h-4 text-gray-400" />
-            <input
-              type="date"
-              value={customStart || (rangeKey !== 'custom' ? computeRange(rangeKey, customStart, customEnd).start_date : '')}
-              max={customEnd || undefined}
-              onChange={(e) => { setRangeKey('custom'); setCustomStart(e.target.value); }}
-              className="text-xs text-gray-700 bg-transparent focus:outline-none"
+            <KpiTile
+              label="Revenue"
+              value={formatCurrency(st.revenue.total)}
+              tone="emerald"
+              icon={<Receipt className="h-4 w-4 opacity-60" />}
+              sub={<TrendNote change={data?.trends.revenue_change} />}
             />
-            <span className="text-gray-400 text-xs">–</span>
-            <input
-              type="date"
-              value={customEnd || (rangeKey !== 'custom' ? computeRange(rangeKey, customStart, customEnd).end_date : '')}
-              min={customStart || undefined}
-              onChange={(e) => { setRangeKey('custom'); setCustomEnd(e.target.value); }}
-              className="text-xs text-gray-700 bg-transparent focus:outline-none"
+            <KpiTile
+              label="Orders placed"
+              value={st.orders.total.toLocaleString()}
+              tone="indigo"
+              icon={<ShoppingCart className="h-4 w-4 opacity-60" />}
+              sub={<>{st.orders.sales} paid · {st.orders.cancelled} cancelled<br /><TrendNote change={data?.trends.orders_change} /></>}
+            />
+            <KpiTile
+              label="Average order value"
+              value={formatCurrency(averageOrder)}
+              tone="amber"
+              sub="Revenue ÷ paid orders"
+            />
+            <KpiTile
+              label="Customers"
+              value={st.users.customers.toLocaleString()}
+              tone="sky"
+              icon={<Users className="h-4 w-4 opacity-60" />}
+              sub={`${st.users.new_customers} new in period · all-time total`}
+            />
+            <KpiTile
+              label="Cash balance"
+              value={formatCurrency(st.cash_balance.current)}
+              tone="rose"
+              icon={<Wallet className="h-4 w-4 opacity-60" />}
+              sub="Cash account today"
+            />
+            <KpiTile
+              label="Expenses"
+              value={formatCurrency(st.revenue.expenses)}
+              tone="rose"
+              icon={<Receipt className="h-4 w-4 opacity-60" />}
+              sub="All expense categories in period"
+            />
+            <KpiTile
+              label="Net revenue"
+              value={formatCurrency(st.revenue.net)}
+              tone={st.revenue.net >= 0 ? 'sky' : 'orange'}
+              icon={st.revenue.net >= 0 ? <TrendingUp className="h-4 w-4 opacity-60" /> : <TrendingDown className="h-4 w-4 opacity-60" />}
+              sub="Revenue minus expenses"
+            />
+            <KpiTile
+              label="Owed to us"
+              value={formatCurrency(st.dues.receivable.total)}
+              tone="emerald"
+              icon={<CircleDollarSign className="h-4 w-4 opacity-60" />}
+              sub={`${st.dues.receivable.count} open order${st.dues.receivable.count === 1 ? '' : 's'} · all-time`}
+            />
+            <KpiTile
+              label="We owe suppliers"
+              value={formatCurrency(st.dues.payable.total)}
+              tone="amber"
+              icon={<Truck className="h-4 w-4 opacity-60" />}
+              sub={`${st.dues.payable.count} purchase order${st.dues.payable.count === 1 ? '' : 's'} · all-time`}
             />
           </div>
-          {isLoading && <span className="text-xs text-gray-400">Updating…</span>}
-        </div>
-      </div>
 
-      {/* Necessary links — slim quick-access bar (full navigation lives in the sidebar) */}
-      <div className="flex flex-wrap gap-2 mb-5">
-        {QUICK_ACTIONS.map((action) => (
-          <Link
-            key={action.href}
-            href={action.href}
-            className={
-              action.primary
-                ? 'inline-flex items-center gap-1.5 rounded-full bg-primary-600 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-primary-700 transition-colors'
-                : 'inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-3.5 py-1.5 text-xs font-medium text-gray-600 hover:border-primary-200 hover:text-primary-700 hover:bg-primary-50/50 transition-colors'
-            }
-          >
-            {action.icon}
-            {action.title}
-          </Link>
-        ))}
-      </div>
-
-      {/* Stats — compact tiles, including pending counters (linked out to their full lists) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
-        <StatTile
-          title="Users"
-          value={stats?.total_users?.toLocaleString() || '0'}
-          icon={<Users className="w-5 h-5 text-primary-600" />}
-          iconBg="bg-primary-50"
-          change={stats?.trends?.users_change}
-        />
-        <StatTile
-          title="Orders"
-          value={stats?.total_orders?.toLocaleString() || '0'}
-          icon={<ShoppingCart className="w-5 h-5 text-indigo-600" />}
-          iconBg="bg-indigo-50"
-          change={stats?.trends?.orders_change}
-        />
-        <StatTile
-          title="Revenue"
-          value={formatCurrency(stats?.total_revenue || 0)}
-          icon={<DollarSign className="w-5 h-5 text-emerald-600" />}
-          iconBg="bg-emerald-50"
-          change={stats?.trends?.revenue_change}
-        />
-        <StatTile
-          title="Cash Balance"
-          value={formatCurrency(stats?.current_cash_balance || 0)}
-          icon={<Wallet className="w-5 h-5 text-teal-600" />}
-          iconBg="bg-teal-50"
-        />
-        <StatTile
-          title="Pend. Orders"
-          value={String(stats?.pending_orders || 0)}
-          icon={<Clock className="w-5 h-5 text-orange-600" />}
-          iconBg="bg-orange-50"
-          href="/orders?status=pending"
-        />
-      </div>
-
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
-        <Card className="rounded-xl border-gray-100">
-          <CardHeader className="flex flex-row items-center justify-between py-3.5">
-            <CardTitle className="text-sm">Revenue Overview</CardTitle>
-            <span className="text-sm font-semibold text-gray-900">{formatCurrency(periodRevenueTotal)}</span>
-          </CardHeader>
-          <CardContent className="pt-2">
-            <div className="h-56">
-              {stats?.revenue_chart && stats.revenue_chart.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={stats.revenue_chart} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#2563eb" stopOpacity={0.35} />
-                        <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis
-                      dataKey="date"
-                      tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      tick={{ fontSize: 11, fill: '#9ca3af' }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      tickFormatter={(value) => `৳${(value / 1000).toFixed(0)}k`}
-                      tick={{ fontSize: 11, fill: '#9ca3af' }}
-                      axisLine={false}
-                      tickLine={false}
-                      width={44}
-                    />
-                    <Tooltip
-                      formatter={(value: number) => [formatCurrency(value), 'Revenue']}
-                      labelFormatter={(label) => formatDate(label)}
-                      contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="revenue"
-                      stroke="#2563eb"
-                      strokeWidth={2}
-                      fill="url(#revenueGradient)"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-                  No revenue data available
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-xl border-gray-100">
-          <CardHeader className="py-3.5">
-            <CardTitle className="text-sm">Daily Orders</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-2">
-            <div className="h-56">
-              {stats?.revenue_chart && stats.revenue_chart.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={stats.revenue_chart} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis
-                      dataKey="date"
-                      tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { weekday: 'short' })}
-                      tick={{ fontSize: 11, fill: '#9ca3af' }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} width={28} />
-                    <Tooltip
-                      formatter={(value: number) => [value, 'Orders']}
-                      labelFormatter={(label) => formatDate(label)}
-                      contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
-                    />
-                    <Bar dataKey="orders" fill="#6366f1" radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-                  No order data available
-                </div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Recent Orders */}
-      <Card className="rounded-xl border-gray-100">
-        <CardHeader className="flex flex-row items-center justify-between py-3.5">
-          <CardTitle className="text-sm">Recent Orders</CardTitle>
-          <Link
-            href="/orders"
-            className="text-primary-600 hover:text-primary-700 text-xs font-medium"
-          >
-            View all
-          </Link>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-medium text-gray-500 uppercase tracking-wide">Order ID</th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-medium text-gray-500 uppercase tracking-wide">Customer</th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-medium text-gray-500 uppercase tracking-wide">Amount</th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-medium text-gray-500 uppercase tracking-wide">Status</th>
-                  <th className="px-4 py-2.5 text-left text-[11px] font-medium text-gray-500 uppercase tracking-wide">Date</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {stats?.recent_orders && stats.recent_orders.length > 0 ? (
-                  stats.recent_orders.map((order) => (
-                    <tr key={order.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                        <Link href={`/orders/${order.id}`} className="hover:text-primary-600">
-                          {order.order_number}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-500">
-                        {order.customer?.name || order.customer_name || '-'}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        {formatCurrency(order.total)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge
-                          variant={
-                            (order.order_status ?? order.status) === 'completed' ? 'success' :
-                              (order.order_status ?? order.status) === 'cancelled' ? 'danger' :
-                                (order.order_status ?? order.status) === 'pending' ? 'warning' : 'info'
-                          }
-                        >
-                          {(order.order_status ?? order.status ?? '-').replace(/_/g, ' ')}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-500">
-                        {formatDate(order.created_at)}
-                      </td>
-                    </tr>
-                  ))
+          <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+            <Panel title="Revenue" hint="Paid orders by order date" right={<span className="text-sm font-bold tabular-nums text-emerald-700">{formatCurrency(periodRevenue)}</span>}>
+              <div className="p-3">
+                {chart.length === 0 ? (
+                  <p className="flex h-40 items-center justify-center text-xs text-gray-400">No revenue in this period.</p>
                 ) : (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-12 text-center text-gray-500">
-                      No recent orders
-                    </td>
-                  </tr>
+                  <ResponsiveContainer width="100%" height={160}>
+                    <AreaChart data={chart} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="dashRevenue" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10B981" stopOpacity={0.35} />
+                          <stop offset="95%" stopColor="#10B981" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                      <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={dayLabel} />
+                      <YAxis
+                        tick={{ fontSize: 11 }}
+                        width={56}
+                        tickFormatter={(v: number) => (v >= 1000 ? `৳${(v / 1000).toFixed(0)}k` : `৳${v}`)}
+                      />
+                      <Tooltip formatter={(v: number) => [formatCurrency(v), 'Revenue']} labelFormatter={(l: string) => dayLabel(l)} />
+                      <Area type="monotone" dataKey="revenue" stroke="#10B981" strokeWidth={2} fill="url(#dashRevenue)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
                 )}
-              </tbody>
-            </table>
+              </div>
+            </Panel>
+
+            <Panel title="Orders" hint="Placed vs paid" right={<span className="text-[11px] tabular-nums text-gray-500">{periodPaid} paid of {periodOrders} placed</span>}>
+              <div className="p-3">
+                {chart.length === 0 ? (
+                  <p className="flex h-40 items-center justify-center text-xs text-gray-400">No orders in this period.</p>
+                ) : (
+                  <ResponsiveContainer width="100%" height={160}>
+                    <BarChart data={chart} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                      <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={dayLabel} />
+                      <YAxis tick={{ fontSize: 11 }} width={32} allowDecimals={false} />
+                      <Tooltip labelFormatter={(l: string) => dayLabel(l)} />
+                      <Legend wrapperStyle={{ fontSize: 12 }} />
+                      <Bar dataKey="orders" name="Placed" fill="#C7D2FE" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="sales_orders" name="Paid" fill="#6366F1" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </Panel>
           </div>
-        </CardContent>
-      </Card>
+
+          <Panel title="Latest orders" hint="Most recent, all-time" right={<Link href="/orders" className="text-xs font-semibold text-indigo-700 hover:underline">View all</Link>}>
+            <div className="max-h-[300px] overflow-auto">
+              <table className="min-w-full text-sm">
+                <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226,232,240)]">
+                  <tr>
+                    <th className="px-2.5 py-1.5 text-left font-semibold">Order</th>
+                    <th className="px-2.5 py-1.5 text-left font-semibold">Customer</th>
+                    <th className="px-2.5 py-1.5 text-center font-semibold">Items</th>
+                    <th className="px-2.5 py-1.5 text-right font-semibold">Total</th>
+                    <th className="px-2.5 py-1.5 text-left font-semibold">Payment</th>
+                    <th className="px-2.5 py-1.5 text-left font-semibold">Method</th>
+                    <th className="px-2.5 py-1.5 text-left font-semibold">Status</th>
+                    <th className="whitespace-nowrap px-2.5 py-1.5 text-left font-semibold">Date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {(data?.recent_orders ?? []).length === 0 && (
+                    <tr><td colSpan={8} className="px-3 py-6 text-center text-xs text-gray-400">No orders yet.</td></tr>
+                  )}
+                  {data?.recent_orders.map((o, i) => (
+                    <tr key={o.id} className={`${i % 2 ? 'bg-slate-50/50' : 'bg-white'} hover:bg-indigo-50/40`}>
+                      <td className="px-2.5 py-1.5">
+                        <Link href={`/orders/${o.id}`} className="font-mono font-semibold text-indigo-700 hover:underline">{o.order_number}</Link>
+                      </td>
+                      <td className="px-2.5 py-1.5 text-gray-700">
+                        <p>{o.customer?.name || o.customer_name || '—'}</p>
+                        {o.customer_phone && <p className="text-[11px] text-gray-400">{o.customer_phone}</p>}
+                      </td>
+                      <td className="px-2.5 py-1.5 text-center tabular-nums text-gray-500">{o.items_count ?? '—'}</td>
+                      <td className="px-2.5 py-1.5 text-right font-semibold tabular-nums text-gray-900">{formatCurrency(Number(o.total))}</td>
+                      <td className="px-2.5 py-1.5">
+                        <Badge variant={paymentVariant(o.payment_status)} className="px-1.5 py-0.5 text-[11px]">{o.payment_status.replace(/_/g, ' ')}</Badge>
+                      </td>
+                      <td className="px-2.5 py-1.5 text-xs capitalize text-gray-500">{o.payment_method?.replace(/_/g, ' ') || '—'}</td>
+                      <td className="px-2.5 py-1.5">
+                        <Badge variant={statusVariant(o.order_status)}>{o.order_status.replace(/_/g, ' ')}</Badge>
+                      </td>
+                      <td className="whitespace-nowrap px-2.5 py-1.5 text-xs tabular-nums text-gray-500">{formatDate(o.created_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+
+          <p className="text-[11px] text-gray-400">
+            Revenue counts orders whose payment is recognized (paid, partially paid or verified), by order date.
+            Expenses include every active expense in the period, including Asset and Purchase categories.
+            Owed to us and we owe suppliers match the Dues page and are all-time. Attention counts are current backlogs.
+          </p>
+        </div>
+      )}
     </AdminLayout>
   );
 }

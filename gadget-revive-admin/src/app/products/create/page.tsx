@@ -13,6 +13,18 @@ import toast from 'react-hot-toast';
 
 export default function CreateProductPage() {
   const router = useRouter();
+
+  // Returns to the list at whichever tab/filter it was left on instead of always resetting to
+  // the default "All" tab -- falls back to a plain push only if this page was opened with no
+  // prior in-app history at all (e.g. a direct link).
+  const goBackToList = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push('/products');
+    }
+  };
+
   const [isLoading, setIsLoading] = useState(false);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [brands, setBrands] = useState<ProductBrand[]>([]);
@@ -474,7 +486,7 @@ export default function CreateProductPage() {
       }
 
       toast.success('Product created successfully');
-      router.push('/products');
+      goBackToList();
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
@@ -487,12 +499,12 @@ export default function CreateProductPage() {
       <form onSubmit={handleSubmit}>
         {/* Header */}
         <div className="page-header flex items-center justify-between mb-6">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <Button
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => router.back()}
+              onClick={goBackToList}
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back
@@ -514,7 +526,7 @@ export default function CreateProductPage() {
             <Button
               type="button"
               variant="outline"
-              onClick={() => router.push('/products')}
+              onClick={goBackToList}
             >
               Cancel
             </Button>
@@ -525,16 +537,16 @@ export default function CreateProductPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           {/* Main Content - Left Side (2/3) */}
-          <div className="lg:col-span-2 space-y-4">
+          <div className="lg:col-span-2 space-y-3">
             {/* Basic Information */}
             <Card className="bg-sky-50/60 border-sky-100">
-              <CardHeader className="border-sky-100">
-                <CardTitle>Basic Information</CardTitle>
+              <CardHeader className="border-sky-100 px-3 py-2">
+                <CardTitle className="text-sm">Basic Information</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <CardContent className="space-y-3 p-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Product Name <span className="text-red-500">*</span>
@@ -689,10 +701,10 @@ export default function CreateProductPage() {
 
             {/* Images */}
             <Card className="bg-violet-50/60 border-violet-100">
-              <CardHeader className="border-violet-100">
-                <CardTitle>Product Images</CardTitle>
+              <CardHeader className="border-violet-100 px-3 py-2">
+                <CardTitle className="text-sm">Product Images</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3 p-3">
                 {/* Main Image */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Main Image</label>
@@ -767,11 +779,11 @@ export default function CreateProductPage() {
 
             {/* Specifications */}
             <Card className="bg-teal-50/60 border-teal-100">
-              <CardHeader className="border-teal-100">
-                <CardTitle>Technical Specifications</CardTitle>
+              <CardHeader className="border-teal-100 px-3 py-2">
+                <CardTitle className="text-sm">Technical Specifications</CardTitle>
                 <p className="text-sm text-gray-500 mt-1">Drag items to reorder, click to edit</p>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3 p-3">
                 {specSuggestions.length > 0 && (() => {
                   const usedKeys = new Set(specifications.map((s) => s.key.toLowerCase()));
                   const available = specSuggestions.filter((s) => !usedKeys.has(s.key.toLowerCase()));
@@ -930,14 +942,14 @@ export default function CreateProductPage() {
 
             {/* Category Filter Attributes (dynamic, per selected category + inherited) */}
             <Card className="bg-rose-50/60 border-rose-100">
-              <CardHeader className="border-rose-100">
-                <CardTitle>Category Filter Attributes</CardTitle>
+              <CardHeader className="border-rose-100 px-3 py-2">
+                <CardTitle className="text-sm">Category Filter Attributes</CardTitle>
                 <p className="text-sm text-gray-500 mt-1">
                   Attributes defined on the selected category (and inherited from its parents).
                   These drive the filter sidebar on the storefront.
                 </p>
               </CardHeader>
-              <CardContent>
+              <CardContent className="p-3">
                 {!formData.category_id ? (
                   <div className="text-center py-8 text-gray-400 border-2 border-dashed border-gray-200 rounded-lg">
                     <p className="text-sm">Select a category to load its filter attributes</p>
@@ -954,7 +966,7 @@ export default function CreateProductPage() {
                     </p>
                   </div>
                 ) : (
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     {categoryAttributes.map((attr) => {
                       const current = selectedAttributeValues[attr.id];
                       return (
@@ -1045,13 +1057,13 @@ export default function CreateProductPage() {
           </div>
 
           {/* Sidebar - Right Side (1/3) */}
-          <div className="space-y-4">
+          <div className="space-y-3">
             {/* Pricing */}
             <Card className="bg-emerald-50/60 border-emerald-100">
-              <CardHeader className="border-emerald-100">
-                <CardTitle>Pricing</CardTitle>
+              <CardHeader className="border-emerald-100 px-3 py-2">
+                <CardTitle className="text-sm">Pricing</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3 p-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Price (৳) <span className="text-red-500">*</span>
@@ -1087,10 +1099,10 @@ export default function CreateProductPage() {
 
             {/* Inventory */}
             <Card className="bg-cyan-50/60 border-cyan-100">
-              <CardHeader className="border-cyan-100">
-                <CardTitle>Inventory</CardTitle>
+              <CardHeader className="border-cyan-100 px-3 py-2">
+                <CardTitle className="text-sm">Inventory</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3 p-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Stock Quantity <span className="text-red-500">*</span>
@@ -1156,10 +1168,10 @@ export default function CreateProductPage() {
 
             {/* Product Details */}
             <Card className="bg-slate-50/60 border-slate-200">
-              <CardHeader className="border-slate-200">
-                <CardTitle>Product Details</CardTitle>
+              <CardHeader className="border-slate-200 px-3 py-2">
+                <CardTitle className="text-sm">Product Details</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3 p-3">
                 <div>
                   <div className="flex items-end gap-2">
                     <div className="flex-1">
@@ -1239,10 +1251,10 @@ export default function CreateProductPage() {
 
             {/* Status */}
             <Card className="bg-indigo-50/60 border-indigo-100">
-              <CardHeader className="border-indigo-100">
-                <CardTitle>Status</CardTitle>
+              <CardHeader className="border-indigo-100 px-3 py-2">
+                <CardTitle className="text-sm">Status</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3 p-3">
                 <label className="flex items-center gap-3 cursor-pointer">
                   <div className="relative">
                     <input

@@ -1,637 +1,512 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { Search, Eye, CreditCard, CheckCircle, Clock, AlertCircle, RefreshCw, Smartphone, Banknote, Building2, Package, Wrench, User, MapPin, FileText, Settings2 } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { Search, CheckCircle, Wallet, ShoppingCart, X, Banknote, ExternalLink, Settings2 } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
-import {
-  Card, CardContent, CardHeader, CardTitle, Button, Input, Select, Modal,
-  Badge, Pagination, LoadingSpinner, EmptyState, ErrorState,
-} from '@/components/ui';
+import { Button, Modal, Badge, Pagination, LoadingSpinner, EmptyState, ErrorState } from '@/components/ui';
+import { KpiTile, chipClass } from '@/components/reports/shared';
 import { formatCurrency, formatDateTime, getErrorMessage } from '@/lib/utils';
 import adminService from '@/lib/adminService';
 import toast from 'react-hot-toast';
 
-interface OrderItem {
-  id: number;
-  order_id: number;
-  item_type: 'product' | 'service';
-  product_id: number | null;
-  service_id: number | null;
-  item_name: string;
-  item_sku: string;
-  quantity: number;
-  unit_price: string;
-  total_price: string;
-  notes: string | null;
-  created_at: string;
-  updated_at: string;
-}
+/**
+ * Payments — customer (order) payments only. Supplier payments are handled in the Purchases module.
+ * Filters: Due (outstanding balance), Partial, Paid, All.
+ */
 
-interface Customer {
+type Filter = 'due' | 'partial' | 'paid' | 'all';
+
+interface Row {
   id: number;
-  name: string;
-  email: string;
+  reference: string;
+  party: string;
   phone: string;
-  role: string;
+  date: string;
+  total: number;
+  paid: number;
+  outstanding: number;
   status: string;
-  avatar: string | null;
+  method: string;
+  canPay: boolean;
+  canVerify: boolean;
 }
 
-interface Payment {
-  id: number;
-  order_number: string;
-  customer_id: number;
-  vendor_profile_id: number | null;
-  subtotal: string;
-  tax: string;
-  shipping: string;
-  discount: string;
-  total: string;
-  payment_method: string;
-  payment_status: string;
-  order_status: string;
-  customer_notes: string | null;
-  vendor_notes: string | null;
-  admin_notes: string | null;
-  customer_name: string;
-  customer_phone: string;
-  customer_email: string;
-  customer_address: string;
-  division_id: number | null;
-  district_id: number | null;
-  area_id: number | null;
-  accepted_at: string | null;
-  completed_at: string | null;
-  cancelled_at: string | null;
-  created_at: string;
-  updated_at: string;
-  customer: Customer | null;
-  vendor_profile: null;
-  items: OrderItem[];
+interface Summary {
+  receivable: { total: number; count: number };
 }
 
-const PAYMENT_METHODS: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
-  bkash:         { label: 'bKash',         icon: <Smartphone className="w-4 h-4" />, color: 'text-pink-600 bg-pink-50' },
-  nagad:         { label: 'Nagad',          icon: <Smartphone className="w-4 h-4" />, color: 'text-orange-600 bg-orange-50' },
-  rocket:        { label: 'Rocket',         icon: <Smartphone className="w-4 h-4" />, color: 'text-purple-600 bg-purple-50' },
-  bank_transfer: { label: 'Bank Transfer',  icon: <Building2 className="w-4 h-4" />,  color: 'text-blue-600 bg-blue-50' },
-  cash:          { label: 'Cash',           icon: <Banknote className="w-4 h-4" />,   color: 'text-green-600 bg-green-50' },
-  card:          { label: 'Card',           icon: <CreditCard className="w-4 h-4" />, color: 'text-indigo-600 bg-indigo-50' },
-};
-
-const PAYMENT_STATUSES = [
-  { value: 'pending',               label: 'Pending',            color: 'warning' },
-  { value: 'awaiting_confirmation', label: 'Awaiting Confirm',   color: 'warning' },
-  { value: 'partially_paid',        label: 'Partially Paid',     color: 'warning' },
-  { value: 'paid',                  label: 'Paid',               color: 'success' },
-  { value: 'verified',              label: 'Verified',           color: 'success' },
-  { value: 'failed',                label: 'Failed',             color: 'danger' },
-  { value: 'refunded',              label: 'Refunded',           color: 'default' },
+const FILTERS: { value: Filter; label: string }[] = [
+  { value: 'due', label: 'Due' },
+  { value: 'partial', label: 'Partial' },
+  { value: 'paid', label: 'Paid' },
+  { value: 'all', label: 'All' },
 ];
 
-const ORDER_STATUS_COLORS: Record<string, 'success' | 'warning' | 'danger' | 'default'> = {
-  pending:    'warning',
-  processing: 'warning',
-  accepted:   'success',
-  completed:  'success',
-  cancelled:  'danger',
+const ORDER_STATUS_LABEL: Record<string, string> = {
+  pending: 'Pending', awaiting_confirmation: 'Awaiting confirm', partially_paid: 'Partially paid',
+  paid: 'Paid', verified: 'Verified', failed: 'Failed', refunded: 'Refunded', cancelled: 'Cancelled',
+};
+const ORDER_STATUS_TONE: Record<string, 'success' | 'warning' | 'danger' | 'default'> = {
+  pending: 'warning', awaiting_confirmation: 'warning', partially_paid: 'warning',
+  paid: 'success', verified: 'success', failed: 'danger', refunded: 'default', cancelled: 'danger',
 };
 
-function getPaymentStatusBadge(status: string) {
-  const s = PAYMENT_STATUSES.find(x => x.value === status);
-  return <Badge variant={(s?.color as 'success' | 'warning' | 'danger' | 'default') || 'default'}>{s?.label || status}</Badge>;
+const STATUS_OPTIONS: { value: string; label: string }[] = [
+  { value: 'pending', label: 'Pending' },
+  { value: 'awaiting_confirmation', label: 'Awaiting confirm' },
+  { value: 'failed', label: 'Failed' },
+  { value: 'cancelled', label: 'Cancelled' },
+];
+
+const METHOD_LABEL: Record<string, string> = {
+  bkash: 'bKash', nagad: 'Nagad', rocket: 'Rocket', bank_transfer: 'Bank transfer', cash: 'Cash', card: 'Card',
+};
+
+const INPUT = 'h-8 rounded-lg border border-gray-300 bg-white px-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500';
+const SEARCH = 'h-8 w-full rounded-lg border border-gray-300 bg-white pl-8 pr-3 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500';
+
+function toRowFromDue(r: Record<string, unknown>): Row {
+  const outstanding = Number(r.outstanding ?? 0);
+  const status = String(r.payment_status ?? '');
+  return {
+    id: Number(r.id),
+    reference: String(r.reference ?? ''),
+    party: String(r.party_name ?? '—'),
+    phone: String(r.party_phone ?? ''),
+    date: String(r.date ?? ''),
+    total: Number(r.total ?? 0),
+    paid: Number(r.paid_amount ?? 0),
+    outstanding,
+    status,
+    method: '',
+    canPay: outstanding > 0,
+    canVerify: ['pending', 'awaiting_confirmation'].includes(status),
+  };
 }
 
-function getOrderStatusBadge(status: string) {
-  const color = ORDER_STATUS_COLORS[status] || 'default';
-  return <Badge variant={color}>{status.charAt(0).toUpperCase() + status.slice(1)}</Badge>;
-}
-
-function MethodBadge({ method }: { method: string }) {
-  const info = PAYMENT_METHODS[method] || { label: method, icon: <CreditCard className="w-4 h-4" />, color: 'text-gray-600 bg-gray-50' };
-  return (
-    <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium ${info.color}`}>
-      {info.icon}
-      {info.label}
-    </span>
-  );
+function toRowFromOrder(o: Record<string, any>): Row {
+  const outstanding = Number(o.outstanding_receivable ?? 0);
+  const closed = ['cancelled', 'refunded', 'rejected'].includes(String(o.order_status ?? ''));
+  const status = String(o.payment_status ?? '');
+  return {
+    id: Number(o.id),
+    reference: String(o.order_number ?? ''),
+    party: String(o.customer_name ?? o.customer?.name ?? '—'),
+    phone: String(o.customer_phone ?? o.customer?.phone ?? ''),
+    date: String(o.created_at ?? ''),
+    total: Number(o.total ?? 0),
+    paid: Number(o.paid_amount ?? 0),
+    outstanding,
+    status,
+    method: String(o.payment_method ?? ''),
+    canPay: outstanding > 0 && !closed,
+    canVerify: ['pending', 'awaiting_confirmation'].includes(status),
+  };
 }
 
 export default function PaymentsPage() {
-  const [payments, setPayments] = useState<Payment[]>([]);
+  const [filter, setFilter] = useState<Filter>('due');
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [minAmount, setMinAmount] = useState('');
+  const [method, setMethod] = useState('');
+  const [page, setPage] = useState(1);
+
+  const [rows, setRows] = useState<Row[]>([]);
+  const [lastPage, setLastPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
-  const [filterMethod, setFilterMethod] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [total, setTotal] = useState(0);
-  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
-  const [isVerifyModalOpen, setIsVerifyModalOpen] = useState(false);
-  const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
-  const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
-  const [verifyNotes, setVerifyNotes] = useState('');
-  const [refundNotes, setRefundNotes] = useState('');
-  const [statusTarget, setStatusTarget] = useState('');
-  const [statusNotes, setStatusNotes] = useState('');
-  const [isSaving, setIsSaving] = useState(false);
+  const [summary, setSummary] = useState<Summary | null>(null);
 
-  const fetchPayments = async () => {
+  const [payRow, setPayRow] = useState<Row | null>(null);
+  const [payAmount, setPayAmount] = useState('');
+  const [isPaying, setIsPaying] = useState(false);
+
+  // Manual payment-status change (cancel / fail / back to pending) — Verify and Record stay separate.
+  const [statusRow, setStatusRow] = useState<Row | null>(null);
+  const [statusValue, setStatusValue] = useState('');
+  const [statusNote, setStatusNote] = useState('');
+  const [isStatusSaving, setIsStatusSaving] = useState(false);
+
+  // Debounce search so typing doesn't fire a request per keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => { setSearch(searchInput.trim()); setPage(1); }, 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  const loadSummary = useCallback(async () => {
+    try {
+      const res = await adminService.getDues({ type: 'receivable', per_page: 1 });
+      const body = res.data as unknown as { summary: { receivable: { total: number; count: number } } };
+      setSummary({ receivable: body.summary.receivable });
+    } catch {
+      setSummary(null);
+    }
+  }, []);
+
+  const fetchRows = useCallback(async () => {
     setIsLoading(true);
     setError(false);
     try {
-      const params: Record<string, string | number> = { page: currentPage };
-      if (searchQuery) params.search = searchQuery;
-      if (filterStatus) params.payment_status = filterStatus;
-      if (filterMethod) params.payment_method = filterMethod;
-      const response = await adminService.getPayments(params);
-      setPayments(response.data.data);
-      setTotalPages(response.data.meta?.last_page || 1);
-      setTotal(response.data.meta?.total || 0);
+      let list: Row[] = [];
+      let meta: { last_page?: number; total?: number } = {};
+
+      if (filter === 'due') {
+        // Outstanding balances: the dues endpoint is the source of truth for "what is owed".
+        const res = await adminService.getDues({
+          type: 'receivable',
+          search: search || undefined,
+          from_date: fromDate || undefined,
+          to_date: toDate || undefined,
+          min_amount: minAmount || undefined,
+          page,
+          per_page: 20,
+        });
+        const body = res.data as unknown as { data: Record<string, unknown>[]; meta: typeof meta };
+        list = (body.data ?? []).map(toRowFromDue);
+        meta = body.meta ?? {};
+      } else {
+        const statusParam = filter === 'partial' ? 'partially_paid' : filter === 'paid' ? 'paid' : undefined;
+        const res = await adminService.getPayments({
+          page,
+          per_page: 20,
+          payment_status: statusParam,
+          payment_method: method || undefined,
+          search: search || undefined,
+          start_date: fromDate || undefined,
+          end_date: toDate || undefined,
+        } as Record<string, string | number>);
+        const body = res.data as unknown as { data: Record<string, any>[]; meta: typeof meta };
+        list = (body.data ?? []).map(toRowFromOrder);
+        meta = body.meta ?? {};
+      }
+
+      // Min-amount applies client-side where the endpoint doesn't filter on it.
+      if (minAmount && filter !== 'due') {
+        const min = Number(minAmount);
+        list = list.filter((r) => r.outstanding >= min);
+      }
+
+      setRows(list);
+      setLastPage(meta.last_page ?? 1);
+      setTotal(meta.total ?? list.length);
     } catch (err) {
       toast.error(getErrorMessage(err));
       setError(true);
-      setPayments([]);
+      setRows([]);
     } finally {
       setIsLoading(false);
     }
+  }, [filter, search, fromDate, toDate, minAmount, method, page]);
+
+  useEffect(() => { loadSummary(); }, [loadSummary]);
+  useEffect(() => { fetchRows(); }, [fetchRows]);
+
+  const clearFilters = () => {
+    setSearchInput('');
+    setFromDate('');
+    setToDate('');
+    setMinAmount('');
+    setMethod('');
+    setFilter('due');
+    setPage(1);
   };
 
-  useEffect(() => { fetchPayments(); }, [currentPage, filterStatus, filterMethod]);
-  const handleSearch = () => { setCurrentPage(1); fetchPayments(); };
+  const filtered = !!search || !!fromDate || !!toDate || !!minAmount || !!method || filter !== 'due';
 
-  const handleVerify = async () => {
-    if (!selectedPayment) return;
-    setIsSaving(true);
+  const openPay = (row: Row) => {
+    setPayRow(row);
+    setPayAmount(String(row.outstanding));
+  };
+
+  const amountNum = Number(payAmount);
+  const amountValid = !!payRow && amountNum > 0 && amountNum <= (payRow?.outstanding ?? 0) + 0.001;
+  const remainingAfter = payRow ? Math.max(0, payRow.outstanding - (amountValid ? amountNum : 0)) : 0;
+
+  const handlePay = async () => {
+    if (!payRow || !amountValid) return;
+    setIsPaying(true);
     try {
-      await adminService.updatePaymentStatus(selectedPayment.id, 'verified', verifyNotes);
-      toast.success('Payment verified');
-      setIsVerifyModalOpen(false);
-      setVerifyNotes('');
-      fetchPayments();
+      await adminService.recordOrderPayment(payRow.id, amountNum);
+      toast.success(amountNum >= payRow.outstanding - 0.001
+        ? `Order ${payRow.reference} settled`
+        : `Partial payment of ${formatCurrency(amountNum)} recorded`);
+      setPayRow(null);
+      loadSummary();
+      fetchRows();
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
-      setIsSaving(false);
+      setIsPaying(false);
     }
   };
 
-  const handleRefund = async () => {
-    if (!selectedPayment) return;
-    setIsSaving(true);
+  const handleVerify = async (row: Row) => {
     try {
-      await adminService.updatePaymentStatus(selectedPayment.id, 'refunded', refundNotes);
-      toast.success('Payment refunded');
-      setIsRefundModalOpen(false);
-      setRefundNotes('');
-      fetchPayments();
+      await adminService.updatePaymentStatus(row.id, 'verified', '');
+      toast.success(`Payment for ${row.reference} verified`);
+      fetchRows();
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    }
+  };
+
+  const openStatus = (row: Row) => {
+    setStatusRow(row);
+    setStatusValue(row.status === 'cancelled' ? 'pending' : row.status || 'pending');
+    setStatusNote('');
+  };
+
+  const handleStatusSave = async () => {
+    if (!statusRow) return;
+    setIsStatusSaving(true);
+    try {
+      await adminService.updatePaymentStatus(statusRow.id, statusValue, statusNote.trim());
+      toast.success(`${statusRow.reference} payment set to ${STATUS_OPTIONS.find((s) => s.value === statusValue)?.label ?? statusValue}`);
+      setStatusRow(null);
+      fetchRows();
     } catch (err) {
       toast.error(getErrorMessage(err));
     } finally {
-      setIsSaving(false);
+      setIsStatusSaving(false);
     }
   };
 
-  const handleChangeStatus = async () => {
-    if (!selectedPayment || !statusTarget) return;
-    setIsSaving(true);
-    try {
-      await adminService.updatePaymentStatus(selectedPayment.id, statusTarget, statusNotes);
-      toast.success(`Payment marked as ${PAYMENT_STATUSES.find(s => s.value === statusTarget)?.label || statusTarget}`);
-      setIsStatusModalOpen(false);
-      setStatusNotes('');
-      fetchPayments();
-    } catch (err) {
-      toast.error(getErrorMessage(err));
-    } finally {
-      setIsSaving(false);
-    }
-  };
+  const pageTotals = useMemo(() => ({
+    paid: rows.reduce((s, r) => s + r.paid, 0),
+    outstanding: rows.reduce((s, r) => s + r.outstanding, 0),
+  }), [rows]);
 
-  // Stats derived from current page data
-  const completedTotal = payments
-    .filter(p => p.payment_status === 'verified' || p.payment_status === 'paid')
-    .reduce((s, p) => s + parseFloat(p.total), 0);
-  const pendingTotal = payments
-    .filter(p => p.payment_status === 'pending' || p.payment_status === 'awaiting_confirmation')
-    .reduce((s, p) => s + parseFloat(p.total), 0);
-  const mobileCount = payments
-    .filter(p => ['bkash', 'nagad', 'rocket'].includes(p.payment_method)).length;
-
-  if (error && payments.length === 0) {
-    return <AdminLayout><ErrorState title="Failed to load payments" onRetry={fetchPayments} /></AdminLayout>;
+  if (error && rows.length === 0) {
+    return (<AdminLayout><ErrorState title="Failed to load payments" onRetry={fetchRows} /></AdminLayout>);
   }
 
   return (
     <AdminLayout>
-      <div className="page-header">
-        <h1 className="page-title">Payments</h1>
-        <p className="page-description">Manage payment transactions — {total} total</p>
+      <div className="mb-3 flex flex-wrap items-center gap-2.5">
+        <h1 className="text-lg font-bold text-gray-900">Customer payments</h1>
+        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-600">
+          {summary ? `${summary.receivable.count} due` : '…'}
+        </span>
+        <span className="text-[11px] text-gray-500">Supplier payments are in <Link href="/purchases" className="font-semibold text-indigo-600 hover:underline">Purchases</Link></span>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <Card><CardContent className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center"><CheckCircle className="w-5 h-5 text-green-600" /></div>
-            <div><p className="text-xs text-gray-500">Paid (this page)</p><p className="text-xl font-bold">{formatCurrency(completedTotal)}</p></div>
-          </div>
-        </CardContent></Card>
-        <Card><CardContent className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center"><Clock className="w-5 h-5 text-yellow-600" /></div>
-            <div><p className="text-xs text-gray-500">Pending (this page)</p><p className="text-xl font-bold">{formatCurrency(pendingTotal)}</p></div>
-          </div>
-        </CardContent></Card>
-        <Card><CardContent className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center"><Smartphone className="w-5 h-5 text-blue-600" /></div>
-            <div><p className="text-xs text-gray-500">Mobile Payments</p><p className="text-xl font-bold">{mobileCount}</p></div>
-          </div>
-        </CardContent></Card>
-        <Card><CardContent className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center"><CreditCard className="w-5 h-5 text-purple-600" /></div>
-            <div><p className="text-xs text-gray-500">Total Orders</p><p className="text-xl font-bold">{total}</p></div>
-          </div>
-        </CardContent></Card>
+      <div className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-3">
+        <KpiTile label="Customer due" value={formatCurrency(summary?.receivable.total ?? 0)} tone="amber" icon={<ShoppingCart className="h-4 w-4 opacity-60" />} sub={`${summary?.receivable.count ?? 0} open orders`} />
+        <KpiTile label="Collected (page)" value={formatCurrency(pageTotals.paid)} tone="emerald" icon={<CheckCircle className="h-4 w-4 opacity-60" />} sub="Already paid on this page" />
+        <KpiTile label="Open (page)" value={formatCurrency(pageTotals.outstanding)} tone="indigo" icon={<Banknote className="h-4 w-4 opacity-60" />} sub="Still open on this page" />
       </div>
 
-      {/* Filters */}
-      <Card className="mb-6"><CardContent className="p-4">
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-            <Input
-              placeholder="Search order number or customer..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              className="pl-10"
+      <div className="mb-3 space-y-2 rounded-xl border border-gray-200 bg-white p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex gap-1.5">
+            {FILTERS.map((f) => (
+              <button key={f.value} type="button" onClick={() => { setFilter(f.value); setPage(1); }} className={chipClass(filter === f.value)}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <span className="ml-auto text-[11px] text-gray-500">
+            {filter === 'due' ? 'Orders with a balance still owed'
+              : filter === 'partial' ? 'Partly paid — balance still open'
+              : filter === 'paid' ? 'Fully paid'
+              : 'Every order payment'}
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[220px] flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+            <input
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Order number, customer name or phone…"
+              className={SEARCH}
             />
           </div>
-          <Select
-            options={[{ value: '', label: 'All Payment Status' }, ...PAYMENT_STATUSES.map(s => ({ value: s.value, label: s.label }))]}
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
+          <select className={INPUT} value={method} onChange={(e) => { setMethod(e.target.value); setPage(1); }} disabled={filter === 'due'} title={filter === 'due' ? 'Method filter applies to Partial / Paid / All' : 'Payment method'}>
+            <option value="">All methods</option>
+            {Object.entries(METHOD_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+          <input type="date" className={INPUT} value={fromDate} onChange={(e) => { setFromDate(e.target.value); setPage(1); }} title="From date" />
+          <input type="date" className={INPUT} value={toDate} onChange={(e) => { setToDate(e.target.value); setPage(1); }} title="To date" />
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            placeholder="Min due"
+            className={`${INPUT} w-24`}
+            value={minAmount}
+            onChange={(e) => { setMinAmount(e.target.value); setPage(1); }}
           />
-          <Select
-            options={[
-              { value: '', label: 'All Methods' },
-              ...Object.entries(PAYMENT_METHODS).map(([value, info]) => ({ value, label: info.label })),
-            ]}
-            value={filterMethod}
-            onChange={(e) => setFilterMethod(e.target.value)}
-          />
-          <Button onClick={handleSearch}>Search</Button>
-        </div>
-      </CardContent></Card>
-
-      {/* Table */}
-      <Card>
-        <CardHeader><CardTitle>All Payments</CardTitle></CardHeader>
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-12"><LoadingSpinner size="lg" text="Loading payments..." /></div>
-          ) : payments.length === 0 ? (
-            <EmptyState icon={<CreditCard className="w-8 h-8 text-gray-400" />} title="No payments found" />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-y">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Items</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Method</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {payments.map((payment) => (
-                    <tr key={payment.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4">
-                        <p className="font-medium text-primary text-sm">{payment.order_number}</p>
-                        <p className="text-xs text-gray-400">#{payment.id}</p>
-                      </td>
-                      <td className="px-6 py-4">
-                        <p className="font-medium text-sm">{payment.customer_name}</p>
-                        <p className="text-xs text-gray-500">{payment.customer_phone}</p>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex flex-col gap-0.5">
-                          {payment.items.slice(0, 2).map(item => (
-                            <span key={item.id} className="inline-flex items-center gap-1 text-xs text-gray-600">
-                              {item.item_type === 'product' ? <Package className="w-3 h-3 text-blue-500" /> : <Wrench className="w-3 h-3 text-orange-500" />}
-                              {item.item_name} ×{item.quantity}
-                            </span>
-                          ))}
-                          {payment.items.length > 2 && <span className="text-xs text-gray-400">+{payment.items.length - 2} more</span>}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <p className="font-semibold text-sm">{formatCurrency(parseFloat(payment.total))}</p>
-                        {parseFloat(payment.discount) > 0 && (
-                          <p className="text-xs text-green-600">-{formatCurrency(parseFloat(payment.discount))} off</p>
-                        )}
-                      </td>
-                      <td className="px-6 py-4">
-                        <MethodBadge method={payment.payment_method} />
-                      </td>
-                      <td className="px-6 py-4">{getPaymentStatusBadge(payment.payment_status)}</td>
-                      <td className="px-6 py-4">{getOrderStatusBadge(payment.order_status)}</td>
-                      <td className="px-6 py-4 text-gray-500 text-xs">{formatDateTime(payment.created_at)}</td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button
-                            variant="ghost" size="sm"
-                            onClick={() => { setSelectedPayment(payment); setIsViewModalOpen(true); }}
-                            title="View details"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                          {(payment.payment_status === 'pending' || payment.payment_status === 'awaiting_confirmation') && (
-                            <Button
-                              variant="ghost" size="sm"
-                              onClick={() => { setSelectedPayment(payment); setVerifyNotes(''); setIsVerifyModalOpen(true); }}
-                              title="Verify payment"
-                            >
-                              <CheckCircle className="w-4 h-4 text-green-600" />
-                            </Button>
-                          )}
-                          {(payment.payment_status === 'paid' || payment.payment_status === 'verified') && (
-                            <Button
-                              variant="ghost" size="sm"
-                              onClick={() => { setSelectedPayment(payment); setRefundNotes(''); setIsRefundModalOpen(true); }}
-                              title="Refund"
-                            >
-                              <RefreshCw className="w-4 h-4 text-orange-600" />
-                            </Button>
-                          )}
-                          <Button
-                            variant="ghost" size="sm"
-                            onClick={() => { setSelectedPayment(payment); setStatusTarget(payment.payment_status); setStatusNotes(''); setIsStatusModalOpen(true); }}
-                            title="Change status"
-                          >
-                            <Settings2 className="w-4 h-4 text-gray-500" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          {filtered && (
+            <button type="button" onClick={clearFilters} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-100">
+              <X className="h-3.5 w-3.5" /> Clear
+            </button>
           )}
-        </CardContent>
-      </Card>
-
-      {totalPages > 1 && (
-        <div className="mt-6">
-          <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
         </div>
-      )}
+      </div>
 
-      {/* View Details Modal */}
-      <Modal isOpen={isViewModalOpen} onClose={() => setIsViewModalOpen(false)} title="Payment Details" size="lg">
-        {selectedPayment && (
-          <div className="space-y-5">
-            {/* Header */}
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs text-gray-500 mb-0.5">Order Number</p>
-                <p className="text-lg font-bold text-primary">{selectedPayment.order_number}</p>
-                <p className="text-xs text-gray-400">{formatDateTime(selectedPayment.created_at)}</p>
-              </div>
-              <div className="flex flex-col items-end gap-1.5">
-                {getPaymentStatusBadge(selectedPayment.payment_status)}
-                {getOrderStatusBadge(selectedPayment.order_status)}
-              </div>
-            </div>
-
-            {/* Amount Breakdown */}
-            <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
-              <p className="text-xs font-semibold text-blue-700 uppercase tracking-wider mb-3">Amount Breakdown</p>
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-sm text-blue-800">
-                  <span>Subtotal</span>
-                  <span>{formatCurrency(parseFloat(selectedPayment.subtotal))}</span>
-                </div>
-                {parseFloat(selectedPayment.tax) > 0 && (
-                  <div className="flex justify-between text-sm text-blue-800">
-                    <span>Tax</span>
-                    <span>{formatCurrency(parseFloat(selectedPayment.tax))}</span>
-                  </div>
-                )}
-                {parseFloat(selectedPayment.shipping) > 0 && (
-                  <div className="flex justify-between text-sm text-blue-800">
-                    <span>Shipping</span>
-                    <span>{formatCurrency(parseFloat(selectedPayment.shipping))}</span>
-                  </div>
-                )}
-                {parseFloat(selectedPayment.discount) > 0 && (
-                  <div className="flex justify-between text-sm text-green-700">
-                    <span>Discount</span>
-                    <span>-{formatCurrency(parseFloat(selectedPayment.discount))}</span>
-                  </div>
-                )}
-                <div className="border-t border-blue-200 pt-1.5 mt-1.5 flex justify-between text-base font-bold text-blue-900">
-                  <span>Total</span>
-                  <span>{formatCurrency(parseFloat(selectedPayment.total))}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Payment Method */}
-            <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Payment Method</p>
-              <MethodBadge method={selectedPayment.payment_method} />
-            </div>
-
-            {/* Customer */}
-            <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1.5"><User className="w-3.5 h-3.5" />Customer</p>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div><p className="text-xs text-gray-400">Name</p><p className="font-medium">{selectedPayment.customer_name}</p></div>
-                <div><p className="text-xs text-gray-400">Phone</p><p className="font-medium">{selectedPayment.customer_phone}</p></div>
-                <div className="col-span-2"><p className="text-xs text-gray-400">Email</p><p className="font-medium">{selectedPayment.customer_email}</p></div>
-              </div>
-            </div>
-
-            {/* Delivery Address */}
-            <div className="bg-gray-50 rounded-lg p-4">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" />Delivery Address</p>
-              <p className="text-sm text-gray-700">{selectedPayment.customer_address}</p>
-            </div>
-
-            {/* Items */}
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Order Items</p>
-              <div className="border rounded-lg divide-y overflow-hidden">
-                {selectedPayment.items.map(item => (
-                  <div key={item.id} className="flex items-center justify-between px-4 py-3 text-sm bg-white hover:bg-gray-50">
-                    <div className="flex items-center gap-2 min-w-0">
-                      {item.item_type === 'product'
-                        ? <Package className="w-4 h-4 text-blue-500 shrink-0" />
-                        : <Wrench className="w-4 h-4 text-orange-500 shrink-0" />
-                      }
-                      <div className="min-w-0">
-                        <p className="font-medium truncate">{item.item_name}</p>
-                        <p className="text-xs text-gray-400">{item.item_sku} · qty {item.quantity}</p>
-                      </div>
-                    </div>
-                    <p className="font-semibold text-right ml-4 shrink-0">{formatCurrency(parseFloat(item.total_price))}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Timestamps */}
-            {(selectedPayment.accepted_at || selectedPayment.completed_at || selectedPayment.cancelled_at) && (
-              <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Timeline</p>
-                <div className="space-y-1.5 text-sm">
-                  {selectedPayment.accepted_at && (
-                    <div className="flex justify-between"><span className="text-gray-500">Accepted</span><span>{formatDateTime(selectedPayment.accepted_at)}</span></div>
-                  )}
-                  {selectedPayment.completed_at && (
-                    <div className="flex justify-between"><span className="text-gray-500">Completed</span><span>{formatDateTime(selectedPayment.completed_at)}</span></div>
-                  )}
-                  {selectedPayment.cancelled_at && (
-                    <div className="flex justify-between text-red-600"><span>Cancelled</span><span>{formatDateTime(selectedPayment.cancelled_at)}</span></div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Notes */}
-            {(selectedPayment.customer_notes || selectedPayment.admin_notes || selectedPayment.vendor_notes) && (
-              <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-100">
-                <p className="text-xs font-semibold text-yellow-700 uppercase tracking-wider mb-2 flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" />Notes</p>
-                {selectedPayment.customer_notes && (
-                  <div className="mb-1.5">
-                    <p className="text-xs text-yellow-600 mb-0.5">Customer</p>
-                    <p className="text-sm text-yellow-800">{selectedPayment.customer_notes}</p>
-                  </div>
-                )}
-                {selectedPayment.admin_notes && (
-                  <div className="mb-1.5">
-                    <p className="text-xs text-yellow-600 mb-0.5">Admin</p>
-                    <p className="text-sm text-yellow-800">{selectedPayment.admin_notes}</p>
-                  </div>
-                )}
-                {selectedPayment.vendor_notes && (
-                  <div>
-                    <p className="text-xs text-yellow-600 mb-0.5">Vendor</p>
-                    <p className="text-sm text-yellow-800">{selectedPayment.vendor_notes}</p>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-      </Modal>
-
-      {/* Verify Modal */}
-      <Modal isOpen={isVerifyModalOpen} onClose={() => setIsVerifyModalOpen(false)} title="Verify Payment">
-        {selectedPayment && (
-          <div className="space-y-4">
-            <div className="bg-gray-50 p-4 rounded-lg space-y-1 text-sm">
-              <p>Order: <span className="font-medium text-primary">{selectedPayment.order_number}</span></p>
-              <p>Amount: <span className="font-bold">{formatCurrency(parseFloat(selectedPayment.total))}</span></p>
-              <p className="flex items-center gap-1.5">Method: <MethodBadge method={selectedPayment.payment_method} /></p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Notes (Optional)</label>
-              <textarea
-                value={verifyNotes}
-                onChange={(e) => setVerifyNotes(e.target.value)}
-                className="w-full border rounded-lg p-3 h-20 text-sm"
-                placeholder="Verification notes..."
-              />
-            </div>
-            <div className="flex justify-end gap-3 pt-2">
-              <Button variant="outline" onClick={() => setIsVerifyModalOpen(false)}>Cancel</Button>
-              <Button onClick={handleVerify} isLoading={isSaving}>
-                <CheckCircle className="w-4 h-4 mr-2" />Verify Payment
-              </Button>
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      {/* Refund Modal */}
-      <Modal isOpen={isRefundModalOpen} onClose={() => setIsRefundModalOpen(false)} title="Refund Payment">
-        {selectedPayment && (
-          <div className="space-y-4">
-            <div className="bg-red-50 p-4 rounded-lg border border-red-100">
-              <div className="flex items-center gap-2 text-red-700 mb-2">
-                <AlertCircle className="w-5 h-5" />
-                <span className="font-medium">This action cannot be undone</span>
-              </div>
-              <p className="text-sm text-red-600">Amount to refund: <span className="font-bold">{formatCurrency(parseFloat(selectedPayment.total))}</span></p>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Reason for Refund *</label>
-              <textarea
-                value={refundNotes}
-                onChange={(e) => setRefundNotes(e.target.value)}
-                className="w-full border rounded-lg p-3 h-20 text-sm"
-                placeholder="Enter reason..."
-              />
-            </div>
-            <div className="flex justify-end gap-3 pt-2">
-              <Button variant="outline" onClick={() => setIsRefundModalOpen(false)}>Cancel</Button>
-              <Button variant="danger" onClick={handleRefund} isLoading={isSaving} disabled={!refundNotes.trim()}>
-                <RefreshCw className="w-4 h-4 mr-2" />Process Refund
-              </Button>
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      {/* Change Status Modal */}
-      <Modal isOpen={isStatusModalOpen} onClose={() => setIsStatusModalOpen(false)} title="Change Payment Status">
-        {selectedPayment && (
-          <div className="space-y-4">
-            <div className="bg-gray-50 p-4 rounded-lg space-y-1 text-sm">
-              <p>Order: <span className="font-medium text-primary">{selectedPayment.order_number}</span></p>
-              <p>Amount: <span className="font-bold">{formatCurrency(parseFloat(selectedPayment.total))}</span></p>
-              <p className="flex items-center gap-1.5">Current status: {getPaymentStatusBadge(selectedPayment.payment_status)}</p>
-            </div>
-            <Select
-              label="New Status"
-              options={PAYMENT_STATUSES.filter(s => s.value !== 'partially_paid').map(s => ({ value: s.value, label: s.label }))}
-              value={statusTarget}
-              onChange={(e) => setStatusTarget(e.target.value)}
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        {isLoading ? (
+          <div className="flex justify-center py-12"><LoadingSpinner size="md" text="Loading…" /></div>
+        ) : rows.length === 0 ? (
+          <div className="p-4">
+            <EmptyState
+              icon={<Wallet className="h-8 w-8 text-gray-400" />}
+              title={filtered ? 'Nothing matches these filters' : 'No customer payments to show'}
             />
-            <p className="text-xs text-gray-400 -mt-2">
-              &quot;Partially Paid&quot; can only be reached by recording an actual partial payment on the order page.
-            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-3 py-2 text-left font-semibold">Order</th>
+                  <th className="px-3 py-2 text-left font-semibold">Customer</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-left font-semibold">Date</th>
+                  <th className="px-3 py-2 text-right font-semibold">Total</th>
+                  <th className="px-3 py-2 text-right font-semibold">Paid</th>
+                  <th className="px-3 py-2 text-right font-semibold">Outstanding</th>
+                  <th className="px-3 py-2 text-left font-semibold">Status</th>
+                  <th className="px-3 py-2 text-left font-semibold">Method</th>
+                  <th className="px-3 py-2 text-right font-semibold">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {rows.map((row, i) => (
+                  <tr key={row.id} className={`${i % 2 ? 'bg-slate-50/40' : 'bg-white'} hover:bg-indigo-50/40`}>
+                    <td className="whitespace-nowrap px-3 py-2 font-mono text-xs font-semibold text-gray-900">{row.reference}</td>
+                    <td className="px-3 py-2">
+                      <p className="font-medium text-gray-900">{row.party}</p>
+                      {row.phone && <p className="text-[11px] text-gray-500">{row.phone}</p>}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-xs tabular-nums text-gray-500">{row.date ? formatDateTime(row.date) : '—'}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-gray-700">{formatCurrency(row.total)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-emerald-700">{formatCurrency(row.paid)}</td>
+                    <td className={`whitespace-nowrap px-3 py-2 text-right font-semibold tabular-nums ${row.outstanding > 0 ? 'text-amber-700' : 'text-gray-400'}`}>
+                      {row.outstanding > 0 ? formatCurrency(row.outstanding) : '—'}
+                    </td>
+                    <td className="px-3 py-2">
+                      <Badge variant={ORDER_STATUS_TONE[row.status] ?? 'default'} className="text-[11px]">{ORDER_STATUS_LABEL[row.status] ?? (row.status || '—')}</Badge>
+                    </td>
+                    <td className="px-3 py-2 text-xs text-gray-600">{METHOD_LABEL[row.method] ?? (row.method || '—')}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center justify-end gap-1">
+                        {row.canVerify && (
+                          <Button size="sm" variant="outline" onClick={() => handleVerify(row)} className="whitespace-nowrap border-emerald-300 text-emerald-700 hover:bg-emerald-50">
+                            <CheckCircle className="mr-1 h-3.5 w-3.5" /> Verify
+                          </Button>
+                        )}
+                        {row.canPay && (
+                          <Button size="sm" onClick={() => openPay(row)} className="whitespace-nowrap">
+                            <Wallet className="mr-1 h-3.5 w-3.5" /> Record
+                          </Button>
+                        )}
+                        <button type="button" title="Update payment status" onClick={() => openStatus(row)} className="rounded-md p-1 text-slate-500 hover:bg-slate-100">
+                          <Settings2 className="h-3.5 w-3.5" />
+                        </button>
+                        <Link href={`/orders/${row.id}`} title="Open order" className="rounded-md p-1 text-indigo-600 hover:bg-indigo-50">
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+        <span>{total.toLocaleString()} record{total === 1 ? '' : 's'}</span>
+        {lastPage > 1 && <Pagination currentPage={page} totalPages={lastPage} onPageChange={setPage} />}
+      </div>
+
+      {/* Manual payment-status change */}
+      <Modal isOpen={!!statusRow} onClose={() => setStatusRow(null)} title={statusRow ? `Payment status — ${statusRow.reference}` : ''} size="sm">
+        {statusRow && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-slate-50 px-3 py-2 text-xs">
+              <span className="text-gray-500">Current</span>
+              <Badge variant={ORDER_STATUS_TONE[statusRow.status] ?? 'default'} className="text-[11px]">{ORDER_STATUS_LABEL[statusRow.status] ?? (statusRow.status || '—')}</Badge>
+            </div>
+            {statusRow.paid > 0 && (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                {formatCurrency(statusRow.paid)} is already recorded on this order. Cancelling or failing it is blocked here — use <b>Refund</b> on the order page so the money is reversed properly.
+              </p>
+            )}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Notes (Optional)</label>
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">New status</label>
+              <select className={`${INPUT} w-full`} value={statusValue} onChange={(e) => setStatusValue(e.target.value)}>
+                {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                Note {statusValue === 'cancelled' ? <span className="text-rose-600">*</span> : '(optional)'}
+              </label>
               <textarea
-                value={statusNotes}
-                onChange={(e) => setStatusNotes(e.target.value)}
-                className="w-full border rounded-lg p-3 h-20 text-sm"
-                placeholder="Reason / notes for this status change..."
+                value={statusNote}
+                onChange={(e) => setStatusNote(e.target.value)}
+                rows={2}
+                placeholder={statusValue === 'cancelled' ? 'Why is this payment being cancelled?' : 'Reason for this change'}
+                className="w-full rounded-lg border border-gray-300 p-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
-            <div className="flex justify-end gap-3 pt-2">
-              <Button variant="outline" onClick={() => setIsStatusModalOpen(false)}>Cancel</Button>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="ghost" onClick={() => setStatusRow(null)}>Cancel</Button>
               <Button
-                onClick={handleChangeStatus}
-                isLoading={isSaving}
-                disabled={!statusTarget || statusTarget === selectedPayment.payment_status}
+                onClick={handleStatusSave}
+                isLoading={isStatusSaving}
+                disabled={statusValue === statusRow.status || (statusValue === 'cancelled' && !statusNote.trim())}
+                variant={statusValue === 'cancelled' || statusValue === 'failed' ? 'danger' : 'primary'}
               >
-                <Settings2 className="w-4 h-4 mr-2" />Update Status
+                Update status
               </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Record a full or partial customer payment */}
+      <Modal isOpen={!!payRow} onClose={() => setPayRow(null)} title={payRow ? `Record payment — ${payRow.reference}` : ''} size="sm">
+        {payRow && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-2 rounded-lg border border-gray-200 bg-slate-50 p-3 text-center">
+              <div><p className="text-[10px] uppercase tracking-wide text-gray-500">Total</p><p className="text-sm font-bold tabular-nums">{formatCurrency(payRow.total)}</p></div>
+              <div><p className="text-[10px] uppercase tracking-wide text-gray-500">Paid</p><p className="text-sm font-bold tabular-nums text-emerald-700">{formatCurrency(payRow.paid)}</p></div>
+              <div><p className="text-[10px] uppercase tracking-wide text-gray-500">Due</p><p className="text-sm font-bold tabular-nums text-amber-700">{formatCurrency(payRow.outstanding)}</p></div>
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">Amount now</label>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  min={0.01}
+                  max={payRow.outstanding}
+                  step="0.01"
+                  value={payAmount}
+                  onChange={(e) => setPayAmount(e.target.value)}
+                  className="h-9 flex-1 rounded-lg border border-gray-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <Button variant="outline" size="sm" onClick={() => setPayAmount(String(payRow.outstanding))}>Full</Button>
+              </div>
+              <p className="mt-1 text-[11px] text-gray-500">
+                {amountValid
+                  ? remainingAfter > 0.001
+                    ? `Partial — ${formatCurrency(remainingAfter)} stays due after this payment.`
+                    : 'Settles the full balance.'
+                  : `Enter an amount between 0.01 and ${formatCurrency(payRow.outstanding)}.`}
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button variant="ghost" onClick={() => setPayRow(null)}>Cancel</Button>
+              <Button onClick={handlePay} isLoading={isPaying} disabled={!amountValid}>Record payment</Button>
             </div>
           </div>
         )}

@@ -1,56 +1,64 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
-import { TrendingUp, TrendingDown, ShoppingCart, BarChart2, Wallet } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import toast from 'react-hot-toast';
+import { ShoppingCart, Receipt, Wallet, TrendingUp, TrendingDown } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { AdminLayout } from '@/components/layout';
+import { Button, LoadingSpinner, EmptyState, ErrorState } from '@/components/ui';
 import {
-  Card, CardContent, CardHeader, CardTitle,
-  Button, Input, Select, LoadingSpinner, EmptyState,
-} from '@/components/ui';
+  DateRange, DateRangeBar, KpiTile, Panel, CHART_COLORS, presetRange, chipClass,
+} from '@/components/reports/shared';
 import { ExpenseReport, CashPosition } from '@/types';
 import { formatCurrency, formatDate, getErrorMessage } from '@/lib/utils';
 import adminService from '@/lib/adminService';
-import toast from 'react-hot-toast';
-import {
-  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer, PieChart, Pie, Cell,
-} from 'recharts';
 
-const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6', '#F97316'];
+type GroupBy = 'day' | 'month';
 
-const today = new Date().toISOString().split('T')[0];
-const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+function periodLabel(period: string): string {
+  if (period.length === 7) {
+    const [y, m] = period.split('-').map(Number);
+    return new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+  }
+  const [y, m, d] = period.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
 
 export default function RevenueReportPage() {
-  const [startDate, setStartDate] = useState(firstOfMonth);
-  const [endDate, setEndDate] = useState(today);
-  const [groupBy, setGroupBy] = useState('day');
+  const [range, setRange] = useState<DateRange>(() => presetRange('month'));
+  const [groupBy, setGroupBy] = useState<GroupBy>('day');
   const [report, setReport] = useState<ExpenseReport | null>(null);
-  const [cashPosition, setCashPosition] = useState<CashPosition | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [cash, setCash] = useState<CashPosition | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   const fetchReport = useCallback(async () => {
-    if (!startDate || !endDate) {
-      toast.error('Select a date range.');
+    if (!range.start || !range.end) return;
+    if (range.start > range.end) {
+      toast.error('The start date must be on or before the end date.');
       return;
     }
-    setIsLoading(true);
+    setLoading(true);
+    setError(false);
     try {
       const [reportRes, cashRes] = await Promise.all([
-        adminService.getExpenseReport({ start_date: startDate, end_date: endDate, group_by: groupBy }),
-        adminService.getCashPosition(startDate, endDate),
+        adminService.getExpenseReport({ start_date: range.start, end_date: range.end, group_by: groupBy }),
+        adminService.getCashPosition(range.start, range.end),
       ]);
       setReport(reportRes.data.data);
-      setCashPosition(cashRes.data?.data ?? null);
+      setCash(cashRes.data?.data ?? null);
     } catch (err) {
       toast.error(getErrorMessage(err));
+      setError(true);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
-  }, [startDate, endDate, groupBy]);
+  }, [range, groupBy]);
 
-  // Merge sales and expense trends into one array for the combo chart
-  const trendData = React.useMemo(() => {
+  useEffect(() => { fetchReport(); }, [fetchReport]);
+
+  const trend = useMemo(() => {
     if (!report) return [];
     const map = new Map<string, { period: string; sales: number; expenses: number }>();
     report.sales_trend.forEach((r) => {
@@ -58,277 +66,188 @@ export default function RevenueReportPage() {
     });
     report.expense_trend.forEach((r) => {
       const existing = map.get(r.period);
-      if (existing) {
-        existing.expenses = Number(r.total);
-      } else {
-        map.set(r.period, { period: r.period, sales: 0, expenses: Number(r.total) });
-      }
+      if (existing) existing.expenses = Number(r.total);
+      else map.set(r.period, { period: r.period, sales: 0, expenses: Number(r.total) });
     });
     return Array.from(map.values()).sort((a, b) => a.period.localeCompare(b.period));
   }, [report]);
 
   const summary = report?.summary;
-  const netPositive = (summary?.net_revenue ?? 0) >= 0;
+  const salesOrders = report?.sales_trend.reduce((n, r) => n + Number(r.order_count), 0) ?? 0;
+  const expenseShare = summary && summary.total_sales > 0 ? (summary.total_expenses / summary.total_sales) * 100 : null;
+  const categories = useMemo(
+    () => [...(report?.by_category ?? [])].sort((a, b) => b.total - a.total),
+    [report]
+  );
+  const categoryTotal = categories.reduce((n, c) => n + c.total, 0);
+  const isEmpty = !!summary && summary.total_sales === 0 && summary.total_expenses === 0;
 
   return (
     <AdminLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Revenue Report</h1>
-            <p className="text-sm text-gray-500 mt-1">Sales − Expenses = Net Revenue</p>
-          </div>
-          <div className="flex gap-2 text-sm text-gray-500">
-            <a href="/reports/sales" className="hover:text-gray-900">Sales Report</a>
-            <span>·</span>
-            <a href="/expenses" className="hover:text-gray-900">Expenses</a>
-          </div>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-baseline gap-2">
+          <h1 className="text-lg font-bold text-gray-900">Revenue report</h1>
+          <p className="text-xs text-gray-500">Sales − expenses = net revenue</p>
         </div>
+        <div className="flex items-center gap-3 text-xs font-semibold">
+          <Link href="/reports/sales" className="text-indigo-700 hover:underline">Sales report</Link>
+          <Link href="/expenses" className="text-indigo-700 hover:underline">Expenses</Link>
+        </div>
+      </div>
 
-        {/* Filter Bar */}
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex flex-wrap gap-3 items-end">
-              <div className="flex-1 min-w-[140px]">
-                <Input
-                  label="From"
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                />
-              </div>
-              <div className="flex-1 min-w-[140px]">
-                <Input
-                  label="To"
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                />
-              </div>
-              <div className="w-36">
-                <Select
-                  label="Group by"
-                  value={groupBy}
-                  onChange={(e) => setGroupBy(e.target.value)}
-                  options={[
-                    { value: 'day', label: 'Daily' },
-                    { value: 'month', label: 'Monthly' },
-                  ]}
-                />
-              </div>
-              <Button onClick={fetchReport} isLoading={isLoading} leftIcon={<BarChart2 className="w-4 h-4" />}>
-                Generate
-              </Button>
+      <div className="mb-3">
+        <DateRangeBar
+          range={range}
+          onChange={setRange}
+          right={
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Trend</span>
+              {(['day', 'month'] as const).map((g) => (
+                <button key={g} type="button" onClick={() => setGroupBy(g)} className={chipClass(groupBy === g)}>
+                  {g === 'day' ? 'Daily' : 'Monthly'}
+                </button>
+              ))}
+              <Button size="sm" variant="outline" onClick={fetchReport} isLoading={loading}>Refresh</Button>
             </div>
-          </CardContent>
-        </Card>
+          }
+        />
+      </div>
 
-        {isLoading && (
-          <div className="flex justify-center py-16"><LoadingSpinner /></div>
-        )}
+      {loading && !report ? (
+        <div className="flex justify-center py-16"><LoadingSpinner /></div>
+      ) : error && !report ? (
+        <ErrorState message="Failed to load the revenue report." onRetry={fetchReport} />
+      ) : isEmpty ? (
+        <EmptyState title="Nothing recorded in this period" description="Pick a wider date range to see sales and expenses." />
+      ) : summary ? (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+            <KpiTile
+              label="Sales"
+              value={formatCurrency(summary.total_sales)}
+              tone="emerald"
+              icon={<ShoppingCart className="h-4 w-4 opacity-60" />}
+              sub={`${salesOrders} order${salesOrders === 1 ? '' : 's'} with payment recognized`}
+            />
+            <KpiTile
+              label="Expenses"
+              value={formatCurrency(summary.total_expenses)}
+              tone="rose"
+              icon={<Receipt className="h-4 w-4 opacity-60" />}
+              sub={expenseShare !== null ? `${expenseShare.toFixed(1)}% of sales` : 'No sales in this period'}
+            />
+            <KpiTile
+              label="Net revenue"
+              value={formatCurrency(summary.net_revenue)}
+              tone={summary.net_revenue >= 0 ? 'sky' : 'orange'}
+              icon={summary.net_revenue >= 0
+                ? <TrendingUp className="h-4 w-4 opacity-60" />
+                : <TrendingDown className="h-4 w-4 opacity-60" />}
+              sub={summary.net_revenue >= 0 ? 'Sales exceed expenses' : 'Expenses exceed sales'}
+            />
+            <KpiTile
+              label="Cash balance"
+              value={cash ? formatCurrency(cash.closing_balance) : '—'}
+              tone="indigo"
+              icon={<Wallet className="h-4 w-4 opacity-60" />}
+              sub={cash
+                ? `As of ${formatDate(range.end)} · period change ${cash.net_change >= 0 ? '+' : ''}${formatCurrency(cash.net_change)}`
+                : undefined}
+            />
+          </div>
 
-        {!isLoading && !report && (
-          <EmptyState
-            title="No report generated"
-            description="Select a date range and click Generate."
-          />
-        )}
-
-        {!isLoading && report && (
-          <>
-            {/* Summary Cards */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <Card>
-                <CardContent className="pt-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100">
-                      <ShoppingCart className="w-5 h-5 text-green-600" />
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500 uppercase tracking-wide">Total Sales</p>
-                      <p className="text-xl font-bold text-gray-900">{formatCurrency(summary!.total_sales)}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="pt-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-100">
-                      <TrendingDown className="w-5 h-5 text-red-600" />
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500 uppercase tracking-wide">Total Expenses</p>
-                      <p className="text-xl font-bold text-gray-900">{formatCurrency(summary!.total_expenses)}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="pt-4">
-                  <div className="flex items-center gap-3">
-                    <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${netPositive ? 'bg-blue-100' : 'bg-orange-100'}`}>
-                      {netPositive
-                        ? <TrendingUp className="w-5 h-5 text-blue-600" />
-                        : <TrendingDown className="w-5 h-5 text-orange-600" />
-                      }
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500 uppercase tracking-wide">Net Revenue</p>
-                      <p className={`text-xl font-bold ${netPositive ? 'text-blue-700' : 'text-orange-600'}`}>
-                        {formatCurrency(summary!.net_revenue)}
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="pt-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-100">
-                      <Wallet className="w-5 h-5 text-primary-600" />
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500 uppercase tracking-wide">Cash Balance</p>
-                      <p className="text-xl font-bold text-primary-700">
-                        {cashPosition ? formatCurrency(cashPosition.closing_balance) : '—'}
-                      </p>
-                      <p className="text-[11px] text-gray-400">as of {endDate}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Sales vs Expenses Trend Chart */}
-            {trendData.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Sales vs Expenses ({groupBy === 'month' ? 'Monthly' : 'Daily'})</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <LineChart data={trendData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="period" tick={{ fontSize: 11 }} />
-                      <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `৳${(v / 1000).toFixed(0)}k`} />
-                      <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                      <Legend />
-                      <Line type="monotone" dataKey="sales" stroke="#10B981" name="Sales" strokeWidth={2} dot={false} />
-                      <Line type="monotone" dataKey="expenses" stroke="#EF4444" name="Expenses" strokeWidth={2} dot={false} />
+          <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-3">
+            <Panel title="Sales vs expenses" hint={`Grouped ${groupBy === 'day' ? 'daily' : 'monthly'}`} className="lg:col-span-2">
+              <div className="p-3">
+                {trend.length === 0 ? (
+                  <p className="py-16 text-center text-xs text-gray-400">No activity in this period.</p>
+                ) : (
+                  <ResponsiveContainer width="100%" height={240}>
+                    <LineChart data={trend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                      <XAxis dataKey="period" tick={{ fontSize: 11 }} tickFormatter={periodLabel} />
+                      <YAxis
+                        tick={{ fontSize: 11 }}
+                        width={56}
+                        tickFormatter={(v: number) => (Math.abs(v) >= 1000 ? `৳${(v / 1000).toFixed(0)}k` : `৳${v}`)}
+                      />
+                      <Tooltip
+                        formatter={(value: number, name: string) => [formatCurrency(value), name]}
+                        labelFormatter={(label: string) => periodLabel(label)}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 12 }} />
+                      <Line type="monotone" dataKey="sales" name="Sales" stroke="#10B981" strokeWidth={2} dot={false} />
+                      <Line type="monotone" dataKey="expenses" name="Expenses" stroke="#F43F5E" strokeWidth={2} dot={false} />
                     </LineChart>
                   </ResponsiveContainer>
-                </CardContent>
-              </Card>
-            )}
+                )}
+              </div>
+            </Panel>
 
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-              {/* Expenses by Category — Bar chart */}
-              {report.by_category.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Expenses by Category</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ResponsiveContainer width="100%" height={240}>
-                      <BarChart data={report.by_category} layout="vertical">
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                        <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => `৳${(v / 1000).toFixed(0)}k`} />
-                        <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={100} />
-                        <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                        <Bar dataKey="total" name="Amount" radius={[0, 4, 4, 0]}>
-                          {report.by_category.map((_, i) => (
-                            <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Category Breakdown — Pie chart */}
-              {report.by_category.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Category Share</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex flex-col items-center">
-                      <ResponsiveContainer width="100%" height={200}>
-                        <PieChart>
-                          <Pie
-                            data={report.by_category}
-                            dataKey="total"
-                            nameKey="name"
-                            cx="50%"
-                            cy="50%"
-                            outerRadius={80}
-                            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                            labelLine={false}
-                          >
-                            {report.by_category.map((_, i) => (
-                              <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                            ))}
-                          </Pie>
-                          <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                      {/* Legend */}
-                      <div className="mt-2 flex flex-wrap justify-center gap-x-4 gap-y-1">
-                        {report.by_category.map((cat, i) => (
-                          <div key={cat.id} className="flex items-center gap-1.5 text-xs">
-                            <span className="inline-block h-3 w-3 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />
-                            <span className="text-gray-600">{cat.name}</span>
-                            <span className="font-medium text-gray-900">{formatCurrency(cat.total)}</span>
-                          </div>
-                        ))}
+            <Panel title="Expenses by category" hint="Share of period expenses">
+              <div className="max-h-[260px] space-y-2.5 overflow-auto p-3">
+                {categories.length === 0 && <p className="text-xs text-gray-400">No expenses in this period.</p>}
+                {categories.map((c, i) => {
+                  const share = categoryTotal > 0 ? (c.total / categoryTotal) * 100 : 0;
+                  const color = CHART_COLORS[i % CHART_COLORS.length];
+                  return (
+                    <div key={c.id}>
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: color }} />
+                          <span className="truncate font-semibold text-gray-800">{c.name}</span>
+                        </span>
+                        <span className="whitespace-nowrap font-semibold tabular-nums text-gray-900">
+                          {formatCurrency(c.total)} <span className="font-normal text-gray-400">({share.toFixed(1)}%)</span>
+                        </span>
+                      </div>
+                      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-100">
+                        <div className="h-full rounded-full" style={{ width: `${share}%`, background: color }} />
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
+                  );
+                })}
+              </div>
+            </Panel>
+          </div>
 
-            {/* Recent Expenses Table */}
-            {report.recent_expenses.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Recent Expenses in Period</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-gray-200 text-left">
-                          <th className="pb-2 pr-4 font-semibold text-gray-600">Title</th>
-                          <th className="pb-2 pr-4 font-semibold text-gray-600">Category</th>
-                          <th className="pb-2 pr-4 font-semibold text-gray-600 text-right">Amount</th>
-                          <th className="pb-2 font-semibold text-gray-600">Date</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {report.recent_expenses.map((exp) => (
-                          <tr key={exp.id} className="hover:bg-gray-50">
-                            <td className="py-2 pr-4 font-medium text-gray-900">{exp.title}</td>
-                            <td className="py-2 pr-4 text-gray-500">{exp.category?.name ?? '—'}</td>
-                            <td className="py-2 pr-4 text-right font-medium text-red-600">{formatCurrency(Number(exp.amount))}</td>
-                            <td className="py-2 text-gray-500">{formatDate(exp.expense_date)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </>
-        )}
-      </div>
+          <Panel title="Latest expenses in period" hint="Up to the 50 most recent, newest first">
+            <div className="max-h-[calc(100vh-30rem)] overflow-auto">
+              <table className="min-w-full text-sm">
+                <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226,232,240)]">
+                  <tr>
+                    <th className="whitespace-nowrap px-3 py-2 text-left font-semibold">Date</th>
+                    <th className="px-3 py-2 text-left font-semibold">Title</th>
+                    <th className="px-3 py-2 text-left font-semibold">Category</th>
+                    <th className="px-3 py-2 text-right font-semibold">Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {report?.recent_expenses.length === 0 && (
+                    <tr><td colSpan={4} className="px-3 py-6 text-center text-xs text-gray-400">No expenses in this period.</td></tr>
+                  )}
+                  {report?.recent_expenses.map((exp, i) => (
+                    <tr key={exp.id} className={`${i % 2 ? 'bg-slate-50/50' : 'bg-white'} hover:bg-rose-50/40`}>
+                      <td className="whitespace-nowrap px-3 py-2 text-xs tabular-nums text-gray-500">{formatDate(exp.expense_date)}</td>
+                      <td className="px-3 py-2 font-semibold text-gray-900">{exp.title}</td>
+                      <td className="px-3 py-2 text-gray-600">{exp.category?.name ?? '—'}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right font-semibold tabular-nums text-rose-600">
+                        {formatCurrency(Number(exp.amount))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+
+          <p className="text-[11px] text-gray-400">
+            Sales are orders whose payment is recognized (paid, partially paid or verified), counted at order total by order date.
+            Expenses include every active expense in the period across all categories, including Asset and Purchase.
+            Reversed expenses are excluded.
+          </p>
+        </div>
+      ) : null}
     </AdminLayout>
   );
 }

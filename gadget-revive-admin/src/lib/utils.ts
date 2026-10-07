@@ -5,6 +5,22 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/**
+ * The invoice/receipt/chalan QR codes link to `/orders/{id}?on={order_number}` so staff can
+ * quick-open an order from the admin scan box. A customer scanning the same printed QR with their
+ * phone camera lands on that same URL with no admin login — there's no admin access to give them,
+ * so send them to the storefront's own order tracking page instead of a login screen they can't
+ * use. Shared by AdminLayout (fires before any API call, from the auth-check alone) and the axios
+ * 401 interceptor (fires once a request actually confirms there's no session) so both chokepoints
+ * agree on the same destination no matter which one wins the race.
+ */
+export function publicOrderTrackingRedirect(pathname: string, search: string): string | null {
+  if (!/^\/orders\/\d+$/.test(pathname)) return null;
+  const webUrl = (process.env.NEXT_PUBLIC_WEB_URL || 'https://gadgetandrevive.com').replace(/\/$/, '');
+  const orderNumber = new URLSearchParams(search).get('on');
+  return orderNumber ? `${webUrl}/orders/track?order=${encodeURIComponent(orderNumber)}` : `${webUrl}/orders/track`;
+}
+
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-BD', {
     style: 'currency',

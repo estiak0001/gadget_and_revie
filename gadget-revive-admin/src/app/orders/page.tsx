@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Search, Eye, ShoppingCart, Clock, CheckCircle, XCircle, Truck, Package, Download, FileText, Mail, Plus, Wallet, Undo2, History } from 'lucide-react';
+import { Search, Eye, ShoppingCart, Clock, CheckCircle, XCircle, Truck, Package, Download, FileText, Mail, Plus, Wallet, Undo2, History, SlidersHorizontal, X } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import {
   Card,
@@ -20,12 +20,19 @@ import {
   ErrorState,
   HistoryModal,
 } from '@/components/ui';
-import { Order, PaginatedResponse } from '@/types';
+import { Order, PaginatedResponse, ProductCategory } from '@/types';
 import { formatCurrency, formatDateTime, getErrorMessage, downloadBlob } from '@/lib/utils';
 import adminService from '@/lib/adminService';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+
+interface OrderSummary {
+  total: number;
+  manual: number;
+  ecommerce: number;
+  by_status: Record<string, number>;
+}
 
 const ORDER_STATUSES = [
   { value: 'pending', label: 'Pending', color: 'warning' },
@@ -48,8 +55,28 @@ export default function OrdersPage() {
   const [filterStatus, setFilterStatus] = useState('');
   const [filterPayment, setFilterPayment] = useState('');
   const [filterHasPO, setFilterHasPO] = useState('');
+  // Which channel tab is active -- '' means "All". Manual = an admin/staff member placed it
+  // (walk-in/phone order); Ecommerce = placed through the storefront, logged-in or guest.
+  const [filterChannel, setFilterChannel] = useState<'' | 'manual' | 'ecommerce'>('');
+  // Advanced filters -- collapsed by default so the common case (search + the three filters
+  // above) stays uncluttered; these cover everything else the order/order-item data can be
+  // sliced by.
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
+  const [filterSerial, setFilterSerial] = useState('');
+  const [filterProduct, setFilterProduct] = useState('');
+  const [filterCategoryId, setFilterCategoryId] = useState('');
+  const [filterItemType, setFilterItemType] = useState('');
+  const [filterPaymentMethod, setFilterPaymentMethod] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [minAmount, setMinAmount] = useState('');
+  const [maxAmount, setMaxAmount] = useState('');
+  const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [totalRows, setTotalRows] = useState(0);
+  const [pageSize, setPageSize] = useState(15);
+  const [summary, setSummary] = useState<OrderSummary | null>(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [newStatus, setNewStatus] = useState('');
@@ -70,19 +97,73 @@ export default function OrdersPage() {
   const isOrderCompleted = (o: Order) => (o.status || o.order_status) === 'completed';
   const isOrderTerminal = (o: Order) => TERMINAL_STATUSES.includes(o.status || o.order_status || '');
 
+  // Shared by the list fetch and the CSV export, so an export always matches exactly what's
+  // currently on screen.
+  const buildFilterParams = (): Record<string, string> => {
+    const params: Record<string, string> = {};
+    if (searchQuery) params.search = searchQuery;
+    if (filterStatus) params.status = filterStatus;
+    if (filterPayment) params.payment_status = filterPayment;
+    if (filterHasPO) params.has_purchase_order = filterHasPO;
+    if (filterChannel) params.order_channel = filterChannel;
+    if (filterSerial) params.serial = filterSerial;
+    if (filterProduct) params.product = filterProduct;
+    if (filterCategoryId) params.category_id = filterCategoryId;
+    if (filterItemType) params.item_type = filterItemType;
+    if (filterPaymentMethod) params.payment_method = filterPaymentMethod;
+    if (dateFrom) params.start_date = dateFrom;
+    if (dateTo) params.end_date = dateTo;
+    if (minAmount) params.min_amount = minAmount;
+    if (maxAmount) params.max_amount = maxAmount;
+    return params;
+  };
+
+  // How many advanced filters are actually applied right now -- shown as a badge on the toggle
+  // button so it's obvious filters are active even while the panel is collapsed.
+  const advancedFilterCount = [
+    filterSerial, filterProduct, filterCategoryId, filterItemType, filterPaymentMethod,
+    dateFrom, dateTo, minAmount, maxAmount,
+  ].filter(Boolean).length;
+
+  const clearAdvancedFilters = () => {
+    setFilterSerial(''); setFilterProduct(''); setFilterCategoryId(''); setFilterItemType('');
+    setFilterPaymentMethod(''); setDateFrom(''); setDateTo(''); setMinAmount(''); setMaxAmount('');
+    setCurrentPage(1);
+  };
+
+  const fetchCategories = async () => {
+    try {
+      const response = await adminService.getProductCategories();
+      setCategories(response.data.data || response.data || []);
+    } catch (err) {
+      console.error('Error fetching categories:', err);
+      setCategories([]);
+    }
+  };
+
+  // Header counts -- under the same filters as the list, so the chips and tabs always agree
+  // with what the table shows.
+  const fetchSummary = async () => {
+    try {
+      const res = await adminService.getOrderSummary(buildFilterParams());
+      setSummary(res.data.data);
+    } catch (err) {
+      console.error('Error fetching order summary:', err);
+    }
+  };
+
   const fetchOrders = async () => {
     setIsLoading(true);
     setError(false);
     try {
-      const params: Record<string, string | number> = { page: currentPage };
-      if (searchQuery) params.search = searchQuery;
-      if (filterStatus) params.status = filterStatus;
-      if (filterPayment) params.payment_status = filterPayment;
-      if (filterHasPO) params.has_purchase_order = filterHasPO;
+      const params: Record<string, string | number> = { page: currentPage, per_page: 15, ...buildFilterParams() };
 
       const response = await adminService.getOrders(params);
       setOrders(response.data.data);
       setTotalPages(response.data.meta?.last_page || 1);
+      setTotalRows(response.data.meta?.total ?? 0);
+      setPageSize(response.data.meta?.per_page ?? 15);
+      fetchSummary();
     } catch (err) {
       console.error('Error fetching orders:', err);
       toast.error(getErrorMessage(err));
@@ -94,20 +175,34 @@ export default function OrdersPage() {
   };
 
   useEffect(() => {
-    fetchOrders();
-  }, [currentPage, filterStatus, filterPayment, filterHasPO]);
+    fetchCategories();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const handleSearch = () => {
-    setCurrentPage(1);
+  useEffect(() => {
     fetchOrders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    currentPage, filterStatus, filterPayment, filterHasPO, filterChannel, filterSerial, filterProduct,
+    filterCategoryId, filterItemType, filterPaymentMethod, dateFrom, dateTo, minAmount, maxAmount,
+  ]);
+
+  // If we're not on page 1, changing it fires the effect above, which fetches once with the
+  // now-current search text/filters -- calling fetchOrders() directly here too would race that
+  // effect (currentPage is still stale in this closure) and whichever response resolves last
+  // would win, occasionally showing the wrong page's results. Only fetch directly when the
+  // page isn't changing, since then the effect has nothing to react to.
+  const handleSearch = () => {
+    if (currentPage === 1) {
+      fetchOrders();
+    } else {
+      setCurrentPage(1);
+    }
   };
 
   const handleExport = async () => {
     try {
-      const params: Record<string, string> = {};
-      if (filterStatus) params.status = filterStatus;
-      if (filterPayment) params.payment_status = filterPayment;
-      if (filterHasPO) params.has_purchase_order = filterHasPO;
+      const params = buildFilterParams();
       const response = await adminService.exportOrders(params);
       downloadBlob(new Blob([response.data]), `orders-${new Date().toISOString().split('T')[0]}.csv`);
       toast.success('Orders exported successfully');
@@ -275,7 +370,7 @@ export default function OrdersPage() {
   const getStatusBadge = (status: string) => {
     const statusConfig = ORDER_STATUSES.find(s => s.value === status);
     return (
-      <Badge variant={statusConfig?.color as 'success' | 'warning' | 'danger' | 'default' || 'default'}>
+      <Badge variant={statusConfig?.color as 'success' | 'warning' | 'danger' | 'default' || 'default'} className="px-1.5 py-0.5 text-[11px]">
         {statusConfig?.label || status}
       </Badge>
     );
@@ -284,8 +379,9 @@ export default function OrdersPage() {
   const getPaymentStatusBadge = (status: string) => {
     const colors: Record<string, 'success' | 'warning' | 'danger' | 'default'> = {
       paid: 'success', pending: 'warning', failed: 'danger', refunded: 'default', awaiting_confirmation: 'warning', partially_paid: 'warning',
+      verified: 'success', cancelled: 'danger',
     };
-    return <Badge variant={colors[status] || 'default'}>{status?.replace('_', ' ')}</Badge>;
+    return <Badge variant={colors[status] || 'default'} className="px-1.5 py-0.5 text-[11px]">{status?.replace('_', ' ')}</Badge>;
   };
 
   if (error && orders.length === 0) {
@@ -296,337 +392,434 @@ export default function OrdersPage() {
     );
   }
 
+  const CHANNEL_TABS = [
+    { value: '' as const, label: 'All', count: summary?.total, active: 'bg-slate-800 text-white', idle: 'text-slate-600 hover:bg-white' },
+    { value: 'manual' as const, label: 'Manual', count: summary?.manual, active: 'bg-indigo-600 text-white', idle: 'text-indigo-700 hover:bg-white' },
+    { value: 'ecommerce' as const, label: 'Ecommerce', count: summary?.ecommerce, active: 'bg-teal-600 text-white', idle: 'text-teal-700 hover:bg-white' },
+  ];
+
+  // Status chip colours follow the same tone as each status's badge in ORDER_STATUSES.
+  const STATUS_CHIP: Record<string, { on: string; off: string }> = {
+    pending: { on: 'bg-amber-500 text-white', off: 'bg-amber-50 text-amber-800 border-amber-200' },
+    accepted: { on: 'bg-sky-600 text-white', off: 'bg-sky-50 text-sky-800 border-sky-200' },
+    confirmed: { on: 'bg-slate-700 text-white', off: 'bg-slate-50 text-slate-800 border-slate-200' },
+    in_progress: { on: 'bg-sky-600 text-white', off: 'bg-sky-50 text-sky-800 border-sky-200' },
+    processing: { on: 'bg-slate-700 text-white', off: 'bg-slate-50 text-slate-800 border-slate-200' },
+    awaiting_payment: { on: 'bg-amber-500 text-white', off: 'bg-amber-50 text-amber-800 border-amber-200' },
+    completed: { on: 'bg-emerald-600 text-white', off: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
+    cancelled: { on: 'bg-rose-600 text-white', off: 'bg-rose-50 text-rose-800 border-rose-200' },
+    refunded: { on: 'bg-rose-600 text-white', off: 'bg-rose-50 text-rose-800 border-rose-200' },
+  };
+  const statusChips = ORDER_STATUSES.filter((st) => (summary?.by_status?.[st.value] ?? 0) > 0 || filterStatus === st.value);
+  const from = totalRows === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const to = Math.min(totalRows, currentPage * pageSize);
+
   return (
     <AdminLayout>
-      <div className="page-header flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="page-title">Orders</h1>
-          <p className="page-description">Manage all orders and track status</p>
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div className="flex items-center gap-2.5">
+          <h1 className="text-lg font-bold text-gray-900">Orders</h1>
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-600">{summary?.total ?? totalRows} total</span>
         </div>
-        <div className="flex items-center gap-3">
-          <Button variant="outline" onClick={handleExport}>
-            <Download className="w-4 h-4 mr-2" />
-            Export Orders
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handleExport}>
+            <Download className="w-3.5 h-3.5 mr-1.5" /> Export
           </Button>
-          <Button onClick={() => router.push('/orders/create')}>
-            <Plus className="w-4 h-4 mr-2" />
-            Create Order
+          <Button size="sm" onClick={() => router.push('/orders/create')}>
+            <Plus className="w-3.5 h-3.5 mr-1.5" /> Create Order
           </Button>
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
-                <Clock className="w-5 h-5 text-yellow-600" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Pending</p>
-                <p className="text-xl font-bold">{orders.filter(o => (o.order_status || o.status) === 'pending').length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                <Package className="w-5 h-5 text-blue-600" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Processing</p>
-                <p className="text-xl font-bold">{orders.filter(o => ['confirmed', 'processing', 'in_progress'].includes(o.order_status || o.status || '')).length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                <CheckCircle className="w-5 h-5 text-green-600" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Completed</p>
-                <p className="text-xl font-bold">{orders.filter(o => o.status === 'completed').length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
-                <XCircle className="w-5 h-5 text-red-600" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Cancelled</p>
-                <p className="text-xl font-bold">{orders.filter(o => o.status === 'cancelled').length}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filters */}
-      <Card className="mb-6">
-        <CardContent className="p-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <Input
-                placeholder="Search by order number, customer..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                className="pl-10"
-              />
-            </div>
-            <Select
-              options={[{ value: '', label: 'All Status' }, ...ORDER_STATUSES.map(s => ({ value: s.value, label: s.label }))]}
-              value={filterStatus}
-              onChange={(e) => { setFilterStatus(e.target.value); setCurrentPage(1); }}
-            />
-            <Select
-              options={[
-                { value: '', label: 'All Payment' },
-                { value: 'pending', label: 'Pending' },
-                { value: 'paid', label: 'Paid' },
-                { value: 'failed', label: 'Failed' },
-                { value: 'refunded', label: 'Refunded' },
-              ]}
-              value={filterPayment}
-              onChange={(e) => { setFilterPayment(e.target.value); setCurrentPage(1); }}
-            />
-            <Select
-              options={[
-                { value: '', label: 'All Orders' },
-                { value: 'true', label: 'Has Purchase Order' },
-                { value: 'false', label: 'No Purchase Order' },
-              ]}
-              value={filterHasPO}
-              onChange={(e) => { setFilterHasPO(e.target.value); setCurrentPage(1); }}
-            />
-            <Button onClick={handleSearch}>Search</Button>
+      {/* Control strip — channel tabs, status chips, filters */}
+      <div className="rounded-xl border border-gray-200 bg-white p-2 mb-3 space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-lg bg-gray-100 p-0.5">
+            {CHANNEL_TABS.map((tab) => (
+              <button
+                key={tab.label}
+                type="button"
+                onClick={() => { setFilterChannel(tab.value); setCurrentPage(1); }}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${filterChannel === tab.value ? tab.active : tab.idle}`}
+              >
+                {tab.label}
+                {tab.count !== undefined && <span className="ml-1.5 opacity-80">{tab.count}</span>}
+              </button>
+            ))}
           </div>
-        </CardContent>
-      </Card>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => { setFilterStatus(''); setCurrentPage(1); }}
+              className={`px-2.5 py-1 text-[11px] font-semibold rounded-full border transition-colors ${filterStatus === '' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+            >
+              All statuses
+            </button>
+            {statusChips.map((st) => {
+              const tone = STATUS_CHIP[st.value] ?? STATUS_CHIP.confirmed;
+              const on = filterStatus === st.value;
+              return (
+                <button
+                  key={st.value}
+                  type="button"
+                  onClick={() => { setFilterStatus(on ? '' : st.value); setCurrentPage(1); }}
+                  className={`px-2.5 py-1 text-[11px] font-semibold rounded-full border transition-colors ${on ? tone.on : tone.off}`}
+                >
+                  {st.label} <span className="opacity-80">{summary?.by_status?.[st.value] ?? 0}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
-      {/* Orders Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>All Orders</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <LoadingSpinner size="lg" text="Loading orders..." />
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[220px]">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 w-3.5 h-3.5" />
+            <Input
+              placeholder="Order no., customer, phone or email…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              className="h-8 pl-8 text-xs"
+            />
+          </div>
+          <div className="w-36 shrink-0">
+          <Select
+            className="h-8 text-xs"
+            options={[
+              { value: '', label: 'All payments' },
+              { value: 'pending', label: 'Pending' },
+              { value: 'paid', label: 'Paid' },
+              { value: 'failed', label: 'Failed' },
+              { value: 'refunded', label: 'Refunded' },
+              { value: 'cancelled', label: 'Cancelled' },
+            ]}
+            value={filterPayment}
+            onChange={(e) => { setFilterPayment(e.target.value); setCurrentPage(1); }}
+          />
+          </div>
+          <div className="w-44 shrink-0">
+          <Select
+            className="h-8 text-xs"
+            options={[
+              { value: '', label: 'Any purchase order' },
+              { value: 'true', label: 'Has purchase order' },
+              { value: 'false', label: 'No purchase order' },
+            ]}
+            value={filterHasPO}
+            onChange={(e) => { setFilterHasPO(e.target.value); setCurrentPage(1); }}
+          />
+          </div>
+          <Button size="sm" onClick={handleSearch}>Search</Button>
+          <Button
+            size="sm"
+            variant={advancedFilterCount > 0 ? 'primary' : 'outline'}
+            onClick={() => setShowAdvancedFilters((v) => !v)}
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5 mr-1" />
+            Advanced
+            {advancedFilterCount > 0 && (
+              <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-white/25 text-[11px]">
+                {advancedFilterCount}
+              </span>
+            )}
+          </Button>
+        </div>
+
+        {showAdvancedFilters && (
+          <div className="pt-2 border-t border-gray-100 space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+              <Input className="h-8 text-xs" placeholder="Serial number" value={filterSerial} onChange={(e) => setFilterSerial(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} />
+              <Input className="h-8 text-xs" placeholder="Product / service name or SKU" value={filterProduct} onChange={(e) => setFilterProduct(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} />
+              <Select
+                className="h-8 text-xs"
+                options={[{ value: '', label: 'All categories' }, ...categories.map((c) => ({ value: c.id, label: c.name }))]}
+                value={filterCategoryId}
+                onChange={(e) => { setFilterCategoryId(e.target.value); setCurrentPage(1); }}
+              />
+              <Select
+                className="h-8 text-xs"
+                options={[
+                  { value: '', label: 'All item types' },
+                  { value: 'product', label: 'Product' },
+                  { value: 'service', label: 'Service' },
+                  { value: 'custom', label: 'Custom charge' },
+                ]}
+                value={filterItemType}
+                onChange={(e) => { setFilterItemType(e.target.value); setCurrentPage(1); }}
+              />
+              <Select
+                className="h-8 text-xs"
+                options={[
+                  { value: '', label: 'All payment methods' },
+                  { value: 'cash', label: 'Cash' },
+                  { value: 'bkash', label: 'bKash' },
+                  { value: 'nagad', label: 'Nagad' },
+                  { value: 'bank_transfer', label: 'Bank transfer' },
+                  { value: 'card', label: 'Card' },
+                  { value: 'other', label: 'Other' },
+                ]}
+                value={filterPaymentMethod}
+                onChange={(e) => { setFilterPaymentMethod(e.target.value); setCurrentPage(1); }}
+              />
+              <Input type="date" className="h-8 text-xs" title="Order date from" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setCurrentPage(1); }} />
+              <Input type="date" className="h-8 text-xs" title="Order date to" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setCurrentPage(1); }} />
+              <div className="flex gap-2">
+                <Input type="number" min={0} className="h-8 text-xs" placeholder="Min total" value={minAmount} onChange={(e) => setMinAmount(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} />
+                <Input type="number" min={0} className="h-8 text-xs" placeholder="Max total" value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} />
+              </div>
             </div>
-          ) : orders.length === 0 ? (
-            <EmptyState icon={<ShoppingCart className="w-8 h-8 text-gray-400" />} title="No orders found" description="Orders will appear here when customers place them." />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-y">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Order</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Payment</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {orders.map((order) => (
-                    <tr key={order.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4">
-                        <Link href={`/orders/${order.id}`} className="font-medium text-primary-600 hover:underline">
+            <div className="flex justify-end gap-2">
+              {advancedFilterCount > 0 && (
+                <Button variant="ghost" size="sm" onClick={clearAdvancedFilters}>
+                  <X className="w-3.5 h-3.5 mr-1" /> Clear advanced
+                </Button>
+              )}
+              <Button size="sm" onClick={handleSearch}>Apply</Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Table */}
+      <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <LoadingSpinner size="md" text="Loading orders..." />
+          </div>
+        ) : orders.length === 0 ? (
+          <EmptyState icon={<ShoppingCart className="w-8 h-8 text-gray-400" />} title="No orders found" description="Try clearing a filter, or create an order." />
+        ) : (
+          <div className="overflow-auto max-h-[calc(100vh-17rem)]">
+            <table className="min-w-full text-sm">
+              <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226,232,240)]">
+                <tr>
+                  <th className="px-3 py-2 text-left font-semibold">Order</th>
+                  <th className="px-3 py-2 text-left font-semibold">Customer</th>
+                  <th className="px-3 py-2 text-right font-semibold">Amount</th>
+                  <th className="px-3 py-2 text-left font-semibold">Status</th>
+                  <th className="px-3 py-2 text-left font-semibold">Payment</th>
+                  <th className="px-3 py-2 text-left font-semibold whitespace-nowrap">Placed</th>
+                  <th className="px-3 py-2 text-right font-semibold">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {orders.map((order, i) => (
+                  <tr key={order.id} className={`${i % 2 ? 'bg-slate-50/50' : 'bg-white'} hover:bg-indigo-50/40`}>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-1.5">
+                        <Link href={`/orders/${order.id}`} className="font-mono font-semibold text-primary-600 hover:underline whitespace-nowrap">
                           {order.order_number}
                         </Link>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">
-                        <div className="flex items-center gap-2">
-                          {order.customer_name || order.customer?.name || '-'}
-                          {(order.is_guest || !order.customer_id) && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-700 border border-amber-200">
-                              Guest
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm font-medium">
-                        {formatCurrency(order.total)}
-                        {order.payment_status === 'partially_paid' && (
-                          <p className="text-xs font-normal text-amber-600 mt-0.5">
-                            Due {formatCurrency(order.outstanding_receivable ?? (order.total - (order.paid_amount ?? 0)))}
-                          </p>
+                        {order.is_manual_order && (
+                          <span className="rounded bg-indigo-100 px-1 py-px text-[11px] font-semibold text-indigo-700" title="Placed manually by an admin/staff member">Manual</span>
                         )}
-                      </td>
-                      <td className="px-6 py-4">{getStatusBadge(order.status || order.order_status || '')}</td>
-                      <td className="px-6 py-4">{getPaymentStatusBadge(order.payment_status)}</td>
-                      <td className="px-6 py-4 text-sm text-gray-500">{formatDateTime(order.created_at)}</td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button variant="ghost" size="sm" onClick={() => openViewModal(order)} title="View & Manage Order">
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => setHistoryOrder(order)} title="View History">
-                            <History className="w-4 h-4 text-gray-500" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handlePreviewInvoice(order)}
-                            disabled={downloadingInvoice === order.id}
-                            title="Preview & Print Invoice"
-                          >
-                            <FileText className={`w-4 h-4 ${downloadingInvoice === order.id ? 'animate-pulse text-orange-500' : 'text-orange-600'}`} />
-                          </Button>
-                          {(order.customer_email || order.customer?.email) && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleSendInvoiceEmail(order)}
-                              disabled={sendingInvoice === order.id}
-                              title="Email Invoice"
-                            >
-                              <Mail className={`w-4 h-4 ${sendingInvoice === order.id ? 'animate-pulse text-blue-500' : 'text-blue-600'}`} />
-                            </Button>
-                          )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-gray-700">
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate max-w-[180px]">{order.customer_name || order.customer?.name || '—'}</span>
+                        {(order.is_guest || !order.customer_id) && (
+                          <span className="rounded bg-amber-100 px-1 py-px text-[11px] font-semibold text-amber-700">Guest</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <div className="font-semibold tabular-nums text-gray-900">{formatCurrency(order.total)}</div>
+                      {order.payment_status === 'partially_paid' && (
+                        <div className="text-[11px] font-semibold text-rose-600 tabular-nums">
+                          Due {formatCurrency(order.outstanding_receivable ?? (order.total - (order.paid_amount ?? 0)))}
                         </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">{getStatusBadge(order.status || order.order_status || '')}</td>
+                    <td className="px-3 py-2">{getPaymentStatusBadge(order.payment_status)}</td>
+                    <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap tabular-nums">{formatDateTime(order.created_at)}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center justify-end gap-0.5">
+                        <button type="button" onClick={() => openViewModal(order)} title="View & manage" className="rounded-md p-1 text-indigo-600 hover:bg-indigo-50">
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                        <button type="button" onClick={() => setHistoryOrder(order)} title="History" className="rounded-md p-1 text-slate-500 hover:bg-slate-100">
+                          <History className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handlePreviewInvoice(order)}
+                          disabled={downloadingInvoice === order.id}
+                          title="Preview & print invoice"
+                          className="rounded-md p-1 text-orange-600 hover:bg-orange-50 disabled:opacity-50"
+                        >
+                          <FileText className={`w-3.5 h-3.5 ${downloadingInvoice === order.id ? 'animate-pulse' : ''}`} />
+                        </button>
+                        {(order.customer_email || order.customer?.email) && (
+                          <button
+                            type="button"
+                            onClick={() => handleSendInvoiceEmail(order)}
+                            disabled={sendingInvoice === order.id}
+                            title="Email invoice"
+                            className="rounded-md p-1 text-sky-600 hover:bg-sky-50 disabled:opacity-50"
+                          >
+                            <Mail className={`w-3.5 h-3.5 ${sendingInvoice === order.id ? 'animate-pulse' : ''}`} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
-      {totalPages > 1 && (
-        <div className="mt-6">
-          <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
+      {/* Footer — row range + pagination */}
+      {totalRows > 0 && (
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+          <span>Showing <span className="font-semibold text-gray-700">{from}–{to}</span> of <span className="font-semibold text-gray-700">{totalRows}</span></span>
+          {totalPages > 1 && (
+            <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
+          )}
         </div>
       )}
 
-      {/* View Modal */}
-      <Modal isOpen={isViewModalOpen} onClose={() => setIsViewModalOpen(false)} title="Order Details" size="lg">
+      <Modal isOpen={isViewModalOpen} onClose={() => setIsViewModalOpen(false)} title="Order details" size="lg">
         {selectedOrder && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div><p className="text-xs text-gray-500">Order Number</p><p className="font-semibold">{selectedOrder.order_number}</p></div>
-              <div><p className="text-xs text-gray-500">Status</p>{getStatusBadge(selectedOrder.status || selectedOrder.order_status || '')}</div>
-              <div>
-                <p className="text-xs text-gray-500">Customer</p>
-                <div className="flex items-center gap-2">
-                  <p className="font-medium">{selectedOrder.customer_name || selectedOrder.customer?.name || '-'}</p>
+          <div className="space-y-3">
+            {/* Summary strip: identity + status at a glance */}
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 bg-slate-50 px-3 py-2.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-mono text-sm font-bold text-gray-900">{selectedOrder.order_number}</p>
+                {getStatusBadge(selectedOrder.status || selectedOrder.order_status || '')}
+                {getPaymentStatusBadge(selectedOrder.payment_status)}
+              </div>
+              <p className="text-[11px] tabular-nums text-gray-500">{formatDateTime(selectedOrder.created_at)}</p>
+            </div>
+
+            {/* Customer / delivery / payment */}
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div className="rounded-lg border border-gray-200 p-3">
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Customer</p>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <p className="text-sm font-semibold text-gray-900">{selectedOrder.customer_name || selectedOrder.customer?.name || '—'}</p>
                   {(selectedOrder.is_guest || !selectedOrder.customer_id) && (
-                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-700 border border-amber-200">
-                      Guest Order
-                    </span>
+                    <span className="rounded bg-amber-100 px-1.5 py-px text-[10px] font-semibold text-amber-700">Guest</span>
                   )}
                 </div>
-                <p className="text-xs text-gray-400">{selectedOrder.customer_email || selectedOrder.customer?.email}</p>
+                {(selectedOrder.customer_email || selectedOrder.customer?.email) && (
+                  <p className="truncate text-xs text-gray-500">{selectedOrder.customer_email || selectedOrder.customer?.email}</p>
+                )}
                 {(selectedOrder.customer_phone || selectedOrder.customer?.phone) && (
-                  <p className="text-xs text-gray-400">{selectedOrder.customer_phone || selectedOrder.customer?.phone}</p>
+                  <p className="text-xs text-gray-500">{selectedOrder.customer_phone || selectedOrder.customer?.phone}</p>
                 )}
               </div>
-              <div><p className="text-xs text-gray-500">Payment</p>{getPaymentStatusBadge(selectedOrder.payment_status)}<p className="text-xs text-gray-400 mt-1 capitalize">{selectedOrder.payment_method}</p></div>
+              <div className="rounded-lg border border-gray-200 p-3">
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Delivery</p>
+                <p className="text-xs text-gray-800">{selectedOrder.customer_address || selectedOrder.delivery_address || 'No address'}</p>
+                {(selectedOrder.area || selectedOrder.district || selectedOrder.division) && (
+                  <p className="mt-1 text-[11px] text-gray-500">
+                    {[selectedOrder.area?.name, selectedOrder.district?.name, selectedOrder.division?.name].filter(Boolean).join(', ')}
+                  </p>
+                )}
+              </div>
+              <div className="rounded-lg border border-gray-200 p-3">
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Payment</p>
+                <p className="text-xs capitalize text-gray-800">{selectedOrder.payment_method || '—'}</p>
+                <p className="mt-1 text-xs tabular-nums text-emerald-700">Paid {formatCurrency(selectedOrder.paid_amount ?? 0)}</p>
+                {Number(selectedOrder.outstanding_receivable ?? 0) > 0 && (
+                  <p className="text-xs font-semibold tabular-nums text-amber-700">Due {formatCurrency(selectedOrder.outstanding_receivable ?? 0)}</p>
+                )}
+              </div>
             </div>
-            <div className="border-t pt-4">
-              <p className="text-sm font-medium mb-2">Delivery Address</p>
-              <p className="text-sm text-gray-600">{selectedOrder.customer_address || selectedOrder.delivery_address || 'N/A'}</p>
-              {(selectedOrder.area || selectedOrder.district || selectedOrder.division) && (
-                <p className="text-xs text-gray-400 mt-1">
-                  {[selectedOrder.area?.name, selectedOrder.district?.name, selectedOrder.division?.name].filter(Boolean).join(', ')}
-                </p>
-              )}
-            </div>
+
+            {/* Items */}
             {selectedOrder.items && selectedOrder.items.length > 0 && (
-              <div className="border-t pt-4">
-                <p className="text-sm font-medium mb-2">Order Items</p>
-                <table className="w-full text-sm">
-                  <thead><tr className="text-gray-500"><th className="text-left py-1">Item</th><th className="text-right py-1">Qty</th><th className="text-right py-1">Price</th><th className="text-right py-1">Total</th></tr></thead>
-                  <tbody>
-                    {selectedOrder.items.map((item) => (
-                      <tr key={item.id} className="border-t">
-                        <td className="py-2">
-                          {item.item_name || item.name}
-                          <Badge variant="default" className="ml-1 text-[10px]">{item.item_type}</Badge>
-                          {item.item_sku && <p className="text-[10px] text-gray-400">{item.item_sku}</p>}
+              <div className="overflow-hidden rounded-lg border border-gray-200">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-semibold">Item</th>
+                      <th className="px-3 py-2 text-right font-semibold">Qty</th>
+                      <th className="px-3 py-2 text-right font-semibold">Price</th>
+                      <th className="px-3 py-2 text-right font-semibold">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {selectedOrder.items.map((item, i) => (
+                      <tr key={item.id} className={i % 2 ? 'bg-slate-50/40' : 'bg-white'}>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="font-medium text-gray-900">{item.item_name || item.name}</span>
+                            <Badge variant="default" className="text-[10px]">{item.item_type}</Badge>
+                          </div>
+                          {item.item_sku && <p className="font-mono text-[10px] text-gray-400">{item.item_sku}</p>}
                         </td>
-                        <td className="text-right">{item.quantity}</td>
-                        <td className="text-right">{formatCurrency(item.unit_price ?? item.price ?? 0)}</td>
-                        <td className="text-right">{formatCurrency(item.total_price ?? item.total ?? 0)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-gray-600">{item.quantity}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-gray-600">{formatCurrency(item.unit_price ?? item.price ?? 0)}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right font-semibold tabular-nums text-gray-900">{formatCurrency(item.total_price ?? item.total ?? 0)}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             )}
-            <div className="border-t pt-4 space-y-1 text-sm">
-              <div className="flex justify-between"><span>Subtotal</span><span>{formatCurrency(selectedOrder.subtotal)}</span></div>
-              {(selectedOrder.shipping ?? selectedOrder.delivery_charge ?? 0) > 0 && (
-                <div className="flex justify-between"><span>Shipping</span><span>{formatCurrency(selectedOrder.shipping ?? selectedOrder.delivery_charge ?? 0)}</span></div>
-              )}
-              {(selectedOrder.tax ?? 0) > 0 && (
-                <div className="flex justify-between"><span>Tax</span><span>{formatCurrency(selectedOrder.tax ?? 0)}</span></div>
-              )}
-              {(selectedOrder.discount ?? 0) > 0 && (
-                <div className="flex justify-between"><span>Discount</span><span>-{formatCurrency(selectedOrder.discount ?? 0)}</span></div>
-              )}
-              {selectedOrder.payment_status === 'partially_paid' && (
-                <>
-                  <div className="flex justify-between text-green-600"><span>Paid</span><span>{formatCurrency(selectedOrder.paid_amount ?? 0)}</span></div>
-                  <div className="flex justify-between text-amber-600 font-medium">
-                    <span>Balance Due</span>
-                    <span>{formatCurrency(selectedOrder.outstanding_receivable ?? (selectedOrder.total - (selectedOrder.paid_amount ?? 0)))}</span>
-                  </div>
-                </>
-              )}
-              <div className="flex justify-between font-bold text-lg border-t pt-2"><span>Total</span><span>{formatCurrency(selectedOrder.total)}</span></div>
-            </div>
-            {selectedOrder.customer_notes && (
-              <div className="border-t pt-4">
-                <p className="text-sm font-medium mb-1">Customer Notes</p>
-                <p className="text-sm text-gray-600">{selectedOrder.customer_notes}</p>
+
+            {/* Totals + customer notes */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              {selectedOrder.customer_notes ? (
+                <div className="min-w-0 flex-1 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-amber-700">Customer note</p>
+                  <p className="text-xs text-amber-900">{selectedOrder.customer_notes}</p>
+                </div>
+              ) : <div className="flex-1" />}
+              <div className="w-full rounded-lg border border-gray-200 p-3 text-sm sm:w-72">
+                <div className="flex justify-between text-xs text-gray-600"><span>Subtotal</span><span className="tabular-nums">{formatCurrency(selectedOrder.subtotal)}</span></div>
+                {(selectedOrder.shipping ?? selectedOrder.delivery_charge ?? 0) > 0 && (
+                  <div className="flex justify-between text-xs text-gray-600"><span>Shipping</span><span className="tabular-nums">{formatCurrency(selectedOrder.shipping ?? selectedOrder.delivery_charge ?? 0)}</span></div>
+                )}
+                {(selectedOrder.tax ?? 0) > 0 && (
+                  <div className="flex justify-between text-xs text-gray-600"><span>Tax</span><span className="tabular-nums">{formatCurrency(selectedOrder.tax ?? 0)}</span></div>
+                )}
+                {(selectedOrder.discount ?? 0) > 0 && (
+                  <div className="flex justify-between text-xs text-gray-600"><span>Discount</span><span className="tabular-nums">−{formatCurrency(selectedOrder.discount ?? 0)}</span></div>
+                )}
+                <div className="mt-1 flex justify-between border-t border-gray-200 pt-1.5 text-sm font-bold text-gray-900"><span>Total</span><span className="tabular-nums">{formatCurrency(selectedOrder.total)}</span></div>
+                {selectedOrder.payment_status === 'partially_paid' && (
+                  <div className="mt-1 flex justify-between text-xs font-semibold text-amber-700"><span>Balance due</span><span className="tabular-nums">{formatCurrency(selectedOrder.outstanding_receivable ?? (selectedOrder.total - (selectedOrder.paid_amount ?? 0)))}</span></div>
+                )}
               </div>
-            )}
-            {/* Dynamic Action Panel */}
-            <div className="border-t pt-4">
-              {isOrderTerminal(selectedOrder) ? (
-                <p className="text-sm text-gray-500 bg-gray-50 rounded-lg p-3">
-                  This order is {(selectedOrder.status || selectedOrder.order_status || '').replace('_', ' ')} — no further actions are available.
-                </p>
-              ) : isOrderCompleted(selectedOrder) ? (
-                <div className="space-y-4">
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Order Completed — Refund Only</p>
-                  {Number(selectedOrder.outstanding_receivable ?? 0) > 0 && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-medium text-amber-800">Outstanding balance</p>
-                        <p className="text-xs text-amber-700">{formatCurrency(selectedOrder.outstanding_receivable ?? 0)} must be collected in full — partial payment is not allowed once an order is completed.</p>
-                      </div>
-                      <Button onClick={handleRecordFullPayment} isLoading={isRecordingPayment} className="bg-blue-600 hover:bg-blue-700 shrink-0">
-                        <Wallet className="w-4 h-4 mr-1" />
-                        Record Full Payment
-                      </Button>
+            </div>
+
+            {/* Actions */}
+            {isOrderTerminal(selectedOrder) ? (
+              <p className="rounded-lg bg-gray-50 p-3 text-xs text-gray-600">
+                This order is {(selectedOrder.status || selectedOrder.order_status || '').replace('_', ' ')} — no further actions are available.
+              </p>
+            ) : isOrderCompleted(selectedOrder) ? (
+              <div className="space-y-3 rounded-lg border border-gray-200 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Completed — refund only</p>
+                {Number(selectedOrder.outstanding_receivable ?? 0) > 0 && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                    <div>
+                      <p className="text-sm font-semibold text-amber-800">Outstanding {formatCurrency(selectedOrder.outstanding_receivable ?? 0)}</p>
+                      <p className="text-[11px] text-amber-700">Must be collected in full — partial payment isn&apos;t allowed once completed.</p>
                     </div>
-                  )}
-                  {Number(selectedOrder.paid_amount ?? 0) > 0 && (
-                    showRefundForm ? (
-                      <div className="border border-red-200 rounded-lg p-3 space-y-3">
-                        <p className="text-sm text-gray-600">
-                          Amount paid: <span className="font-semibold text-gray-900">{formatCurrency(selectedOrder.paid_amount ?? 0)}</span>
-                        </p>
+                    <Button size="sm" onClick={handleRecordFullPayment} isLoading={isRecordingPayment} className="shrink-0 bg-blue-600 hover:bg-blue-700">
+                      <Wallet className="mr-1 h-3.5 w-3.5" />
+                      Record full payment
+                    </Button>
+                  </div>
+                )}
+                {Number(selectedOrder.paid_amount ?? 0) > 0 && (
+                  showRefundForm ? (
+                    <div className="space-y-3 rounded-lg border border-rose-200 p-3">
+                      <p className="text-xs text-gray-600">
+                        Paid so far: <span className="font-semibold text-gray-900">{formatCurrency(selectedOrder.paid_amount ?? 0)}</span>
+                      </p>
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Refund amount</label>
+                          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">Refund amount</label>
                           <input
                             type="number"
                             min={0.01}
@@ -634,88 +827,91 @@ export default function OrdersPage() {
                             step="0.01"
                             value={returnAmount}
                             onChange={(e) => setReturnAmount(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                            className="w-full rounded-lg border border-gray-300 px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                           />
-                          <p className="text-xs text-gray-400 mt-1">Enter less than the full paid amount to issue a partial refund.</p>
+                          <p className="mt-1 text-[11px] text-gray-500">Less than the full amount makes a partial refund.</p>
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Reason *</label>
+                          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500">Reason *</label>
                           <Textarea value={returnReason} onChange={(e) => setReturnReason(e.target.value)} rows={2} placeholder="Why is this order being refunded?" />
                         </div>
-                        <div className="flex justify-end gap-2">
-                          <Button variant="ghost" onClick={() => setShowRefundForm(false)}>Cancel</Button>
-                          <Button variant="danger" onClick={handleProcessReturn} isLoading={isProcessingReturn}>Process Refund</Button>
-                        </div>
                       </div>
-                    ) : (
-                      <Button variant="outline" onClick={() => setShowRefundForm(true)} className="w-full justify-center border-red-300 text-red-700 hover:bg-red-50">
-                        <Undo2 className="w-4 h-4 mr-2" />
-                        Process Refund
-                      </Button>
-                    )
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {Number(selectedOrder.outstanding_receivable ?? 0) > 0 && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2">
-                      <p className="text-xs font-medium text-blue-900 uppercase tracking-wider">Record Payment</p>
-                      <p className="text-sm text-blue-800">
-                        Outstanding balance: <span className="font-semibold">{formatCurrency(selectedOrder.outstanding_receivable ?? 0)}</span>
-                      </p>
-                      <input
-                        type="number"
-                        min={0.01}
-                        max={selectedOrder.outstanding_receivable ?? 0}
-                        step="0.01"
-                        value={recordPaymentAmount}
-                        onChange={(e) => setRecordPaymentAmount(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      />
-                      <p className="text-xs text-blue-700/70">Enter less than the full outstanding amount to record a partial payment.</p>
-                      <Button onClick={handleRecordPayment} isLoading={isRecordingPayment} className="w-full bg-blue-600 hover:bg-blue-700">
-                        <Wallet className="w-4 h-4 mr-2" />
-                        Record Payment
-                      </Button>
+                      <div className="flex justify-end gap-2">
+                        <Button size="sm" variant="ghost" onClick={() => setShowRefundForm(false)}>Cancel</Button>
+                        <Button size="sm" variant="danger" onClick={handleProcessReturn} isLoading={isProcessingReturn}>Process refund</Button>
+                      </div>
                     </div>
-                  )}
-                  <div className="space-y-3">
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Update Order Status</p>
-                    <Select
-                      options={ORDER_STATUSES.map(s => ({ value: s.value, label: s.label }))}
-                      value={newStatus}
-                      onChange={(e) => setNewStatus(e.target.value)}
+                  ) : (
+                    <Button size="sm" variant="outline" onClick={() => setShowRefundForm(true)} className="w-full justify-center border-rose-300 text-rose-700 hover:bg-rose-50">
+                      <Undo2 className="mr-1.5 h-3.5 w-3.5" />
+                      Process refund
+                    </Button>
+                  )
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                {Number(selectedOrder.outstanding_receivable ?? 0) > 0 && (
+                  <div className="space-y-2 rounded-lg border border-blue-200 bg-blue-50/60 p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-800">Record payment</p>
+                    <p className="text-xs text-blue-900">Outstanding <span className="font-semibold tabular-nums">{formatCurrency(selectedOrder.outstanding_receivable ?? 0)}</span></p>
+                    <input
+                      type="number"
+                      min={0.01}
+                      max={selectedOrder.outstanding_receivable ?? 0}
+                      step="0.01"
+                      value={recordPaymentAmount}
+                      onChange={(e) => setRecordPaymentAmount(e.target.value)}
+                      className="w-full rounded-lg border border-blue-200 bg-white px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
-                    <Input value={statusNote} onChange={(e) => setStatusNote(e.target.value)} placeholder="Add a note for this status change (optional)" />
-                    <Button onClick={handleStatusUpdate} isLoading={isSaving} className="w-full">Update Status</Button>
+                    <p className="text-[11px] text-blue-700/80">Less than the full amount records a partial payment.</p>
+                    <Button size="sm" onClick={handleRecordPayment} isLoading={isRecordingPayment} className="w-full bg-blue-600 hover:bg-blue-700">
+                      <Wallet className="mr-1.5 h-3.5 w-3.5" />
+                      Record payment
+                    </Button>
                   </div>
+                )}
+                <div className={`space-y-2 rounded-lg border border-gray-200 p-3 ${Number(selectedOrder.outstanding_receivable ?? 0) > 0 ? '' : 'md:col-span-2'}`}>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Update status</p>
+                  <Select
+                    options={ORDER_STATUSES.map(s => ({ value: s.value, label: s.label }))}
+                    value={newStatus}
+                    onChange={(e) => setNewStatus(e.target.value)}
+                  />
+                  <Input value={statusNote} onChange={(e) => setStatusNote(e.target.value)} placeholder="Note for this change (optional)" />
+                  <Button size="sm" onClick={handleStatusUpdate} isLoading={isSaving} className="w-full">Update status</Button>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
-            <div className="flex justify-end gap-2 pt-4 border-t">
-              <Button
-                variant="outline"
-                onClick={() => selectedOrder && handlePreviewInvoice(selectedOrder)}
-                disabled={!!(selectedOrder && downloadingInvoice === selectedOrder.id)}
-                className="border-orange-300 text-orange-700 hover:bg-orange-50"
-              >
-                <FileText className="w-4 h-4 mr-1" />
-                {selectedOrder && downloadingInvoice === selectedOrder.id ? 'Opening…' : 'Preview Invoice'}
-              </Button>
-              {(selectedOrder?.customer_email || selectedOrder?.customer?.email) && (
-                <Button
-                  variant="outline"
-                  onClick={() => selectedOrder && handleSendInvoiceEmail(selectedOrder)}
-                  disabled={!!(selectedOrder && sendingInvoice === selectedOrder.id)}
-                >
-                  <Mail className="w-4 h-4 mr-1" />
-                  {selectedOrder && sendingInvoice === selectedOrder.id ? 'Sending...' : 'Email Invoice'}
-                </Button>
-              )}
+            {/* Footer */}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3">
               <Link href={`/orders/${selectedOrder?.id}`}>
-                <Button variant="outline">View Full Details</Button>
+                <Button size="sm" variant="outline">Open full page</Button>
               </Link>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => selectedOrder && handlePreviewInvoice(selectedOrder)}
+                  disabled={!!(selectedOrder && downloadingInvoice === selectedOrder.id)}
+                  className="border-orange-300 text-orange-700 hover:bg-orange-50"
+                >
+                  <FileText className="mr-1 h-3.5 w-3.5" />
+                  {selectedOrder && downloadingInvoice === selectedOrder.id ? 'Opening…' : 'Preview invoice'}
+                </Button>
+                {(selectedOrder?.customer_email || selectedOrder?.customer?.email) && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => selectedOrder && handleSendInvoiceEmail(selectedOrder)}
+                    disabled={!!(selectedOrder && sendingInvoice === selectedOrder.id)}
+                  >
+                    <Mail className="mr-1 h-3.5 w-3.5" />
+                    {selectedOrder && sendingInvoice === selectedOrder.id ? 'Sending…' : 'Email invoice'}
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         )}

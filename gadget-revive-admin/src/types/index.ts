@@ -188,10 +188,17 @@ export interface Product {
   gallery?: string[];
   is_active: boolean;
   is_draft?: boolean;
-  /** 'manual' (default, created via the normal form), 'bulk_import' (Excel bulk-upload tool), or 'scraped' (promoted from a ScrapedProduct staging row). */
-  source?: 'manual' | 'bulk_import' | 'scraped' | string;
+  /** 'manual' (default, created via the normal form) or 'bulk_import' — both the Excel bulk-upload
+   *  tool and a promoted ScrapedProduct land here, so both show under the same "Bulk Upload" tab/
+   *  badge; bulk_upload_batch's naming ("monitor-..." vs "BULK-...") tells the two apart if needed. */
+  source?: 'manual' | 'bulk_import' | string;
   /** Groups every product created together from one bulk-upload spreadsheet; null for manually-created products. */
   bulk_upload_batch?: string | null;
+  /** Only set for a product promoted from a scraped staging row (see ScrapedProduct) — where it
+   *  was scraped from. Null for manual/Excel bulk-upload products, which have no source URL. */
+  source_site?: string | null;
+  source_url?: string | null;
+  source_product_id?: string | null;
   is_featured: boolean;
   sort_order?: number;
   created_by?: number;
@@ -239,6 +246,10 @@ export interface ScrapedProduct {
   warranty_value?: number | null;
   warranty_unit?: 'day' | 'week' | 'month' | 'year' | null;
   status: 'pending' | 'promoted' | 'rejected';
+  // What ingest() actually did the last time a (re-)scrape touched this row -- null for a row
+  // that predates this column, or one a human created by hand via the review page's edit form.
+  last_ingest_action?: 'created' | 'updated' | 'reactivated' | 'synced_to_product' | null;
+  last_ingested_at?: string | null;
   can_promote?: boolean;
   promoted_product_id?: number | null;
   reject_reason?: string | null;
@@ -247,6 +258,31 @@ export interface ScrapedProduct {
   reviewed_at?: string | null;
   created_at: string;
   updated_at?: string;
+}
+
+// One run of the "Run Scraper" trigger on /scraped-products (see ScrapeRunController). Status
+// starts 'running' and is flipped by the scraper script's own completion callback once it's
+// actually done -- see adminService.getScrapeRun()'s polling usage on that page.
+export interface ScrapeRun {
+  id: number;
+  category_url: string;
+  category_name: string;
+  brand_filter?: string | null;
+  product_limit?: number | null;
+  template_category: string;
+  batch: string;
+  status: 'running' | 'completed' | 'failed';
+  pid?: number | null;
+  created_count?: number | null;
+  updated_count?: number | null;
+  synced_count?: number | null;
+  skipped_count?: number | null;
+  failed_count?: number | null;
+  error_message?: string | null;
+  triggered_by?: { id: number; name: string } | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  created_at: string;
 }
 
 export interface ProductSerial {
@@ -327,10 +363,11 @@ export interface Order {
   customer_id: number | null;            // null for guest orders
   session_id?: string | null;            // set for guest orders
   is_guest?: boolean;                    // true when customer_id is null
+  is_manual_order?: boolean;             // true when an admin/staff member placed it (vs. storefront)
   vendor_profile_id?: number | null;
   order_status: 'pending' | 'accepted' | 'rejected' | 'confirmed' | 'in_progress' | 'processing' | 'awaiting_payment' | 'completed' | 'cancelled' | 'refunded';
   status?: string; // alias kept for compatibility
-  payment_status: 'pending' | 'awaiting_confirmation' | 'partially_paid' | 'paid' | 'verified' | 'failed' | 'refunded';
+  payment_status: 'pending' | 'awaiting_confirmation' | 'partially_paid' | 'paid' | 'verified' | 'failed' | 'refunded' | 'cancelled';
   payment_method: string;
   subtotal: number;
   tax?: number;
@@ -512,6 +549,11 @@ export interface OrderItem {
   service?: Service | null;
   /** Which specific in-stock unit(s) were sold under this line item, when the product is serialized. */
   serials?: ProductSerial[];
+  /** Service items only (Repair, Recovery, ...) -- same managed list Service Intake items pick
+   *  from; carried over automatically when an intake is converted to an order, or set directly
+   *  when a service item is added to an order by hand. */
+  problem_type_id?: number | null;
+  problem_type?: ServiceProblemType | null;
 }
 
 export type ServiceIntakeStatus =
@@ -520,9 +562,25 @@ export type ServiceIntakeStatus =
   | 'ready'
   | 'converted'
   | 'delivered'
-  | 'cancelled';
+  | 'cancelled'
+  | 'returned';
 
 export type ServiceIntakeItemStatus = 'pending' | 'converted' | 'returned';
+
+/** Repair-work progress — independent of `status` (the order-conversion lifecycle). */
+export type ServiceIntakeWorkStatus = 'pending' | 'in_progress' | 'wait_for_feedback' | 'done';
+
+/** A managed option for the item "Problem Type" dropdown (e.g. Recovery, Repair) — addable,
+ *  renamable, and deletable from the Service Intake form itself. */
+export interface ServiceProblemType {
+  id: number;
+  name: string;
+  slug: string;
+  is_active: boolean;
+  items_count?: number;
+  created_at?: string;
+  updated_at?: string;
+}
 
 export interface ServiceIntakeItem {
   id?: number;
@@ -531,6 +589,8 @@ export interface ServiceIntakeItem {
   item_name: string;
   serial_number?: string | null;
   problem_reported?: string | null;
+  problem_type_id?: number | null;
+  problem_type?: ServiceProblemType | null;
   accessories?: string | null;
   condition_notes?: string | null;
   quantity: number;
@@ -551,13 +611,28 @@ export interface ServiceIntake {
   division_id?: number | null;
   district_id?: number | null;
   area_id?: number | null;
+  /** Who received this intake at the desk — defaults to whoever's logged in when it's created. */
+  received_by_name?: string | null;
   status: ServiceIntakeStatus;
+  work_status: ServiceIntakeWorkStatus;
   estimated_cost?: number | string | null;
+  amount?: number | string | null;
+  /** How much of `amount` (if any) is non-refundable, and why -- e.g. a diagnostic fee already
+   *  incurred. A row counts as having a non-refundable charge simply by having this set. */
+  non_refundable_amount?: number | string | null;
+  non_refundable_reason?: string | null;
+  /** Whoever referred this customer in -- set together with commission_amount when this job
+   *  owes that person a cut. Both optional; most intakes have neither. */
+  reference_name?: string | null;
+  commission_amount?: number | string | null;
   received_at?: string | null;
   expected_delivery_at?: string | null;
   delivered_at?: string | null;
   notes?: string | null;
   admin_notes?: string | null;
+  customer_feedback?: string | null;
+  /** Computed server-side from expected_delivery_at vs. today — negative once overdue. Null until an estimate date is set. */
+  days_until_estimate?: number | null;
   order_id?: number | null;
   created_by?: number | null;
   created_at: string;
@@ -815,6 +890,7 @@ export interface ExpenseCategory {
   description?: string;
   is_active: boolean;
   expenses_count?: number;
+  expenses_sum_amount?: number | string | null;
   created_at: string;
   updated_at: string;
 }
@@ -845,6 +921,22 @@ export interface ExpenseReport {
   expense_trend: Array<{ period: string; total: string }>;
   sales_trend: Array<{ period: string; total: string; order_count: number }>;
   recent_expenses: Expense[];
+}
+
+export interface ExpenseAnalytics {
+  period: { start: string | null; end: string | null; group_by: 'day' | 'week' | 'month' };
+  summary: {
+    total: number;
+    count: number;
+    average: number;
+    largest: { id: number; title: string; amount: number; expense_date: string; category: string | null } | null;
+    unposted_total: number;
+    unposted_count: number;
+  };
+  previous: { start: string; end: string; total: number; count: number } | null;
+  trend: { period: string; total: number; count: number }[];
+  by_category: { id: number; name: string; total: number; count: number }[];
+  top_titles: { title: string; total: number; count: number }[];
 }
 
 export interface Supplier {
@@ -1036,6 +1128,7 @@ export interface ChartOfAccount {
   description?: string;
   is_active: boolean;
   is_system: boolean;
+  balance?: number;
   created_at: string;
   updated_at: string;
 }
@@ -1140,6 +1233,32 @@ export interface CashBook {
   total_payment_cheque: number;
   total_paid: number;
   closing_balance: number;
+}
+
+export interface DuesRow {
+  type: 'receivable' | 'payable';
+  id: number;
+  reference: string;
+  party_name: string | null;
+  party_phone: string | null;
+  date: string;
+  total: number;
+  paid_amount: number;
+  outstanding: number;
+  status: string;
+  payment_status: string;
+  refund_due_from_supplier: number;
+}
+
+export interface DuesResponse {
+  success: boolean;
+  message: string;
+  summary: {
+    receivable: { total: number; count: number };
+    payable: { total: number; count: number; supplier_refund_due: number };
+  };
+  data: DuesRow[];
+  meta: { current_page: number; last_page: number; per_page: number; total: number };
 }
 
 export interface AccountLedgerLine {

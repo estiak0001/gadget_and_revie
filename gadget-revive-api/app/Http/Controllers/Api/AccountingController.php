@@ -29,7 +29,14 @@ class AccountingController extends BaseController
             $query->where('is_active', $request->boolean('is_active'));
         }
 
-        return $this->success($query->orderBy('code')->get());
+        $today = now()->toDateString();
+
+        $accounts = $query->orderBy('code')->get()->map(fn (ChartOfAccount $account) => array_merge(
+            $account->toArray(),
+            ['balance' => round($account->balanceAsOf($today), 2)],
+        ));
+
+        return $this->success($accounts);
     }
 
     public function accountStore(Request $request): JsonResponse
@@ -96,21 +103,53 @@ class AccountingController extends BaseController
 
     public function journalIndex(Request $request): JsonResponse
     {
-        $query = JournalEntry::query()->with('lines.account', 'creator:id,name');
+        $request->validate([
+            'reversal' => 'nullable|in:only,original',
+            'account_id' => 'nullable|integer|exists:chart_of_accounts,id',
+            'per_page' => 'nullable|integer|min:1|max:100',
+        ]);
 
-        if ($request->filled('reference_type')) {
-            $query->where('reference_type', $request->reference_type);
-        }
-        if ($request->filled('from_date')) {
-            $query->whereDate('entry_date', '>=', $request->from_date);
-        }
-        if ($request->filled('to_date')) {
-            $query->whereDate('entry_date', '<=', $request->to_date);
-        }
+        $applyFilters = function ($query) use ($request) {
+            return $query
+                ->when($request->filled('reference_type'), fn ($q) => $q->where('reference_type', $request->reference_type))
+                ->when($request->filled('from_date'), fn ($q) => $q->whereDate('entry_date', '>=', $request->from_date))
+                ->when($request->filled('to_date'), fn ($q) => $q->whereDate('entry_date', '<=', $request->to_date))
+                ->when($request->reversal === 'only', fn ($q) => $q->where('is_reversal', true))
+                ->when($request->reversal === 'original', fn ($q) => $q->where('is_reversal', false))
+                ->when($request->filled('account_id'), fn ($q) => $q->whereHas('lines', fn ($l) => $l->where('account_id', $request->account_id)))
+                ->when($request->filled('search'), function ($q) use ($request) {
+                    $term = '%' . addcslashes($request->search, '%_\\') . '%';
+                    $q->where(fn ($w) => $w->where('entry_number', 'like', $term)
+                        ->orWhere('description', 'like', $term)
+                        ->orWhere('reference_id', 'like', $term));
+                });
+        };
 
+        $query = $applyFilters(JournalEntry::query()->with('lines.account', 'creator:id,name'));
         $entries = $query->latest('entry_date')->latest('id')->paginate($request->get('per_page', 20));
 
-        return $this->paginated($entries);
+        $response = $this->paginated($entries)->getData(true);
+
+        $bySource = $applyFilters(JournalEntry::query())
+            ->selectRaw('COALESCE(reference_type, "Manual") AS source, COUNT(*) AS count')
+            ->groupBy('source')
+            ->get()
+            ->mapWithKeys(fn ($row) => [$row->source => (int) $row->count]);
+
+        $totals = \Illuminate\Support\Facades\DB::table('journal_entry_lines')
+            ->whereIn('journal_entry_id', $applyFilters(JournalEntry::query())->select('id'))
+            ->selectRaw('COALESCE(SUM(debit), 0) AS debit, COALESCE(SUM(credit), 0) AS credit')
+            ->first();
+
+        $response['summary'] = [
+            'entries' => (int) $bySource->sum(),
+            'reversals' => (int) $applyFilters(JournalEntry::query())->where('is_reversal', true)->count(),
+            'debits' => round((float) $totals->debit, 2),
+            'credits' => round((float) $totals->credit, 2),
+            'by_source' => $bySource,
+        ];
+
+        return response()->json($response);
     }
 
     public function journalShow(int $id): JsonResponse
@@ -274,7 +313,15 @@ class AccountingController extends BaseController
             return $this->notFound('Account not found');
         }
 
-        $query = JournalEntryLine::where('account_id', $accountId)->with('journalEntry')
+        $isDebitNormal = $account->normal_balance === 'debit';
+
+        // A range doesn't start from zero: the running balance carries in whatever the account
+        // already held the day before the range began.
+        $opening = $request->filled('from')
+            ? round($account->balanceAsOf(\Carbon\Carbon::parse($request->from)->subDay()->toDateString()), 2)
+            : 0.0;
+
+        $lines = JournalEntryLine::where('account_id', $accountId)->with('journalEntry')
             ->whereHas('journalEntry', function ($q) use ($request) {
                 if ($request->filled('from')) {
                     $q->whereDate('entry_date', '>=', $request->from);
@@ -282,16 +329,17 @@ class AccountingController extends BaseController
                 if ($request->filled('to')) {
                     $q->whereDate('entry_date', '<=', $request->to);
                 }
-            });
+            })
+            ->get()
+            ->sortBy(fn ($line) => $line->journalEntry->entry_date . '-' . $line->journalEntry->id)
+            ->values();
 
-        $lines = $query->get()->sortBy(fn ($line) => $line->journalEntry->entry_date . '-' . $line->journalEntry->id);
-
-        $running = 0;
-        $isDebitNormal = $account->normal_balance === 'debit';
+        $running = $opening;
         $rows = $lines->map(function ($line) use (&$running, $isDebitNormal) {
             $running += $isDebitNormal ? ($line->debit - $line->credit) : ($line->credit - $line->debit);
 
             return [
+                'journal_entry_id' => $line->journal_entry_id,
                 'date' => $line->journalEntry->entry_date->toDateString(),
                 'entry_number' => $line->journalEntry->entry_number,
                 'description' => $line->description ?? $line->journalEntry->description,
@@ -301,7 +349,14 @@ class AccountingController extends BaseController
             ];
         })->values();
 
-        return $this->success(['account' => $account, 'lines' => $rows]);
+        return $this->success([
+            'account' => $account,
+            'opening_balance' => $opening,
+            'total_debit' => round((float) $lines->sum('debit'), 2),
+            'total_credit' => round((float) $lines->sum('credit'), 2),
+            'closing_balance' => round($running, 2),
+            'lines' => $rows,
+        ]);
     }
 
     /**

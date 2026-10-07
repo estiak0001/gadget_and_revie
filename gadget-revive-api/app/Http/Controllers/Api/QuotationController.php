@@ -34,7 +34,20 @@ class QuotationController extends BaseController
             });
         }
 
-        return $this->paginated($query->paginate($request->get('per_page', 20)));
+        $response = $this->paginated($query->paginate($request->get('per_page', 20)))->getData(true);
+
+        $byStatus = Quotation::query()
+            ->selectRaw('status, COUNT(*) AS count, COALESCE(SUM(total), 0) AS total')
+            ->groupBy('status')
+            ->get()
+            ->mapWithKeys(fn ($row) => [$row->status => ['count' => (int) $row->count, 'total' => (float) $row->total]]);
+        $response['summary'] = [
+            'count' => (int) $byStatus->sum('count'),
+            'value' => (float) $byStatus->sum('total'),
+            'by_status' => $byStatus,
+        ];
+
+        return response()->json($response);
     }
 
     public function show(int $id): JsonResponse

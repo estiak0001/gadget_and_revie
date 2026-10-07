@@ -39,6 +39,11 @@ class ScrapedProductResource extends JsonResource
             'warranty_value' => $this->warranty_value,
             'warranty_unit' => $this->warranty_unit,
             'status' => $this->status,
+            // What ingest() actually did the last time a (re-)scrape touched this row --
+            // created|updated|reactivated|synced_to_product. Null for a row that predates this
+            // column. See ScrapedProductController::syncStrongMatch().
+            'last_ingest_action' => $this->last_ingest_action,
+            'last_ingested_at' => $this->last_ingested_at,
             'can_promote' => $this->canPromote(),
             'promoted_product_id' => $this->promoted_product_id,
             'reject_reason' => $this->reject_reason,

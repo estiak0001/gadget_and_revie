@@ -15,6 +15,7 @@ class ServiceIntakeItem extends Model
         'item_name',
         'serial_number',
         'problem_reported',
+        'problem_type_id',
         'accessories',
         'condition_notes',
         'quantity',
@@ -35,5 +36,10 @@ class ServiceIntakeItem extends Model
     public function service()
     {
         return $this->belongsTo(Service::class);
+    }
+
+    public function problemType()
+    {
+        return $this->belongsTo(ServiceProblemType::class, 'problem_type_id');
     }
 }

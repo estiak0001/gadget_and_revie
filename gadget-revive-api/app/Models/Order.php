@@ -311,12 +311,37 @@ class Order extends Model
     }
 
     /**
-     * An invoice is available for ordinary orders, and for service orders only
-     * after the price has been confirmed on the linked intake.
+     * No bill while an order is still pending/rejected -- standard practice: a quote/order
+     * request isn't a confirmed sale yet, so there's nothing to invoice until an admin has
+     * actually accepted it. Once accepted, the invoice stays available even if the order is
+     * later cancelled/refunded (it's still the paperwork for what was ordered/paid).
+     */
+    public function isUnconfirmed(): bool
+    {
+        return in_array($this->order_status, ['pending', 'rejected'], true);
+    }
+
+    /** Null when the invoice is available; otherwise why it isn't, for the 422 response. */
+    public function invoiceUnavailableReason(): ?string
+    {
+        if ($this->isUnconfirmed()) {
+            return 'This order has not been confirmed yet.';
+        }
+        if ($this->isServicePricePending()) {
+            return 'The price for this service order has not been confirmed.';
+        }
+
+        return null;
+    }
+
+    /**
+     * An invoice is available once an order has been confirmed/accepted (not while still
+     * pending or rejected), and for service orders only after the price has also been
+     * confirmed on the linked intake.
      */
     public function invoiceAvailable(): bool
     {
-        return !$this->isServicePricePending();
+        return $this->invoiceUnavailableReason() === null;
     }
 
     public function accept(): void
@@ -335,18 +360,51 @@ class Order extends Model
         ]);
     }
 
+    /**
+     * A cancelled order's payment_status must always move too -- never left at whatever it was
+     * (e.g. still "pending" forever). An order that had money recognized against it goes to
+     * 'refunded' (unchanged behaviour); one that never had any payment goes to 'cancelled'
+     * instead of sitting there looking like it's still awaiting payment.
+     */
     public function cancel(): void
     {
+        $wasPaidOrPartial = in_array($this->payment_status, ['paid', 'partially_paid', 'verified'], true);
+
         $this->update([
             'order_status' => 'cancelled',
+            'payment_status' => $wasPaidOrPartial ? 'refunded' : 'cancelled',
+            'refund_amount' => $wasPaidOrPartial ? $this->paid_amount : $this->refund_amount,
             'cancelled_at' => now(),
         ]);
     }
 
-    /** How much of the order total the customer still owes. */
+    /**
+     * How much of the order total the customer still owes -- zero for a cancelled/refunded
+     * order, since nothing is actually owed once the sale itself isn't happening (otherwise a
+     * cancelled order with paid_amount=0 reports its full total as "owed", which fed phantom
+     * payment-due SMS reminders and refund-amount caps for a sale that no longer exists).
+     */
     public function getOutstandingReceivableAttribute(): float
     {
+        if (in_array($this->order_status, ['cancelled', 'refunded'], true)) {
+            return 0.0;
+        }
+
         return round((float) $this->total - (float) $this->paid_amount, 2);
+    }
+
+    /**
+     * There's no dedicated "source"/"channel" column -- both the customer checkout and the
+     * admin-created-order endpoint stamp `created_by` (customer self-checkout sets it to the
+     * customer's own id; a true guest checkout leaves it null), so a plain null-check can't
+     * tell "manual" apart from "ecommerce". The only reliable signal is who `created_by`
+     * actually points at: staff created it manually, anyone else (or nobody, i.e. a guest) is
+     * ecommerce. Used by AdminController::applyOrderFilters()'s manual/ecommerce tab filter and
+     * exposed on OrderResource.
+     */
+    public function isManualOrder(): bool
+    {
+        return $this->creator !== null && in_array($this->creator->role, ['admin', 'staff', 'super_admin'], true);
     }
 
     /** Orders can be edited any time before they're completed, cancelled, or refunded. */

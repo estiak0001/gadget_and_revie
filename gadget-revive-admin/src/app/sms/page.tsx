@@ -1,11 +1,10 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { MessageSquare, KeyRound, Package, Megaphone, Save, Send, Info, Wallet, RefreshCw, CheckCircle2, XCircle, HelpCircle } from 'lucide-react';
+import { KeyRound, Package, Megaphone, Save, Send, Wallet, RefreshCw, CheckCircle2, XCircle, HelpCircle, Info, Coins } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
-import {
-  Card, CardContent, CardHeader, CardTitle, Button, Input, Select, Badge, LoadingSpinner,
-} from '@/components/ui';
+import { Button, Input, Select, Badge, LoadingSpinner } from '@/components/ui';
+import { KpiTile, Panel } from '@/components/reports/shared';
 import SmsLogTable from '@/components/sms/SmsLogTable';
 import { getErrorMessage, formatCurrency } from '@/lib/utils';
 import adminService from '@/lib/adminService';
@@ -17,9 +16,13 @@ type Tab = 'overview' | 'otp' | 'order' | 'campaigns';
 const TABS: { key: Tab; label: string; icon: typeof KeyRound }[] = [
   { key: 'overview', label: 'Overview', icon: Wallet },
   { key: 'otp', label: 'OTP', icon: KeyRound },
-  { key: 'order', label: 'Order & Billing', icon: Package },
+  { key: 'order', label: 'Order & billing', icon: Package },
   { key: 'campaigns', label: 'Campaigns', icon: Megaphone },
 ];
+
+const FIELD = 'w-full rounded-lg border border-gray-300 px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500';
+const LABEL = 'mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500';
+const HINT = 'mt-1 text-[11px] text-gray-500';
 
 export default function SmsCenterPage() {
   const [tab, setTab] = useState<Tab>('overview');
@@ -45,31 +48,29 @@ export default function SmsCenterPage() {
 
   return (
     <AdminLayout>
-      <div className="page-header">
-        <div className="flex items-center gap-2">
-          <h1 className="page-title">SMS Center</h1>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <h1 className="text-lg font-bold text-gray-900">SMS Center</h1>
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-600">
+            {activeConnections.length} active connection{activeConnections.length === 1 ? '' : 's'}
+          </span>
         </div>
-        <p className="page-description">
-          Configure OTP verification, order &amp; billing notifications, and send SMS campaigns.
-          Connections themselves are built and tested under{' '}
-          <a href="/settings" className="text-primary-600 hover:underline">Settings &gt; SMS</a>.
+        <p className="text-[11px] text-gray-500">
+          Connections are set up under <a href="/settings" className="font-semibold text-indigo-600 hover:underline">Settings &gt; SMS</a>.
         </p>
       </div>
 
       {!isLoading && connections.length === 0 && (
-        <Card className="mb-6 border-amber-200 bg-amber-50">
-          <CardContent className="py-4 flex items-start gap-3">
-            <Info className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-            <p className="text-sm text-amber-800">
-              No SMS connections are set up yet. Add one under{' '}
-              <a href="/settings" className="underline font-medium">Settings &gt; SMS</a> before
-              configuring OTP, order, or campaign sending here.
-            </p>
-          </CardContent>
-        </Card>
+        <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <p>
+            No SMS connections are set up yet. Add one under <a href="/settings" className="font-semibold underline">Settings &gt; SMS</a> before
+            configuring OTP, order, or campaign sending here.
+          </p>
+        </div>
       )}
 
-      <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1 shadow-sm mb-6">
+      <div className="mb-3 inline-flex rounded-lg border border-gray-200 bg-white p-0.5">
         {TABS.map((t) => {
           const Icon = t.icon;
           return (
@@ -77,9 +78,9 @@ export default function SmsCenterPage() {
               key={t.key}
               type="button"
               onClick={() => setTab(t.key)}
-              className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${tab === t.key ? 'bg-primary-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${tab === t.key ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
             >
-              <Icon className="w-4 h-4" />
+              <Icon className="h-3.5 w-3.5" />
               {t.label}
             </button>
           );
@@ -144,117 +145,116 @@ function OverviewPanel({ connections }: { connections: SmsConnection[] }) {
   }[p] || p);
 
   const anyCostTracked = (stats?.by_purpose ?? []).some((r) => r.total_cost != null && Number(r.total_cost) > 0);
+  const spend = stats?.overall.total_cost != null ? formatCurrency(Number(stats.overall.total_cost)) : '—';
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-sm font-semibold text-gray-700 mb-3">Account Balance</h2>
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        <KpiTile label="Messages sent" value={(stats?.overall.sent ?? 0).toLocaleString()} tone="emerald" icon={<CheckCircle2 className="h-4 w-4 opacity-60" />} sub="Delivered to the gateway" />
+        <KpiTile label="Failed" value={(stats?.overall.failed ?? 0).toLocaleString()} tone="rose" icon={<XCircle className="h-4 w-4 opacity-60" />} sub="Not sent" />
+        <KpiTile label="Total attempts" value={(stats?.overall.total ?? 0).toLocaleString()} tone="indigo" sub="All sections" />
+        <KpiTile label="Spend" value={spend} tone="amber" icon={<Coins className="h-4 w-4 opacity-60" />} sub={anyCostTracked ? 'From cost lookup' : 'Needs a cost URL'} />
+      </div>
+
+      <Panel title="Account balance" hint="Live from each connection's balance URL">
         {connections.length === 0 ? (
-          <p className="text-sm text-gray-500">No connections configured yet.</p>
+          <p className="py-4 text-center text-xs text-gray-500">No connections configured yet.</p>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-2 p-3 md:grid-cols-2 lg:grid-cols-3">
             {connections.map((c) => {
               const b = balances[c.id];
               return (
-                <Card key={c.id}>
-                  <CardContent className="py-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="font-medium text-gray-900 truncate">{c.name}</p>
-                      <Badge variant={c.is_active ? 'success' : 'default'} className="text-xs">{c.is_active ? 'Active' : 'Disabled'}</Badge>
+                <div key={c.id} className="rounded-lg border border-gray-200 bg-slate-50/50 p-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="truncate text-sm font-semibold text-gray-900">{c.name}</p>
+                    <Badge variant={c.is_active ? 'success' : 'default'} className="text-[11px]">{c.is_active ? 'Active' : 'Disabled'}</Badge>
+                  </div>
+
+                  {b === 'loading' && <p className="flex items-center gap-2 text-xs text-gray-500"><LoadingSpinner size="sm" />Checking…</p>}
+
+                  {b === 'error' && <p className="flex items-center gap-1.5 text-xs text-rose-600"><XCircle className="h-3.5 w-3.5" />Check failed</p>}
+
+                  {b && b !== 'loading' && b !== 'error' && !b.configured && (
+                    <p className="flex items-center gap-1.5 text-xs text-gray-500"><HelpCircle className="h-3.5 w-3.5" />No balance URL set</p>
+                  )}
+
+                  {b && b !== 'loading' && b !== 'error' && b.configured && b.ok && (
+                    <div>
+                      <p className="text-xl font-bold tabular-nums text-gray-900">{b.balance ?? '—'}</p>
+                      {b.validity && <p className="mt-0.5 text-[11px] text-gray-500">Valid until {b.validity}</p>}
+                      <p className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-emerald-600"><CheckCircle2 className="h-3 w-3" />Live</p>
                     </div>
+                  )}
 
-                    {b === 'loading' && <div className="flex items-center gap-2 text-sm text-gray-400"><LoadingSpinner size="sm" />Checking...</div>}
+                  {b && b !== 'loading' && b !== 'error' && b.configured && !b.ok && (
+                    <div>
+                      <p className="flex items-center gap-1.5 text-xs text-rose-600"><XCircle className="h-3.5 w-3.5" />Balance check failed</p>
+                      {b.raw && <p className="mt-1 truncate font-mono text-[11px] text-gray-400" title={b.raw}>{b.raw}</p>}
+                    </div>
+                  )}
 
-                    {b === 'error' && (
-                      <p className="text-sm text-red-600 flex items-center gap-1.5"><XCircle className="w-4 h-4" />Check failed</p>
-                    )}
-
-                    {b && b !== 'loading' && b !== 'error' && !b.configured && (
-                      <p className="text-sm text-gray-400 flex items-center gap-1.5"><HelpCircle className="w-4 h-4" />No balance URL set for this connection</p>
-                    )}
-
-                    {b && b !== 'loading' && b !== 'error' && b.configured && b.ok && (
-                      <div>
-                        <p className="text-2xl font-bold text-gray-900">{b.balance ?? '—'}</p>
-                        {b.validity && <p className="text-xs text-gray-500 mt-0.5">Valid until {b.validity}</p>}
-                        <p className="text-xs text-green-600 flex items-center gap-1 mt-1"><CheckCircle2 className="w-3.5 h-3.5" />Live</p>
-                      </div>
-                    )}
-
-                    {b && b !== 'loading' && b !== 'error' && b.configured && !b.ok && (
-                      <div>
-                        <p className="text-sm text-red-600 flex items-center gap-1.5"><XCircle className="w-4 h-4" />Balance check failed</p>
-                        {b.raw && <p className="text-xs text-gray-400 font-mono mt-1 truncate" title={b.raw}>{b.raw}</p>}
-                      </div>
-                    )}
-
-                    <Button variant="outline" size="sm" className="mt-3 w-full" onClick={() => checkBalance(c.id)} leftIcon={<RefreshCw className="w-3.5 h-3.5" />}>
-                      Refresh
-                    </Button>
-                  </CardContent>
-                </Card>
+                  <Button variant="outline" size="sm" className="mt-3 w-full" onClick={() => checkBalance(c.id)} leftIcon={<RefreshCw className="h-3 w-3" />}>
+                    Refresh
+                  </Button>
+                </div>
               );
             })}
           </div>
         )}
-      </div>
+      </Panel>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">Usage &amp; Spend by Section</CardTitle>
-          <Button variant="ghost" size="sm" onClick={fetchStats} leftIcon={<RefreshCw className="w-3.5 h-3.5" />}>Refresh</Button>
-        </CardHeader>
-        <CardContent className="p-0">
-          {isLoadingStats ? (
-            <div className="flex justify-center py-8"><LoadingSpinner /></div>
-          ) : !stats || stats.overall.total === 0 ? (
-            <p className="text-sm text-gray-500 text-center py-8">No SMS sent yet.</p>
-          ) : (
-            <>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-y">
-                    <tr>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Section</th>
-                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Sent</th>
-                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Failed</th>
-                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
-                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Spent</th>
+      <Panel
+        title="Usage & spend by section"
+        right={<Button variant="ghost" size="sm" onClick={fetchStats} leftIcon={<RefreshCw className="h-3 w-3" />}>Refresh</Button>}
+      >
+        {isLoadingStats ? (
+          <div className="flex justify-center py-8"><LoadingSpinner /></div>
+        ) : !stats || stats.overall.total === 0 ? (
+          <p className="py-8 text-center text-xs text-gray-500">No SMS sent yet.</p>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-2 text-left font-semibold">Section</th>
+                    <th className="px-4 py-2 text-right font-semibold">Sent</th>
+                    <th className="px-4 py-2 text-right font-semibold">Failed</th>
+                    <th className="px-4 py-2 text-right font-semibold">Total</th>
+                    <th className="px-4 py-2 text-right font-semibold">Spent</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {stats.by_purpose.map((row, i) => (
+                    <tr key={row.purpose} className={i % 2 ? 'bg-slate-50/40' : 'bg-white'}>
+                      <td className="px-4 py-2 font-semibold text-gray-900">{purposeLabel(row.purpose)}</td>
+                      <td className="px-4 py-2 text-right"><Badge variant="success" className="text-[11px]">{row.sent}</Badge></td>
+                      <td className="px-4 py-2 text-right">{row.failed > 0 ? <Badge variant="danger" className="text-[11px]">{row.failed}</Badge> : <span className="text-gray-400">0</span>}</td>
+                      <td className="px-4 py-2 text-right tabular-nums text-gray-600">{row.total}</td>
+                      <td className="px-4 py-2 text-right tabular-nums text-gray-700">{row.total_cost != null ? formatCurrency(Number(row.total_cost)) : '—'}</td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {stats.by_purpose.map((row) => (
-                      <tr key={row.purpose}>
-                        <td className="px-4 py-2.5 font-medium text-gray-900">{purposeLabel(row.purpose)}</td>
-                        <td className="px-4 py-2.5 text-right"><Badge variant="success" className="text-xs">{row.sent}</Badge></td>
-                        <td className="px-4 py-2.5 text-right">{row.failed > 0 ? <Badge variant="danger" className="text-xs">{row.failed}</Badge> : <span className="text-gray-400">0</span>}</td>
-                        <td className="px-4 py-2.5 text-right text-gray-600">{row.total}</td>
-                        <td className="px-4 py-2.5 text-right text-gray-700">{row.total_cost != null ? formatCurrency(Number(row.total_cost)) : '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot className="bg-gray-50 border-t">
-                    <tr>
-                      <td className="px-4 py-2.5 font-semibold text-gray-900">Overall</td>
-                      <td className="px-4 py-2.5 text-right font-semibold">{stats.overall.sent}</td>
-                      <td className="px-4 py-2.5 text-right font-semibold">{stats.overall.failed}</td>
-                      <td className="px-4 py-2.5 text-right font-semibold">{stats.overall.total}</td>
-                      <td className="px-4 py-2.5 text-right font-semibold">{stats.overall.total_cost != null ? formatCurrency(Number(stats.overall.total_cost)) : '—'}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-              {!anyCostTracked && (
-                <p className="text-xs text-gray-400 px-4 py-3 border-t">
-                  Spend shows as — until a connection has a report/cost-lookup URL configured
-                  (Settings &gt; SMS &gt; Edit Connection &gt; Advanced) — without it, only
-                  send/fail counts are tracked, not per-message cost.
-                </p>
-              )}
-            </>
-          )}
-        </CardContent>
-      </Card>
+                  ))}
+                </tbody>
+                <tfoot className="border-t-2 border-gray-300 bg-slate-50 font-bold">
+                  <tr>
+                    <td className="px-4 py-2">Overall</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{stats.overall.sent}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{stats.overall.failed}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{stats.overall.total}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{stats.overall.total_cost != null ? formatCurrency(Number(stats.overall.total_cost)) : '—'}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            {!anyCostTracked && (
+              <p className="border-t border-gray-100 px-4 py-2.5 text-[11px] text-gray-500">
+                Spend shows as — until a connection has a report/cost-lookup URL configured
+                (Settings &gt; SMS &gt; Edit Connection &gt; Advanced). Without it, only send and fail counts are tracked.
+              </p>
+            )}
+          </>
+        )}
+      </Panel>
     </div>
   );
 }
@@ -309,53 +309,47 @@ function PurposeConfigPanel({ purpose, connections }: { purpose: 'otp'; connecti
   if (isLoading) return <div className="flex justify-center py-12"><LoadingSpinner /></div>;
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader><CardTitle className="flex items-center gap-2"><KeyRound className="w-5 h-5" />OTP Verification &amp; Password Reset SMS</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-gray-500">
-            This is the single on/off switch for OTP on the storefront — it gates both the phone
-            verification code sent during signup and the code used to reset a forgotten password.
-            When off, signup completes immediately without a code, and password reset is
-            unavailable.
+    <div className="space-y-3">
+      <Panel
+        title="OTP verification & password reset"
+        hint="Single on/off switch for OTP on the storefront"
+        right={<Button size="sm" onClick={handleSave} isLoading={isSaving} leftIcon={<Save className="h-3.5 w-3.5" />}>Save</Button>}
+      >
+        <div className="space-y-3 p-4">
+          <p className="text-xs text-gray-500">
+            Gates both the phone code sent during signup and the code used to reset a forgotten password.
+            When off, signup completes immediately without a code, and password reset is unavailable.
           </p>
 
-          <ToggleRow label="Send OTP by SMS (registration &amp; password reset)" enabled={enabled} onChange={setEnabled} />
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Connection</label>
-            <Select
-              value={connectionId}
-              onChange={(e) => setConnectionId(e.target.value)}
-              options={[{ value: '', label: connections.length ? 'Select a connection...' : 'No active connections available' }, ...connections.map((c) => ({ value: String(c.id), label: c.name }))]}
-            />
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="flex items-end gap-3">
+              <div className="flex-1">
+                <label className={LABEL}>Connection</label>
+                <Select
+                  value={connectionId}
+                  onChange={(e) => setConnectionId(e.target.value)}
+                  options={[{ value: '', label: connections.length ? 'Select a connection…' : 'No active connections' }, ...connections.map((c) => ({ value: String(c.id), label: c.name }))]}
+                />
+              </div>
+            </div>
+            <div className="flex items-end">
+              <ToggleRow label="Send OTP by SMS" enabled={enabled} onChange={setEnabled} />
+            </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Registration Verification Template</label>
-            <textarea
-              className="w-full border border-gray-300 rounded-lg p-2.5 h-20 resize-none text-sm"
-              value={template}
-              onChange={(e) => setTemplate(e.target.value)}
-            />
-            <p className="text-xs text-gray-500 mt-1">Placeholders: <code>{'{app}'}</code>, <code>{'{otp}'}</code></p>
+            <label className={LABEL}>Registration verification template</label>
+            <textarea className={`${FIELD} h-16 resize-none`} value={template} onChange={(e) => setTemplate(e.target.value)} />
+            <p className={HINT}>Placeholders: <code>{'{app}'}</code>, <code>{'{otp}'}</code></p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Password Reset Template</label>
-            <textarea
-              className="w-full border border-gray-300 rounded-lg p-2.5 h-20 resize-none text-sm"
-              value={resetTemplate}
-              onChange={(e) => setResetTemplate(e.target.value)}
-            />
-            <p className="text-xs text-gray-500 mt-1">Placeholders: <code>{'{app}'}</code>, <code>{'{otp}'}</code></p>
+            <label className={LABEL}>Password reset template</label>
+            <textarea className={`${FIELD} h-16 resize-none`} value={resetTemplate} onChange={(e) => setResetTemplate(e.target.value)} />
+            <p className={HINT}>Placeholders: <code>{'{app}'}</code>, <code>{'{otp}'}</code></p>
           </div>
-
-          <div className="flex justify-end">
-            <Button onClick={handleSave} isLoading={isSaving} leftIcon={<Save className="w-4 h-4" />}>Save</Button>
-          </div>
-        </CardContent>
-      </Card>
+        </div>
+      </Panel>
 
       <SmsLogTable purpose="otp" />
     </div>
@@ -363,8 +357,8 @@ function PurposeConfigPanel({ purpose, connections }: { purpose: 'otp'; connecti
 }
 
 // ---------------------------------------------------------------------------
-// Order & Billing config — one connection, one enabled toggle, two templates
-// (order placed / order status changed).
+// Order & Billing config — one connection, one enabled toggle, five templates.
+// Only the order-placed SMS is automatic; the rest are sent manually from the order.
 // ---------------------------------------------------------------------------
 function OrderConfigPanel({ connections }: { connections: SmsConnection[] }) {
   const [connectionId, setConnectionId] = useState('');
@@ -422,63 +416,63 @@ function OrderConfigPanel({ connections }: { connections: SmsConnection[] }) {
   if (isLoading) return <div className="flex justify-center py-12"><LoadingSpinner /></div>;
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader><CardTitle className="flex items-center gap-2"><Package className="w-5 h-5" />Order &amp; Billing SMS</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-gray-500">
-            Only the very first SMS — order placed — is automatic. Status, delivery, custom-invoice,
-            and payment-due SMS are always sent manually, each from its own button on the order
-            (or invoice), so nothing texts a customer without an admin deciding to. All four share
-            this one connection and on/off switch, with their own templates below.
+    <div className="space-y-3">
+      <Panel
+        title="Order & billing SMS"
+        hint="Only order-placed is automatic; the rest are sent manually from each order"
+        right={<Button size="sm" onClick={handleSave} isLoading={isSaving} leftIcon={<Save className="h-3.5 w-3.5" />}>Save</Button>}
+      >
+        <div className="space-y-3 p-4">
+          <p className="text-xs text-gray-500">
+            Status, delivery, custom-invoice, and payment-due SMS are each sent from its own button on the order
+            or invoice, so nothing texts a customer without an admin deciding to. All of them share this connection and switch.
           </p>
 
-          <ToggleRow label="Send order SMS" enabled={enabled} onChange={setEnabled} />
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Connection</label>
-            <Select
-              value={connectionId}
-              onChange={(e) => setConnectionId(e.target.value)}
-              options={[{ value: '', label: connections.length ? 'Select a connection...' : 'No active connections available' }, ...connections.map((c) => ({ value: String(c.id), label: c.name }))]}
-            />
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div>
+              <label className={LABEL}>Connection</label>
+              <Select
+                value={connectionId}
+                onChange={(e) => setConnectionId(e.target.value)}
+                options={[{ value: '', label: connections.length ? 'Select a connection…' : 'No active connections' }, ...connections.map((c) => ({ value: String(c.id), label: c.name }))]}
+              />
+            </div>
+            <div className="flex items-end">
+              <ToggleRow label="Send order SMS" enabled={enabled} onChange={setEnabled} />
+            </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Order Placed Template <span className="text-gray-400 font-normal">(automatic)</span></label>
-            <textarea className="w-full border border-gray-300 rounded-lg p-2.5 h-20 resize-none text-sm" value={placedTemplate} onChange={(e) => setPlacedTemplate(e.target.value)} />
-            <p className="text-xs text-gray-500 mt-1">Placeholders: <code>{'{order}'}</code></p>
+            <label className={LABEL}>Order placed <span className="font-normal normal-case text-gray-400">(automatic)</span></label>
+            <textarea className={`${FIELD} h-14 resize-none`} value={placedTemplate} onChange={(e) => setPlacedTemplate(e.target.value)} />
+            <p className={HINT}>Placeholders: <code>{'{order}'}</code></p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Order Status Changed Template <span className="text-gray-400 font-normal">(sent manually)</span></label>
-            <textarea className="w-full border border-gray-300 rounded-lg p-2.5 h-20 resize-none text-sm" value={statusTemplate} onChange={(e) => setStatusTemplate(e.target.value)} />
-            <p className="text-xs text-gray-500 mt-1">Placeholders: <code>{'{order}'}</code>, <code>{'{status}'}</code></p>
+            <label className={LABEL}>Order status changed <span className="font-normal normal-case text-gray-400">(manual)</span></label>
+            <textarea className={`${FIELD} h-14 resize-none`} value={statusTemplate} onChange={(e) => setStatusTemplate(e.target.value)} />
+            <p className={HINT}>Placeholders: <code>{'{order}'}</code>, <code>{'{status}'}</code></p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Order Delivered Template <span className="text-gray-400 font-normal">(sent manually)</span></label>
-            <textarea className="w-full border border-gray-300 rounded-lg p-2.5 h-20 resize-none text-sm" value={deliveredTemplate} onChange={(e) => setDeliveredTemplate(e.target.value)} />
-            <p className="text-xs text-gray-500 mt-1">Placeholders: <code>{'{order}'}</code>, <code>{'{app}'}</code>, <code>{'{invoice_url}'}</code> — a public link, no login required, so the customer can open it straight from the SMS</p>
+            <label className={LABEL}>Order delivered <span className="font-normal normal-case text-gray-400">(manual)</span></label>
+            <textarea className={`${FIELD} h-14 resize-none`} value={deliveredTemplate} onChange={(e) => setDeliveredTemplate(e.target.value)} />
+            <p className={HINT}>Placeholders: <code>{'{order}'}</code>, <code>{'{app}'}</code>, <code>{'{invoice_url}'}</code> — a public link, no login needed</p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Custom Invoice Template <span className="text-gray-400 font-normal">(sent manually)</span></label>
-            <textarea className="w-full border border-gray-300 rounded-lg p-2.5 h-20 resize-none text-sm" value={customInvoiceTemplate} onChange={(e) => setCustomInvoiceTemplate(e.target.value)} />
-            <p className="text-xs text-gray-500 mt-1">Placeholders: <code>{'{app}'}</code>, <code>{'{invoice}'}</code>, <code>{'{total}'}</code></p>
+            <label className={LABEL}>Custom invoice <span className="font-normal normal-case text-gray-400">(manual)</span></label>
+            <textarea className={`${FIELD} h-14 resize-none`} value={customInvoiceTemplate} onChange={(e) => setCustomInvoiceTemplate(e.target.value)} />
+            <p className={HINT}>Placeholders: <code>{'{app}'}</code>, <code>{'{invoice}'}</code>, <code>{'{total}'}</code></p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Payment Due Template <span className="text-gray-400 font-normal">(sent manually)</span></label>
-            <textarea className="w-full border border-gray-300 rounded-lg p-2.5 h-20 resize-none text-sm" value={dueTemplate} onChange={(e) => setDueTemplate(e.target.value)} />
-            <p className="text-xs text-gray-500 mt-1">Placeholders: <code>{'{app}'}</code>, <code>{'{order}'}</code>, <code>{'{amount}'}</code>, <code>{'{invoice_url}'}</code> — a public link, no login required, so the customer can open it straight from the SMS</p>
+            <label className={LABEL}>Payment due <span className="font-normal normal-case text-gray-400">(manual)</span></label>
+            <textarea className={`${FIELD} h-14 resize-none`} value={dueTemplate} onChange={(e) => setDueTemplate(e.target.value)} />
+            <p className={HINT}>Placeholders: <code>{'{app}'}</code>, <code>{'{order}'}</code>, <code>{'{amount}'}</code>, <code>{'{invoice_url}'}</code> — a public link, no login needed</p>
           </div>
-
-          <div className="flex justify-end">
-            <Button onClick={handleSave} isLoading={isSaving} leftIcon={<Save className="w-4 h-4" />}>Save</Button>
-          </div>
-        </CardContent>
-      </Card>
+        </div>
+      </Panel>
 
       <SmsLogTable purpose="order_placed,order_status,order_delivered,custom_invoice,payment_due" />
     </div>
@@ -560,118 +554,115 @@ function CampaignsPanel({ connections }: { connections: SmsConnection[] }) {
   };
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader><CardTitle className="flex items-center gap-2"><Megaphone className="w-5 h-5" />New Campaign</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg p-3">
-            Sends immediately and synchronously (capped at 500 recipients per send — there&apos;s no
-            background queue running, so a very large send would just time out the request instead
-            of queuing). For bigger audiences, send in smaller batches.
+    <div className="space-y-3">
+      <Panel
+        title="New campaign"
+        hint="Sends immediately, capped at 500 recipients per send"
+        right={<Button size="sm" onClick={handleSend} isLoading={isSending} leftIcon={<Send className="h-3.5 w-3.5" />}>Send now</Button>}
+      >
+        <div className="space-y-3 p-4">
+          <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-[11px] text-gray-500">
+            No background queue runs in this deployment, so a very large send would time out the request instead of
+            queuing. For bigger audiences, send in smaller batches.
           </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Campaign Name</label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Eid Sale Announcement" />
+              <label className={LABEL}>Campaign name</label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Eid sale announcement" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Connection</label>
+              <label className={LABEL}>Connection</label>
               <Select
                 value={connectionId}
                 onChange={(e) => setConnectionId(e.target.value)}
-                options={[{ value: '', label: connections.length ? 'Select a connection...' : 'No active connections available' }, ...connections.map((c) => ({ value: String(c.id), label: c.name }))]}
+                options={[{ value: '', label: connections.length ? 'Select a connection…' : 'No active connections' }, ...connections.map((c) => ({ value: String(c.id), label: c.name }))]}
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Message</label>
+            <label className={LABEL}>Message</label>
             <textarea
-              className="w-full border border-gray-300 rounded-lg p-2.5 h-24 resize-none text-sm"
+              className={`${FIELD} h-20 resize-none`}
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               maxLength={500}
             />
-            <p className="text-xs text-gray-400 mt-1">{message.length}/500</p>
+            <p className={HINT}>{message.length}/500 characters</p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Recipients</label>
-            <div className="flex gap-2 mb-3">
-              <button
-                type="button"
-                onClick={() => setSource('all_customers')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${source === 'all_customers' ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-              >
-                All Customers
-              </button>
-              <button
-                type="button"
-                onClick={() => setSource('manual')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${source === 'manual' ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-              >
-                Manual List
-              </button>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <label className={LABEL + ' mb-0'}>Recipients</label>
+              <div className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setSource('all_customers')}
+                  className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors ${source === 'all_customers' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+                >
+                  All customers
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSource('manual')}
+                  className={`rounded-md px-2.5 py-1 text-xs font-semibold transition-colors ${source === 'manual' ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+                >
+                  Manual list
+                </button>
+              </div>
             </div>
 
             {source === 'manual' ? (
               <textarea
-                className="w-full border border-gray-300 rounded-lg p-2.5 h-24 resize-none text-sm font-mono"
+                className={`${FIELD} h-20 resize-none font-mono`}
                 value={manualPhones}
                 onChange={(e) => setManualPhones(e.target.value)}
                 placeholder={'One number per line, or comma-separated\ne.g. 01712345678\n01812345678'}
               />
             ) : null}
 
-            <p className="text-sm text-gray-500 mt-2">
-              {recipientCount === null ? 'Loading recipient count...' : `${recipientCount} recipient(s)`}
+            <p className="mt-2 text-xs font-semibold text-gray-700">
+              {recipientCount === null ? 'Loading recipient count…' : `${recipientCount} recipient(s)`}
             </p>
           </div>
+        </div>
+      </Panel>
 
-          <div className="flex justify-end">
-            <Button onClick={handleSend} isLoading={isSending} leftIcon={<Send className="w-4 h-4" />}>Send Campaign Now</Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader><CardTitle className="text-base">Campaign History</CardTitle></CardHeader>
-        <CardContent className="p-0">
-          {isLoadingHistory ? (
-            <div className="flex justify-center py-8"><LoadingSpinner /></div>
-          ) : campaigns.length === 0 ? (
-            <p className="text-sm text-gray-500 text-center py-8">No campaigns sent yet.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-y">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Connection</th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Recipients</th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Sent</th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Failed</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">When</th>
+      <Panel title="Campaign history" hint="Last 10 sends">
+        {isLoadingHistory ? (
+          <div className="flex justify-center py-8"><LoadingSpinner /></div>
+        ) : campaigns.length === 0 ? (
+          <p className="py-8 text-center text-xs text-gray-500">No campaigns sent yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-2 text-left font-semibold">Name</th>
+                  <th className="px-4 py-2 text-left font-semibold">Connection</th>
+                  <th className="px-4 py-2 text-right font-semibold">Recipients</th>
+                  <th className="px-4 py-2 text-right font-semibold">Sent</th>
+                  <th className="px-4 py-2 text-right font-semibold">Failed</th>
+                  <th className="px-4 py-2 text-left font-semibold">When</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {campaigns.map((c, i) => (
+                  <tr key={c.id} className={i % 2 ? 'bg-slate-50/40' : 'bg-white'}>
+                    <td className="px-4 py-2 font-semibold text-gray-900">{c.name}</td>
+                    <td className="px-4 py-2 text-gray-600">{c.connection?.name || '—'}</td>
+                    <td className="px-4 py-2 text-right tabular-nums text-gray-600">{c.recipient_count}</td>
+                    <td className="px-4 py-2 text-right"><Badge variant="success" className="text-[11px]">{c.sent_count}</Badge></td>
+                    <td className="px-4 py-2 text-right">{c.failed_count > 0 ? <Badge variant="danger" className="text-[11px]">{c.failed_count}</Badge> : <span className="text-gray-400">0</span>}</td>
+                    <td className="whitespace-nowrap px-4 py-2 text-xs tabular-nums text-gray-500">{new Date(c.created_at).toLocaleString()}</td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {campaigns.map((c) => (
-                    <tr key={c.id}>
-                      <td className="px-4 py-2.5 font-medium text-gray-900">{c.name}</td>
-                      <td className="px-4 py-2.5 text-gray-600">{c.connection?.name || '—'}</td>
-                      <td className="px-4 py-2.5 text-right text-gray-600">{c.recipient_count}</td>
-                      <td className="px-4 py-2.5 text-right"><Badge variant="success" className="text-xs">{c.sent_count}</Badge></td>
-                      <td className="px-4 py-2.5 text-right">{c.failed_count > 0 ? <Badge variant="danger" className="text-xs">{c.failed_count}</Badge> : <span className="text-gray-400">0</span>}</td>
-                      <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">{new Date(c.created_at).toLocaleString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Panel>
 
       <SmsLogTable purpose="campaign" />
     </div>
@@ -680,16 +671,16 @@ function CampaignsPanel({ connections }: { connections: SmsConnection[] }) {
 
 function ToggleRow({ label, enabled, onChange }: { label: string; enabled: boolean; onChange: (v: boolean) => void }) {
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex h-9 items-center gap-2.5">
       <button
         type="button"
         onClick={() => onChange(!enabled)}
-        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${enabled ? 'bg-primary-600' : 'bg-gray-200'}`}
+        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${enabled ? 'bg-indigo-600' : 'bg-gray-200'}`}
       >
-        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+        <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-[18px]' : 'translate-x-0.5'}`} />
       </button>
-      <span className="text-sm text-gray-700">{label}</span>
-      <span className="text-sm text-gray-400">{enabled ? 'Enabled' : 'Disabled'}</span>
+      <span className="text-xs font-semibold text-gray-700">{label}</span>
+      <span className={`text-[11px] font-semibold ${enabled ? 'text-emerald-600' : 'text-gray-400'}`}>{enabled ? 'On' : 'Off'}</span>
     </div>
   );
 }

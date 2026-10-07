@@ -16,6 +16,15 @@ import toast from 'react-hot-toast';
 
 const ASSET_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'https://api.gadgetandrevive.com/api').replace(/\/api$/, '');
 
+// Mirrors the list page's lookup (src/app/scraped-products/page.tsx) -- what ingest() did the
+// last time a (re-)scrape touched this row.
+const INGEST_ACTION_BADGES: Record<string, { label: string; variant: 'default' | 'info' | 'warning' | 'success' }> = {
+  created: { label: 'New', variant: 'default' },
+  updated: { label: 'Updated', variant: 'info' },
+  reactivated: { label: 'Reactivated', variant: 'warning' },
+  synced_to_product: { label: 'Synced', variant: 'success' },
+};
+
 function getImageUrl(image?: string | null): string {
   if (!image) return '';
   if (image.startsWith('http')) return image;
@@ -340,6 +349,14 @@ export default function ScrapedProductDetailPage() {
                 <span className="text-gray-500">Site</span>
                 <Badge variant="info">{row.source_site}</Badge>
               </div>
+              {row.last_ingest_action && INGEST_ACTION_BADGES[row.last_ingest_action] && (
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500">Last ingest</span>
+                  <Badge variant={INGEST_ACTION_BADGES[row.last_ingest_action].variant}>
+                    {INGEST_ACTION_BADGES[row.last_ingest_action].label}
+                  </Badge>
+                </div>
+              )}
               {row.source_url && (
                 <a href={row.source_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-primary-600 hover:underline break-all">
                   <ExternalLink className="w-3.5 h-3.5 shrink-0" />

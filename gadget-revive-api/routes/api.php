@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AccountingController;
 use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CartController;
+use App\Http\Controllers\Api\DuesController;
 use App\Http\Controllers\Api\CategoryAttributeController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\BranchLocationController;
@@ -17,6 +18,7 @@ use App\Http\Controllers\Api\PermissionController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\ProductBulkUploadController;
 use App\Http\Controllers\Api\ScrapedProductController;
+use App\Http\Controllers\Api\ScrapeRunController;
 use App\Http\Controllers\Api\PublicController;
 use App\Http\Controllers\Api\PurchaseOrderController;
 use App\Http\Controllers\Api\ReportController;
@@ -24,8 +26,10 @@ use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\ServiceController;
 use App\Http\Controllers\Api\ExpenseController;
+use App\Http\Controllers\Api\AccountReportController;
 use App\Http\Controllers\Api\FeedbackController;
 use App\Http\Controllers\Api\ServiceIntakeController;
+use App\Http\Controllers\Api\ServiceProblemTypeController;
 use App\Http\Controllers\Api\SmsCampaignController;
 use App\Http\Controllers\Api\SmsConnectionController;
 use App\Http\Controllers\Api\SupplierController;
@@ -371,8 +375,9 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // manage_users stays as a full-module master key (unchanged); each mutation additionally
         // gets its own specific permission so a role can be granted just one of these.
         Route::prefix('users')->group(function () {
-            Route::get('/', [AdminController::class, 'users']);
-            Route::get('/{id}', [AdminController::class, 'userShow']);
+            // manage_roles is held by the admin tier, so admins keep the list without a seeder run.
+            Route::get('/', [AdminController::class, 'users'])->middleware('permission:manage_users,view_users,manage_roles');
+            Route::get('/{id}', [AdminController::class, 'userShow'])->middleware('permission:manage_users,view_users,manage_roles');
 
             Route::post('/', [AdminController::class, 'userStore'])->middleware('permission:manage_users,create_users');
             Route::put('/{id}', [AdminController::class, 'userUpdate'])->middleware('permission:manage_users,edit_users');
@@ -399,6 +404,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::get('/', [AdminController::class, 'orders'])->middleware('permission:view_orders,manage_orders,process_orders');
             Route::post('/', [AdminController::class, 'orderCreate'])->middleware('permission:view_orders,manage_orders,process_orders');
             Route::get('/export', [AdminController::class, 'orderExport'])->middleware('permission:view_orders,manage_orders,process_orders');
+            Route::get('/summary', [AdminController::class, 'orderSummary'])->middleware('permission:view_orders,manage_orders,process_orders');
             Route::get('/{id}', [AdminController::class, 'orderShow'])->middleware('permission:view_orders,manage_orders,process_orders');
             Route::put('/{id}', [AdminController::class, 'orderUpdate'])->middleware('permission:view_orders,manage_orders,process_orders,amend_paid_orders');
             Route::put('/{id}/status', [AdminController::class, 'orderUpdateStatus'])->middleware('permission:view_orders,manage_orders,process_orders');
@@ -459,14 +465,26 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::prefix('service-intakes')->group(function () {
             Route::get('/', [ServiceIntakeController::class, 'index'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
             Route::post('/', [ServiceIntakeController::class, 'store'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
+            // Registered before "/{id}" so this static segment is never swallowed as an :id value.
+            Route::get('/next-receipt-number', [ServiceIntakeController::class, 'nextReceiptNumber'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
             Route::get('/{id}', [ServiceIntakeController::class, 'show'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
             Route::put('/{id}', [ServiceIntakeController::class, 'update'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
             Route::delete('/{id}', [ServiceIntakeController::class, 'destroy'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
             Route::put('/{id}/status', [ServiceIntakeController::class, 'updateStatus'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
+            Route::put('/{id}/work-status', [ServiceIntakeController::class, 'updateWorkStatus'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
             Route::post('/{id}/convert', [ServiceIntakeController::class, 'convertToOrder'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes,convert_service_intakes');
             Route::post('/{id}/confirm-price', [ServiceIntakeController::class, 'confirmPrice'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes,confirm_service_intake_price');
             Route::get('/{id}/receipt/download', [ServiceIntakeController::class, 'downloadReceipt'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
             Route::get('/{id}/receipt/stream', [ServiceIntakeController::class, 'streamReceipt'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
+        });
+
+        // Service Intake item "Problem Type" dropdown (Recovery, Repair, ...) — managed directly
+        // from the intake form, same permission boundary as intakes themselves.
+        Route::prefix('service-problem-types')->group(function () {
+            Route::get('/', [ServiceProblemTypeController::class, 'index'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
+            Route::post('/', [ServiceProblemTypeController::class, 'store'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
+            Route::put('/{id}', [ServiceProblemTypeController::class, 'update'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
+            Route::delete('/{id}', [ServiceProblemTypeController::class, 'destroy'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
         });
 
         // Customer Management — old 2-way OR kept valid everywhere; edit/delete additionally get
@@ -675,11 +693,23 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::get('/', [ScrapedProductController::class, 'index'])->middleware('permission:manage_products,view_products');
             Route::get('/stats', [ScrapedProductController::class, 'stats'])->middleware('permission:manage_products,view_products');
             Route::post('/bulk-reject', [ScrapedProductController::class, 'bulkReject'])->middleware('permission:manage_products,delete_products');
+            Route::post('/bulk-promote', [ScrapedProductController::class, 'bulkPromote'])->middleware('permission:manage_products,create_products');
+            Route::post('/bulk-delete', [ScrapedProductController::class, 'bulkDestroy'])->middleware('permission:manage_products,delete_products');
             Route::get('/{id}', [ScrapedProductController::class, 'show'])->middleware('permission:manage_products,view_products');
             Route::put('/{id}', [ScrapedProductController::class, 'update'])->middleware('permission:manage_products,edit_products');
             Route::post('/{id}/promote', [ScrapedProductController::class, 'promote'])->middleware('permission:manage_products,create_products');
             Route::post('/{id}/reject', [ScrapedProductController::class, 'reject'])->middleware('permission:manage_products,delete_products');
             Route::delete('/{id}', [ScrapedProductController::class, 'destroy'])->middleware('permission:manage_products,delete_products');
+        });
+
+        // Scrape Runs (Admin) — tracks each web-triggered run of scraper/run_scrape.py, launched
+        // from the "Run Scraper" card on /scraped-products. See ScrapeRunController's docblock —
+        // this only actually succeeds when run locally (Cloudflare blocks the production IP).
+        Route::prefix('scrape-runs')->group(function () {
+            Route::post('/', [ScrapeRunController::class, 'store'])->middleware('permission:manage_products,create_products');
+            Route::get('/', [ScrapeRunController::class, 'index'])->middleware('permission:manage_products,view_products');
+            Route::get('/{id}', [ScrapeRunController::class, 'show'])->middleware('permission:manage_products,view_products');
+            Route::post('/{id}/complete', [ScrapeRunController::class, 'complete'])->middleware('permission:manage_products,create_products');
         });
 
         // Product Brands Management (Admin) — grouped under "Categories" in the sidebar; read
@@ -744,6 +774,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Expenses — same treatment as Expense Categories.
         Route::prefix('expenses')->group(function () {
             Route::get('/report', [ExpenseController::class, 'report'])->middleware('permission:manage_accounts,view_ledger,view_expenses');
+            Route::get('/analytics', [ExpenseController::class, 'analytics'])->middleware('permission:manage_accounts,view_ledger,view_expenses');
+            Route::get('/export', [ExpenseController::class, 'export'])->middleware('permission:manage_accounts,view_ledger,view_expenses');
             Route::get('/', [ExpenseController::class, 'index'])->middleware('permission:manage_accounts,view_ledger,view_expenses');
             Route::post('/', [ExpenseController::class, 'store'])->middleware('permission:manage_accounts,create_expenses');
             Route::get('/{id}', [ExpenseController::class, 'show'])->middleware('permission:manage_accounts,view_ledger,view_expenses');
@@ -814,11 +846,15 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::post('/journal', [AccountingController::class, 'journalStore'])->middleware('permission:manage_accounts,post_journal_entries');
             Route::get('/journal/{id}', [AccountingController::class, 'journalShow'])->middleware('permission:manage_accounts,view_ledger,view_financial_statements');
 
+            Route::get('/reports/customers', [AccountReportController::class, 'customers'])->middleware('permission:manage_accounts,view_ledger,view_financial_statements');
+            Route::get('/reports/suppliers', [AccountReportController::class, 'suppliers'])->middleware('permission:manage_accounts,view_ledger,view_financial_statements');
+            Route::get('/reports/accounts', [AccountReportController::class, 'accounts'])->middleware('permission:manage_accounts,view_ledger,view_financial_statements');
             Route::get('/trial-balance', [AccountingController::class, 'trialBalance'])->middleware('permission:manage_accounts,view_ledger,view_financial_statements');
             Route::get('/income-statement', [AccountingController::class, 'incomeStatement'])->middleware('permission:manage_accounts,view_ledger,view_financial_statements');
             Route::get('/balance-sheet', [AccountingController::class, 'balanceSheet'])->middleware('permission:manage_accounts,view_ledger,view_financial_statements');
             Route::get('/cash-position', [AccountingController::class, 'cashPosition'])->middleware('permission:manage_accounts,view_ledger,view_financial_statements');
             Route::get('/cash-book', [AccountingController::class, 'cashBook'])->middleware('permission:manage_accounts,view_ledger,view_financial_statements');
+            Route::get('/dues', [DuesController::class, 'index'])->middleware('permission:manage_accounts,view_ledger,view_financial_statements');
             Route::get('/ledger/{accountId}', [AccountingController::class, 'accountLedger'])->middleware('permission:manage_accounts,view_ledger,view_financial_statements');
 
             Route::get('/pending', [AccountingController::class, 'pendingSummary'])->middleware('permission:manage_accounts,view_ledger,view_financial_statements');

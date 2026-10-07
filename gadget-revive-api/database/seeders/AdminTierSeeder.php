@@ -19,6 +19,8 @@ class AdminTierSeeder extends Seeder
 
         $admin = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $admin->givePermissionTo('manage_roles');
+        // The Users list/detail routes are gated on view_users; admins must keep seeing the list.
+        $admin->givePermissionTo('view_users');
 
         $staff = Role::firstOrCreate(['name' => 'staff', 'guard_name' => 'web']);
         $staff->syncPermissions([

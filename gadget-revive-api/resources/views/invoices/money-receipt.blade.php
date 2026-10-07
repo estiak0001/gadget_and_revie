@@ -53,11 +53,18 @@
         .biz-detail { font-size: 8.5px; color: #374151; line-height: 1.4; }
 
         /* ── TITLE ──────────────────────────────────────────── */
-        .title-row { text-align: center; margin: 2px 0 6px; }
-        .title-row .t {
-            font-size: 19px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;
-            color: #000000;
+        .title-row { margin: 2px 0 6px; }
+        /* QR (customer, scan with a phone) on one side of the title, Code128 barcode (staff, a
+           1D laser scanner can't read the QR) on the other — both vertically centered on the row. */
+        .title-table { width: 100%; }
+        .title-table .t {
+            text-align: center; font-size: 19px; font-weight: 900; letter-spacing: 1px;
+            text-transform: uppercase; color: #000000;
         }
+        .title-barcode-cell { width: 100px; vertical-align: middle; text-align: left; }
+        .title-barcode { height: 28px; width: auto; }
+        .title-qr-cell { width: 100px; vertical-align: middle; text-align: right; }
+        .title-qr { width: 46px; height: 46px; }
 
         /* ── FORM FIELDS — label caption stacked above its value, not side-by-side ─────
            No horizontal column negotiation between a label and value at all, which is what kept
@@ -141,7 +148,21 @@
 
         {{-- TITLE --}}
         <div class="title-row">
-            <div class="t">Money Receipt</div>
+            <table class="title-table">
+                <tr>
+                    <td class="title-barcode-cell">
+                        @if(!empty($barcodeDataUri))
+                            <img class="title-barcode" src="{{ $barcodeDataUri }}" alt="Order barcode">
+                        @endif
+                    </td>
+                    <td class="t">Money Receipt</td>
+                    <td class="title-qr-cell">
+                        @if(!empty($qrDataUri))
+                            <img class="title-qr" src="{{ $qrDataUri }}" alt="Scan to open order">
+                        @endif
+                    </td>
+                </tr>
+            </table>
         </div>
 
         {{-- No. / Date --}}

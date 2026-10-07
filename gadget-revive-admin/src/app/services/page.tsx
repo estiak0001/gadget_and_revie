@@ -1,13 +1,14 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { Plus, Edit2, Trash2, Search, Eye, Wrench, Clock, ChevronRight, ListChecks } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Plus, Edit2, Trash2, Search, Eye, Wrench, Clock, ChevronRight, ListChecks, RefreshCw } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import {
-  Card, CardContent, CardHeader, CardTitle, Button, Input, Textarea, Select,
+  Button, Input, Select,
   Modal, Badge, LoadingSpinner, Pagination, EmptyState, ErrorState, ConfirmModal, RichTextEditor,
 } from '@/components/ui';
-import { Service, ServiceCategory, PaginatedResponse } from '@/types';
+import { KpiTile } from '@/components/reports/shared';
+import { Service, ServiceCategory } from '@/types';
 import { formatCurrency, getErrorMessage, getImageUrl } from '@/lib/utils';
 import adminService from '@/lib/adminService';
 import toast from 'react-hot-toast';
@@ -17,11 +18,13 @@ export default function ServicesPage() {
   const [categories, setCategories] = useState<ServiceCategory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
+  const [filterStatus, setFilterStatus] = useState<'' | 'active' | 'inactive'>('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [meta, setMeta] = useState<{ last_page: number; total: number; per_page: number; from: number | null; to: number | null } | null>(null);
+  const [summary, setSummary] = useState<{ total: number; active: number; inactive: number; featured: number } | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -48,12 +51,18 @@ export default function ServicesPage() {
     setError(false);
     try {
       const params: Record<string, string | number> = { page: currentPage };
-      if (searchQuery) params.search = searchQuery;
+      if (search) params.search = search;
       if (filterCategory) params.category_id = filterCategory;
-      if (filterStatus) params.status = filterStatus;
-      const response = await adminService.getServices(params);
-      setServices(response.data.data);
-      setTotalPages(response.data.meta?.last_page || 1);
+      if (filterStatus) params.is_active = filterStatus === 'active' ? 'true' : 'false';
+      const res = await adminService.getServices(params);
+      const body = res.data as unknown as {
+        data: Service[];
+        meta?: { last_page: number; total: number; per_page: number; from: number | null; to: number | null };
+        summary?: { total: number; active: number; inactive: number; featured: number };
+      };
+      setServices(body.data ?? []);
+      setMeta(body.meta ?? null);
+      setSummary(body.summary ?? null);
     } catch (err) {
       toast.error(getErrorMessage(err));
       setError(true);
@@ -108,9 +117,35 @@ export default function ServicesPage() {
   };
 
   useEffect(() => { fetchCategories(); }, []);
-  useEffect(() => { fetchServices(); }, [currentPage, filterCategory, filterStatus]);
+  useEffect(() => { fetchServices(); }, [currentPage, filterCategory, filterStatus, search]);
 
-  const handleSearch = () => { setCurrentPage(1); fetchServices(); };
+  // Search waits for a pause in typing, then resets to page one.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(searchInput.trim());
+      setCurrentPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  const categoryById = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
+  const categoryPath = (id?: number | null) => {
+    const parts: string[] = [];
+    let cur = id ? categoryById.get(id) : undefined;
+    while (cur) {
+      parts.unshift(cur.name);
+      cur = cur.parent_id ? categoryById.get(cur.parent_id) : undefined;
+    }
+    return parts.join(' › ');
+  };
+  const categoryOptions = useMemo(
+    () =>
+      categories
+        .map((c) => ({ value: c.id.toString(), label: categoryPath(c.id) }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [categories]
+  );
 
   const openCreateModal = () => {
     setSelectedService(null);
@@ -248,84 +283,154 @@ export default function ServicesPage() {
 
   return (
     <AdminLayout>
-      <div className="page-header flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div><h1 className="page-title">Services</h1><p className="page-description">Manage all repair services</p></div>
-        <Button onClick={openCreateModal}><Plus className="w-4 h-4 mr-2" />Add Service</Button>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2.5">
+          <h1 className="text-lg font-bold text-gray-900">Services</h1>
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-600">
+            {summary?.total ?? 0} in catalog
+          </span>
+        </div>
+        <Button size="sm" onClick={openCreateModal} leftIcon={<Plus className="h-3.5 w-3.5" />}>Add service</Button>
       </div>
 
-      <Card className="mb-6">
-        <CardContent className="p-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <Input placeholder="Search services..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} className="pl-10" />
-            </div>
-            <Select options={[{ value: '', label: 'All Categories' }, ...categories.map(c => ({ value: c.id, label: c.name }))]} value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} />
-            <Select options={[{ value: '', label: 'All Status' }, { value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }]} value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} />
-            <Button onClick={handleSearch}>Search</Button>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
+        <KpiTile label="Services" value={String(summary?.total ?? 0)} tone="indigo" icon={<Wrench className="h-4 w-4 opacity-60" />} sub="All services in the catalog" />
+        <KpiTile label="Active" value={String(summary?.active ?? 0)} tone="emerald" sub="Shown to customers" />
+        <KpiTile label="Inactive" value={String(summary?.inactive ?? 0)} tone="rose" sub="Hidden from the storefront" />
+        <KpiTile label="Featured" value={String(summary?.featured ?? 0)} tone="amber" sub="Marked as featured" />
+      </div>
 
-      <Card>
-        <CardHeader><CardTitle>All Services</CardTitle></CardHeader>
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-12"><LoadingSpinner size="lg" text="Loading services..." /></div>
-          ) : services.length === 0 ? (
-            <EmptyState icon={<Wrench className="w-8 h-8 text-gray-400" />} title="No services found" />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-y">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Service</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Price</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Duration</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white p-2.5">
+        <div className="relative min-w-[200px] flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+          <input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search name, code or description…"
+            className="h-8 w-full rounded-lg border border-gray-300 pl-8 pr-3 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+        <div className="w-72 shrink-0">
+          <Select
+            className="h-8 text-xs"
+            options={[{ value: '', label: 'All categories' }, ...categoryOptions]}
+            value={filterCategory}
+            onChange={(e) => { setFilterCategory(e.target.value); setCurrentPage(1); }}
+          />
+        </div>
+        <div className="flex gap-1.5">
+          {([
+            { value: '', label: 'All' },
+            { value: 'active', label: 'Active' },
+            { value: 'inactive', label: 'Inactive' },
+          ] as const).map((c) => (
+            <button
+              key={c.value}
+              type="button"
+              onClick={() => { setFilterStatus(c.value); setCurrentPage(1); }}
+              className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${
+                filterStatus === c.value ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              {c.label}
+            </button>
+          ))}
+        </div>
+        <Button size="sm" variant="ghost" onClick={fetchServices} leftIcon={<RefreshCw className="h-3.5 w-3.5" />}>Refresh</Button>
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        {isLoading ? (
+          <div className="flex justify-center py-10"><LoadingSpinner /></div>
+        ) : services.length === 0 ? (
+          <EmptyState
+            icon={<Wrench className="h-8 w-8 text-gray-400" />}
+            title={search || filterCategory || filterStatus ? 'No matching services' : 'No services yet'}
+            description={search || filterCategory || filterStatus ? 'Clear the search or filters.' : 'Add your first service to start taking bookings.'}
+          />
+        ) : (
+          <div className="max-h-[calc(100vh-22rem)] overflow-auto">
+            <table className="min-w-full text-sm">
+              <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500 shadow-[0_1px_0_0_rgb(226,232,240)]">
+                <tr>
+                  <th className="px-3 py-2 text-left font-semibold">Service</th>
+                  <th className="px-3 py-2 text-left font-semibold">Category</th>
+                  <th className="px-3 py-2 text-right font-semibold">Price</th>
+                  <th className="px-3 py-2 text-left font-semibold">Duration</th>
+                  <th className="px-3 py-2 text-left font-semibold">Status</th>
+                  <th className="px-3 py-2 text-right font-semibold">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {services.map((service, i) => (
+                  <tr key={service.id} className={`${i % 2 ? 'bg-slate-50/50' : 'bg-white'} hover:bg-indigo-50/40`}>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-gray-50">
+                          {service.image ? (
+                            <img src={getImageUrl(service.image) || service.image} alt={service.name} className="h-full w-full object-cover" />
+                          ) : (
+                            <Wrench className="h-4 w-4 text-gray-400" />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="flex items-center gap-1.5 font-semibold text-gray-900">
+                            {service.name}
+                            {service.is_featured && <span className="rounded bg-amber-50 px-1 text-[10px] font-semibold text-amber-700">Featured</span>}
+                          </p>
+                          {service.code && <p className="font-mono text-[11px] text-gray-500">{service.code}</p>}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-xs text-gray-600">{categoryPath(service.category_id) || service.category?.name || '—'}</td>
+                    <td className="px-3 py-2 text-right">
+                      <p className="font-semibold tabular-nums text-gray-900">{formatCurrency(Number(service.base_price))}</p>
+                      {service.discount_price && (
+                        <p className="text-[11px] tabular-nums text-gray-400 line-through">{formatCurrency(Number(service.discount_price))}</p>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className="flex items-center gap-1 text-xs text-gray-600"><Clock className="h-3 w-3" />{service.duration_estimate || '—'}</span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                        service.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+                      }`}>
+                        {service.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center justify-end gap-0.5">
+                        <button type="button" title="View" onClick={() => { setSelectedService(service); setIsViewModalOpen(true); }} className="rounded-md p-1 text-indigo-600 hover:bg-indigo-50">
+                          <Eye className="h-3.5 w-3.5" />
+                        </button>
+                        <button type="button" title="Edit" onClick={() => openEditModal(service)} className="rounded-md p-1 text-sky-600 hover:bg-sky-50">
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </button>
+                        <button type="button" title="Delete" onClick={() => { setSelectedService(service); setIsDeleteModalOpen(true); }} className="rounded-md p-1 text-rose-500 hover:bg-rose-50">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {services.map((service) => (
-                    <tr key={service.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center overflow-hidden">
-                            {service.image ? (
-                              <img src={getImageUrl(service.image) || service.image} alt={service.name} className="w-full h-full object-cover" />
-                            ) : (
-                              <Wrench className="w-5 h-5 text-primary" />
-                            )}
-                          </div>
-                          <div><p className="font-medium">{service.name}</p>{service.is_featured && <Badge variant="warning" className="text-xs mt-1">Featured</Badge>}</div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4"><Badge variant="default">{service.category?.name}</Badge></td>
-                      <td className="px-6 py-4">
-                        <p className="font-medium">৳{Number(service.base_price).toLocaleString()}</p>
-                        {service.discount_price && <p className="text-xs text-gray-400 line-through">৳{Number(service.discount_price).toLocaleString()}</p>}
-                      </td>
-                      <td className="px-6 py-4"><div className="flex items-center gap-1 text-gray-600"><Clock className="w-4 h-4" /><span>{service.duration_estimate}</span></div></td>
-                      <td className="px-6 py-4"><Badge variant={service.is_active ? 'success' : 'danger'}>{service.is_active ? 'Active' : 'Inactive'}</Badge></td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button variant="ghost" size="sm" onClick={() => { setSelectedService(service); setIsViewModalOpen(true); }}><Eye className="w-4 h-4" /></Button>
-                          <Button variant="ghost" size="sm" onClick={() => openEditModal(service)}><Edit2 className="w-4 h-4" /></Button>
-                          <Button variant="ghost" size="sm" onClick={() => { setSelectedService(service); setIsDeleteModalOpen(true); }}><Trash2 className="w-4 h-4 text-red-500" /></Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
-      {totalPages > 1 && <div className="mt-6"><Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} /></div>}
+      {meta && meta.total > 0 && (
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+          <span>
+            Showing <span className="font-semibold text-gray-700">{meta.from ?? 0}–{meta.to ?? 0}</span> of{' '}
+            <span className="font-semibold text-gray-700">{meta.total}</span>
+          </span>
+          {meta.last_page > 1 && (
+            <Pagination currentPage={currentPage} totalPages={meta.last_page} onPageChange={setCurrentPage} />
+          )}
+        </div>
+      )}
 
       {/* Create/Edit Modal */}
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={selectedService ? 'Edit Service' : 'Add Service'} size="lg">

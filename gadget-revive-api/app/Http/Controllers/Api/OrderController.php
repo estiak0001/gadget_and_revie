@@ -64,6 +64,7 @@ class OrderController extends BaseController
             'vendorProfile',
             'items.product',
             'items.service',
+            'items.problemType',
             'paymentNotices',
             'review',
             'division',
@@ -244,11 +245,12 @@ class OrderController extends BaseController
         ]);
 
         $oldStatus = $order->order_status;
-        $wasPaidOrPartial = in_array($order->payment_status, ['paid', 'partially_paid'], true);
+        // Captured before cancel() changes payment_status -- cancel() itself now decides
+        // refunded-vs-cancelled; this flag is only needed here for the ledger reversal below.
+        $wasPaidOrPartial = in_array($order->payment_status, ['paid', 'partially_paid', 'verified'], true);
         $order->cancel();
         $order->update([
             'customer_notes' => $order->customer_notes . "\n\nCancellation reason: " . ($request->reason ?? 'Not provided'),
-            ...($wasPaidOrPartial ? ['payment_status' => 'refunded', 'refund_amount' => $order->paid_amount] : []),
         ]);
 
         // If the order had already had some payment recorded (e.g. a pre-paid order created

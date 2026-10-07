@@ -24,6 +24,11 @@ class OrderItemResource extends JsonResource
             'warranty_unit' => $this->warranty_unit,
             'total_price' => (float) $this->total_price,
             'notes' => $this->notes,
+            'problem_type_id' => $this->problem_type_id,
+            'problem_type' => $this->whenLoaded('problemType', fn () => $this->problemType ? [
+                'id' => $this->problemType->id,
+                'name' => $this->problemType->name,
+            ] : null),
             'total_cost' => $this->total_cost,
             'margin' => $this->margin,
             'costs' => $this->whenLoaded('costs', fn () => $this->costs->map(fn ($cost) => [

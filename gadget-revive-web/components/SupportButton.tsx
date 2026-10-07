@@ -16,6 +16,8 @@ export default function SupportButton() {
   // Hide it on any dashboard route — logged-in users have the "New Ticket"
   // action inside the dashboard itself.
   if (pathname.startsWith('/dashboard')) return null;
+  // The walk-in kiosk is a full-bleed counter screen; a support bubble would sit over the faces.
+  if (pathname === '/feedback') return null;
 
   // When the compare bar is visible it spans the full width at z-40 and the
   // support button would sit on top of the Clear / Compare Now actions on the

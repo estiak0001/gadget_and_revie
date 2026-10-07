@@ -53,6 +53,11 @@ class ProductResource extends JsonResource
             'is_draft' => $this->is_draft,
             'source' => $this->source,
             'bulk_upload_batch' => $this->bulk_upload_batch,
+            // Only ever set for a product promoted from a scraped staging row — null for manual
+            // or Excel bulk-upload products, since neither has a source URL to begin with.
+            'source_site' => $this->source_site,
+            'source_url' => $this->source_url,
+            'source_product_id' => $this->source_product_id,
             'is_featured' => $this->is_featured,
             'sort_order' => $this->sort_order,
             'category' => new ProductCategoryResource($this->whenLoaded('category')),

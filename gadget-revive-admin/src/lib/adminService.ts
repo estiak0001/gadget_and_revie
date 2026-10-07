@@ -2,10 +2,10 @@ import api from './api';
 import {
   User, VendorProfile, Product, ProductCategory, ProductBrand, Service, ServiceCategory,
   Order, Ticket, CMSPage, Banner, FAQ, BranchLocation, Setting, AuditLog, Review,
-  DashboardStats, PaginatedResponse, ApiResponse, ServiceIntake,
-  Expense, ExpenseCategory, ExpenseReport, Supplier, PurchaseOrder,
-  ChartOfAccount, JournalEntry, TrialBalance, IncomeStatement, BalanceSheet, AccountLedger, CashPosition, CashBook,
-  PendingSyncSummary, Investor, Investment, CustomInvoice, ProductSerial, ScrapedProduct, PurchaseProductHistory, PurchaseSerialHistoryEntry,
+  DashboardStats, PaginatedResponse, ApiResponse, ServiceIntake, ServiceProblemType,
+  Expense, ExpenseCategory, ExpenseReport, ExpenseAnalytics, Supplier, PurchaseOrder,
+  ChartOfAccount, JournalEntry, TrialBalance, IncomeStatement, BalanceSheet, AccountLedger, CashPosition, CashBook, DuesResponse,
+  PendingSyncSummary, Investor, Investment, CustomInvoice, ProductSerial, ScrapedProduct, ScrapeRun, PurchaseProductHistory, PurchaseSerialHistoryEntry,
   SmsLog, SmsConnection, SmsCampaign, SmsBalance, SmsUsageStats,
   Quotation, QuotationProductSearchResult, QuotationTemplate, QuotationTemplateType,
 } from '@/types';
@@ -55,6 +55,8 @@ export const adminService = {
 
   // Orders
   getOrders: (params?: ListParams) => api.get<PaginatedResponse<Order>>('/admin/orders', { params }),
+  getOrderSummary: (params: Record<string, string>) =>
+    api.get<ApiResponse<{ total: number; manual: number; ecommerce: number; by_status: Record<string, number> }>>('/admin/orders/summary', { params }),
   getOrder: (id: number) => api.get<ApiResponse<Order>>(`/admin/orders/${id}`),
   createOrder: (data: Record<string, unknown>) => api.post<ApiResponse<Order>>('/admin/orders', data),
   updateOrder: (id: number, data: Record<string, unknown>) => api.put<ApiResponse<Order>>(`/admin/orders/${id}`, data),
@@ -139,13 +141,19 @@ export const adminService = {
     api.get<PaginatedResponse<ServiceIntake>>('/admin/service-intakes', { params }),
   getServiceIntake: (id: number) =>
     api.get<ApiResponse<ServiceIntake>>(`/admin/service-intakes/${id}`),
+  // Preview only, not a reservation -- the real receipt_number is assigned on save (see
+  // ServiceIntakeController::nextReceiptNumber()).
+  getNextReceiptNumber: () =>
+    api.get<ApiResponse<{ next_receipt_number: string }>>('/admin/service-intakes/next-receipt-number'),
   createServiceIntake: (data: Record<string, unknown>) =>
     api.post<ApiResponse<ServiceIntake>>('/admin/service-intakes', data),
   updateServiceIntake: (id: number, data: Record<string, unknown>) =>
     api.put<ApiResponse<ServiceIntake>>(`/admin/service-intakes/${id}`, data),
   deleteServiceIntake: (id: number) => api.delete(`/admin/service-intakes/${id}`),
   updateServiceIntakeStatus: (id: number, status: string) =>
-    api.put(`/admin/service-intakes/${id}/status`, { status }),
+    api.put<ApiResponse<ServiceIntake>>(`/admin/service-intakes/${id}/status`, { status }),
+  updateServiceIntakeWorkStatus: (id: number, work_status: string) =>
+    api.put<ApiResponse<ServiceIntake>>(`/admin/service-intakes/${id}/work-status`, { work_status }),
   convertServiceIntake: (id: number, data: {
     customer_id?: number | null;
     customer_name?: string;
@@ -168,6 +176,15 @@ export const adminService = {
     api.get(`/admin/service-intakes/${id}/receipt/download`, { responseType: 'blob' }),
   streamServiceReceiptUrl: (id: number) =>
     `${api.defaults.baseURL}/admin/service-intakes/${id}/receipt/stream`,
+
+  // Service Intake item "Problem Type" dropdown — managed directly from the intake form.
+  getServiceProblemTypes: () =>
+    api.get<ApiResponse<ServiceProblemType[]>>('/admin/service-problem-types'),
+  createServiceProblemType: (name: string) =>
+    api.post<ApiResponse<ServiceProblemType>>('/admin/service-problem-types', { name }),
+  updateServiceProblemType: (id: number, data: { name?: string; is_active?: boolean }) =>
+    api.put<ApiResponse<ServiceProblemType>>(`/admin/service-problem-types/${id}`, data),
+  deleteServiceProblemType: (id: number) => api.delete(`/admin/service-problem-types/${id}`),
 
   // Customers
   getCustomers: (params?: ListParams) => api.get<PaginatedResponse<User>>('/admin/customers', { params }),
@@ -253,7 +270,35 @@ export const adminService = {
     api.post<ApiResponse<ScrapedProduct>>(`/admin/scraped-products/${id}/reject`, { reason }),
   bulkRejectScrapedProducts: (ids: number[], reason?: string) =>
     api.post<ApiResponse<{ rejected: number; skipped: number }>>('/admin/scraped-products/bulk-reject', { ids, reason }),
+  bulkRejectScrapedProductsMatching: (filters: Record<string, string | number>, reason?: string) =>
+    api.post<ApiResponse<{ rejected: number; skipped: number }>>('/admin/scraped-products/bulk-reject', { select_all: true, ...filters, reason }),
+  bulkPromoteScrapedProducts: (ids: number[]) =>
+    api.post<ApiResponse<{ promoted: number; skipped: number; errors: { id: number; name: string; reason: string }[] }>>(
+      '/admin/scraped-products/bulk-promote', { ids }
+    ),
+  // "Select all N matching" — promotes every row matching the given filters (same shape as
+  // getScrapedProducts' params, e.g. { status: 'pending', brand_id, category_id }) rather than
+  // a fixed id list, so a whole brand/category (or everything) can go in one click.
+  bulkPromoteScrapedProductsMatching: (filters: Record<string, string | number>) =>
+    api.post<ApiResponse<{ promoted: number; skipped: number; errors: { id: number; name: string; reason: string }[] }>>(
+      '/admin/scraped-products/bulk-promote', { select_all: true, ...filters }
+    ),
   deleteScrapedProduct: (id: number) => api.delete(`/admin/scraped-products/${id}`),
+  bulkDeleteScrapedProducts: (ids: number[]) =>
+    api.post<ApiResponse<{ deleted: number; skipped: number }>>('/admin/scraped-products/bulk-delete', { ids }),
+  bulkDeleteScrapedProductsMatching: (filters: Record<string, string | number>) =>
+    api.post<ApiResponse<{ deleted: number; skipped: number }>>('/admin/scraped-products/bulk-delete', { select_all: true, ...filters }),
+
+  // "Run Scraper" trigger on /scraped-products -- only actually succeeds where the API process
+  // itself has an IP startech.com.bd hasn't Cloudflare-blocked (i.e. run locally). runScrape()
+  // returns immediately once the scrape is launched; getScrapeRun() is polled until status
+  // flips away from 'running' (see ScrapeRunController for the full flow).
+  runScrape: (data: {
+    category_url: string; category_name: string; template_category: string;
+    brand_filter?: string; product_limit?: number;
+  }) => api.post<ApiResponse<ScrapeRun>>('/admin/scrape-runs', data),
+  getScrapeRuns: () => api.get<ApiResponse<ScrapeRun[]>>('/admin/scrape-runs'),
+  getScrapeRun: (id: number) => api.get<ApiResponse<ScrapeRun>>(`/admin/scrape-runs/${id}`),
 
   // Services
   getServices: (params?: ListParams) => api.get<PaginatedResponse<Service>>('/admin/services', { params }),
@@ -442,7 +487,6 @@ export const adminService = {
   // Reports
   getSalesReport: (params?: ListParams) => api.get('/admin/reports/sales', { params }),
   getCustomerReport: (params?: ListParams) => api.get('/admin/reports/customers', { params }),
-  getVendorReport: (params?: ListParams) => api.get('/admin/reports/vendors', { params }),
   getCatalogReport: (params?: ListParams) => api.get('/admin/reports/catalog', { params }),
   getReviewReport: (params?: ListParams) => api.get('/admin/reports/reviews', { params }),
   getTicketReport: (params?: ListParams) => api.get('/admin/reports/tickets', { params }),
@@ -454,7 +498,7 @@ export const adminService = {
   getPayments: (params?: ListParams) => api.get('/admin/payments', { params }),
   getPayment: (id: number) => api.get(`/admin/payments/${id}`),
   updatePaymentStatus: (id: number, status: string, note?: string) =>
-    api.put(`/admin/payments/${id}`, { status, ...(note ? { note } : {}) }),
+    api.put(`/admin/payments/${id}`, { status, ...(note ? { notes: note } : {}) }),
 
   // Contact Inquiries
   getContactInquiries: (params?: ListParams) => api.get('/admin/contact-inquiries', { params }),
@@ -527,7 +571,11 @@ export const adminService = {
 
   // Expenses
   getExpenses: (params?: ListParams) =>
-    api.get<{ data: PaginatedResponse<Expense> }>('/admin/expenses', { params }),
+    api.get<PaginatedResponse<Expense>>('/admin/expenses', { params }),
+  getExpenseAnalytics: (params?: ListParams) =>
+    api.get<ApiResponse<ExpenseAnalytics>>('/admin/expenses/analytics', { params }),
+  exportExpenses: (params?: ListParams) =>
+    api.get('/admin/expenses/export', { params, responseType: 'blob' }),
   createExpense: (data: Record<string, unknown>) =>
     api.post<ApiResponse<Expense>>('/admin/expenses', data),
   updateExpense: (id: number, data: Record<string, unknown>) =>
@@ -593,11 +641,24 @@ export const adminService = {
   createJournalEntry: (data: Record<string, unknown>) => api.post<ApiResponse<JournalEntry>>('/admin/accounting/journal', data),
 
   // Accounting Reports
+  getCustomerReceivables: (params?: Record<string, string | number | boolean | undefined>) =>
+    api.get('/admin/accounting/reports/customers', { params }),
+  getSupplierPayables: (params?: Record<string, string | number | boolean | undefined>) =>
+    api.get('/admin/accounting/reports/suppliers', { params }),
+  getAccountActivity: (params?: Record<string, string | number | boolean | undefined>) =>
+    api.get('/admin/accounting/reports/accounts', { params }),
+  downloadAccountReport: (
+    kind: 'customers' | 'suppliers' | 'accounts',
+    params?: Record<string, string | number | boolean | undefined>
+  ) => api.get(`/admin/accounting/reports/${kind}`, { params: { ...params, format: 'csv' }, responseType: 'blob' }),
   getTrialBalance: (asOf?: string) => api.get<ApiResponse<TrialBalance>>('/admin/accounting/trial-balance', { params: { as_of: asOf } }),
   getIncomeStatement: (from?: string, to?: string) => api.get<ApiResponse<IncomeStatement>>('/admin/accounting/income-statement', { params: { from, to } }),
   getBalanceSheet: (asOf?: string) => api.get<ApiResponse<BalanceSheet>>('/admin/accounting/balance-sheet', { params: { as_of: asOf } }),
   getCashPosition: (from?: string, to?: string) => api.get<ApiResponse<CashPosition>>('/admin/accounting/cash-position', { params: { from, to } }),
   getCashBook: (from?: string, to?: string) => api.get<ApiResponse<CashBook>>('/admin/accounting/cash-book', { params: { from, to } }),
+  // Outstanding balances: receivable = customers owe us on orders, payable = we owe suppliers on POs.
+  getDues: (params: Record<string, string | number | undefined>) =>
+    api.get<DuesResponse>('/admin/accounting/dues', { params }),
   getAccountLedger: (accountId: number, from?: string, to?: string) =>
     api.get<ApiResponse<AccountLedger>>(`/admin/accounting/ledger/${accountId}`, { params: { from, to } }),
 

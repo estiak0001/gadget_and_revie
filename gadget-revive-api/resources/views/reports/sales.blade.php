@@ -115,18 +115,18 @@
         <div class="summary-grid">
             <div class="summary-item">
                 <div class="summary-value">{{ number_format($summary->total_orders) }}</div>
-                <div class="summary-label">Total Orders</div>
+                <div class="summary-label">Orders placed</div>
             </div>
             <div class="summary-item">
                 <div class="summary-value">৳{{ number_format($summary->total_revenue ?? 0, 2) }}</div>
-                <div class="summary-label">Total Revenue</div>
+                <div class="summary-label">Sales (paid / verified)</div>
             </div>
             <div class="summary-item">
-                <div class="summary-value">৳{{ number_format($summary->completed_revenue ?? 0, 2) }}</div>
-                <div class="summary-label">Completed Revenue</div>
+                <div class="summary-value">{{ number_format($summary->sales_orders ?? 0) }}</div>
+                <div class="summary-label">Sales orders</div>
             </div>
             <div class="summary-item">
-                <div class="summary-value">{{ number_format($summary->total_orders > 0 ? ($summary->total_revenue / $summary->total_orders) : 0, 2) }}</div>
+                <div class="summary-value">{{ number_format(($summary->sales_orders ?? 0) > 0 ? ($summary->total_revenue / $summary->sales_orders) : 0, 2) }}</div>
                 <div class="summary-label">Avg Order Value</div>
             </div>
         </div>

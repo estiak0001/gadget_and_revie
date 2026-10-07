@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
 import Sidebar, { canAccessPath } from './Sidebar';
 import Header from './Header';
-import { cn } from '@/lib/utils';
+import { cn, publicOrderTrackingRedirect } from '@/lib/utils';
 import LoadingSpinner from '../ui/LoadingSpinner';
 import toast from 'react-hot-toast';
 
@@ -82,9 +82,15 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   }, [sidebarOpen, isDesktop]);
 
   useEffect(() => {
-    if (!isLoading && !isAuthenticated && pathname !== '/login') {
-      router.push('/login');
+    if (isLoading || isAuthenticated || pathname === '/login') return;
+
+    const storefrontRedirect = publicOrderTrackingRedirect(pathname, window.location.search);
+    if (storefrontRedirect) {
+      window.location.replace(storefrontRedirect);
+      return;
     }
+
+    router.push('/login');
   }, [isLoading, isAuthenticated, pathname, router]);
 
   // Menu-wise access guard — hides a page even if someone navigates straight to its URL

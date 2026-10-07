@@ -7,7 +7,7 @@ const DEFAULTS = {
   name: 'Gadget And Revive',
   tagline: 'Admin Dashboard',
   logoLight: '/site-main-logo-black_1.png',
-  logoDark: '/site-main-logo-white.png',
+  logoDark: '/site-main-logo-white-sm.png',
   favicon: '/favicon.ico',
 };
 

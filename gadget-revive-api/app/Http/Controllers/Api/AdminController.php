@@ -17,6 +17,7 @@ use App\Http\Resources\ProductResource;
 use App\Http\Resources\ProductBrandResource;
 use App\Http\Resources\ServiceResource;
 use App\Http\Resources\SiteSettingResource;
+use Illuminate\Database\Eloquent\Builder;
 use App\Models\AuditLog;
 use App\Models\Banner;
 use App\Models\CmsPage;
@@ -37,6 +38,7 @@ use App\Models\SiteSetting;
 use App\Models\Ticket;
 use App\Models\TicketMessage;
 use App\Models\User;
+use App\Support\PermissionGrant;
 use App\Models\VendorProfile;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -61,66 +63,53 @@ class AdminController extends BaseController
             ? \Carbon\Carbon::parse($request->start_date)->startOfDay()
             : now()->subDays(29)->startOfDay();
 
-        // Previous period of equal length (for trend comparison)
         $rangeDays = $startDate->diffInDays($endDate) + 1;
         $prevEndDate = (clone $startDate)->subSecond();
         $prevStartDate = (clone $prevEndDate)->subDays($rangeDays - 1)->startOfDay();
 
+        // No previous-period data means there is nothing to compare against, not a 100% gain.
         $calcTrend = function ($current, $previous) {
             if ($previous == 0) {
-                return $current > 0 ? 100.0 : 0.0;
+                return null;
             }
             return round((($current - $previous) / $previous) * 100, 1);
         };
 
-        // User statistics (all-time totals for the cards)
+        // Recognized sales: the same payment states the ledger and every report use.
+        $recognized = "('paid', 'partially_paid', 'verified')";
+
         $userStats = User::selectRaw('
             COUNT(*) as total_users,
-            SUM(CASE WHEN role = "customer" THEN 1 ELSE 0 END) as total_customers,
-            SUM(CASE WHEN role = "vendor" THEN 1 ELSE 0 END) as total_vendors,
-            SUM(CASE WHEN status = "active" THEN 1 ELSE 0 END) as active_users
+            SUM(CASE WHEN role = "customer" THEN 1 ELSE 0 END) as total_customers
         ')->first();
 
-        // Vendor statistics (all-time totals)
-        $vendorStats = VendorProfile::selectRaw('
-            COUNT(*) as total_vendors,
-            SUM(CASE WHEN status = "approved" THEN 1 ELSE 0 END) as approved_vendors,
-            SUM(CASE WHEN status = "pending" THEN 1 ELSE 0 END) as pending_vendors,
-            SUM(CASE WHEN status = "rejected" THEN 1 ELSE 0 END) as rejected_vendors
-        ')->first();
-
-        // Order/revenue statistics for the selected period.
-        // total_revenue only counts orders whose sale has actually been recognized in the ledger
-        // (payment_status paid/partially_paid/verified) and excludes refunded/cancelled/never-paid
-        // orders — otherwise a refunded order's full amount still shows up as "revenue" here even
-        // though the ledger has already reversed it to zero, creating a permanent gap against the
-        // Accounting section's Income Statement and Cash Balance figures.
         $orderStats = Order::whereBetween('created_at', [$startDate, $endDate])
-            ->selectRaw('
+            ->selectRaw("
                 COUNT(*) as total_orders,
-                SUM(CASE WHEN payment_status IN ("paid", "partially_paid", "verified") THEN total ELSE 0 END) as total_revenue,
-                SUM(CASE WHEN order_status = "completed" THEN total ELSE 0 END) as completed_revenue,
-                SUM(CASE WHEN order_status = "pending" THEN 1 ELSE 0 END) as pending_orders,
-                SUM(CASE WHEN order_status = "completed" THEN 1 ELSE 0 END) as completed_orders,
-                SUM(CASE WHEN order_status = "cancelled" THEN 1 ELSE 0 END) as cancelled_orders
-            ')
+                SUM(CASE WHEN payment_status IN {$recognized} THEN total ELSE 0 END) as total_revenue,
+                SUM(CASE WHEN payment_status IN {$recognized} THEN 1 ELSE 0 END) as sales_orders,
+                SUM(CASE WHEN order_status = 'completed' THEN 1 ELSE 0 END) as completed_orders,
+                SUM(CASE WHEN order_status = 'cancelled' THEN 1 ELSE 0 END) as cancelled_orders
+            ")
             ->first();
 
-        // Previous-period figures for trends
         $prevOrders = Order::whereBetween('created_at', [$prevStartDate, $prevEndDate])
-            ->selectRaw('COUNT(*) as total_orders, SUM(CASE WHEN payment_status IN ("paid", "partially_paid", "verified") THEN total ELSE 0 END) as total_revenue')
+            ->selectRaw("COUNT(*) as total_orders, SUM(CASE WHEN payment_status IN {$recognized} THEN total ELSE 0 END) as total_revenue")
             ->first();
-        $newUsers = User::whereBetween('created_at', [$startDate, $endDate])->count();
-        $prevNewUsers = User::whereBetween('created_at', [$prevStartDate, $prevEndDate])->count();
-        $newVendors = VendorProfile::whereBetween('created_at', [$startDate, $endDate])->count();
-        $prevNewVendors = VendorProfile::whereBetween('created_at', [$prevStartDate, $prevEndDate])->count();
 
         $periodRevenue = (float) ($orderStats->total_revenue ?? 0);
         $prevRevenue = (float) ($prevOrders->total_revenue ?? 0);
 
-        // Daily revenue + order count for the chart (within the selected range)
+        $periodExpenses = (float) \App\Models\Expense::whereBetween('expense_date', [$startDate->toDateString(), $endDate->toDateString()])
+            ->sum('amount');
+
+        $newCustomers = User::where('role', 'customer')->whereBetween('created_at', [$startDate, $endDate])->count();
+
         $revenueChart = Order::whereBetween('created_at', [$startDate, $endDate])
-            ->selectRaw('DATE(created_at) as date, SUM(CASE WHEN order_status = "completed" THEN total ELSE 0 END) as revenue, COUNT(*) as orders')
+            ->selectRaw("DATE(created_at) as date,
+                SUM(CASE WHEN payment_status IN {$recognized} THEN total ELSE 0 END) as revenue,
+                COUNT(*) as orders,
+                SUM(CASE WHEN payment_status IN {$recognized} THEN 1 ELSE 0 END) as sales_orders")
             ->groupBy('date')
             ->orderBy('date')
             ->get()
@@ -128,27 +117,46 @@ class AdminController extends BaseController
                 'date' => $row->date,
                 'revenue' => (float) $row->revenue,
                 'orders' => (int) $row->orders,
+                'sales_orders' => (int) $row->sales_orders,
             ]);
 
-        // Product & Service counts
-        $productCount = Product::count();
-        $serviceCount = Service::count();
+        // Dues use the same definitions as the Dues page: all-time, cancelled and refunded excluded.
+        $receivables = Order::whereNotIn('order_status', ['cancelled', 'refunded'])
+            ->whereColumn('total', '>', 'paid_amount')
+            ->get()
+            ->filter(fn ($order) => $order->outstanding_receivable > 0);
+        $payables = \App\Models\PurchaseOrder::with('items')
+            ->where('status', '!=', 'cancelled')
+            ->get()
+            ->filter(fn ($po) => $po->outstanding_payable > 0);
 
-        // Pending items
-        $pendingVendors = VendorProfile::where('status', 'pending')->count();
-        $pendingTickets = Ticket::where('status', 'open')->count();
+        $topProducts = \Illuminate\Support\Facades\DB::table('order_items')
+            ->join('orders', 'orders.id', '=', 'order_items.order_id')
+            ->join('products', 'products.id', '=', 'order_items.product_id')
+            ->whereIn('orders.payment_status', ['paid', 'partially_paid', 'verified'])
+            ->whereNull('orders.deleted_at')
+            ->whereBetween('orders.created_at', [$startDate, $endDate])
+            ->select('products.id', 'products.name', \Illuminate\Support\Facades\DB::raw('SUM(order_items.quantity) as quantity'), \Illuminate\Support\Facades\DB::raw('SUM(order_items.total_price) as revenue'))
+            ->groupBy('products.id', 'products.name')
+            ->orderByDesc('revenue')
+            ->take(5)
+            ->get()
+            ->map(fn ($row) => [
+                'id' => (int) $row->id,
+                'name' => $row->name,
+                'quantity' => (int) $row->quantity,
+                'revenue' => (float) $row->revenue,
+            ])
+            ->values();
+
+        $pendingOrders = Order::where('order_status', 'pending')->count();
+        $pendingTickets = Ticket::whereIn('status', ['open', 'in_progress'])->count();
         $pendingReviews = Review::where('status', 'pending')->count();
 
-        // Recent activity
         $recentOrders = Order::with(['customer', 'vendorProfile'])
+            ->withCount('items')
             ->latest()
-            ->take(5)
-            ->get();
-
-        $recentVendors = VendorProfile::with('user')
-            ->where('status', 'pending')
-            ->latest()
-            ->take(5)
+            ->take(8)
             ->get();
 
         // Current cash on hand — a liquidity snapshot to sit alongside the period's revenue figure
@@ -161,51 +169,49 @@ class AdminController extends BaseController
                 'users' => [
                     'total' => (int) $userStats->total_users,
                     'customers' => (int) $userStats->total_customers,
-                    'vendors' => (int) $userStats->total_vendors,
-                    'active' => (int) $userStats->active_users,
-                ],
-                'vendors' => [
-                    'total' => (int) $vendorStats->total_vendors,
-                    'approved' => (int) $vendorStats->approved_vendors,
-                    'pending' => (int) $vendorStats->pending_vendors,
-                    'rejected' => (int) $vendorStats->rejected_vendors,
+                    'new_customers' => $newCustomers,
                 ],
                 'orders' => [
                     'total' => (int) $orderStats->total_orders,
-                    'pending' => (int) $orderStats->pending_orders,
+                    'sales' => (int) $orderStats->sales_orders,
+                    'pending' => $pendingOrders,
                     'completed' => (int) $orderStats->completed_orders,
                     'cancelled' => (int) $orderStats->cancelled_orders,
                 ],
                 'revenue' => [
                     'total' => $periodRevenue,
-                    'completed' => (float) ($orderStats->completed_revenue ?? 0),
+                    'expenses' => round($periodExpenses, 2),
+                    'net' => round($periodRevenue - $periodExpenses, 2),
+                ],
+                'dues' => [
+                    'receivable' => [
+                        'total' => round((float) $receivables->sum(fn ($o) => $o->outstanding_receivable), 2),
+                        'count' => $receivables->count(),
+                    ],
+                    'payable' => [
+                        'total' => round((float) $payables->sum(fn ($po) => $po->outstanding_payable), 2),
+                        'count' => $payables->count(),
+                    ],
                 ],
                 'cash_balance' => [
                     'current' => $currentCashBalance,
                 ],
-                'catalog' => [
-                    'products' => $productCount,
-                    'services' => $serviceCount,
-                ],
                 'pending_actions' => [
-                    'vendors' => $pendingVendors,
                     'tickets' => $pendingTickets,
                     'reviews' => $pendingReviews,
                 ],
             ],
             'trends' => [
                 'revenue_change' => $calcTrend($periodRevenue, $prevRevenue),
-                'orders_change'  => $calcTrend((int) $orderStats->total_orders, (int) ($prevOrders->total_orders ?? 0)),
-                'users_change'   => $calcTrend($newUsers, $prevNewUsers),
-                'vendors_change' => $calcTrend($newVendors, $prevNewVendors),
+                'orders_change' => $calcTrend((int) $orderStats->total_orders, (int) ($prevOrders->total_orders ?? 0)),
             ],
             'revenue_chart' => $revenueChart,
+            'top_products' => $topProducts,
             'period' => [
                 'start_date' => $startDate->toDateString(),
                 'end_date' => $endDate->toDateString(),
             ],
             'recent_orders' => OrderResource::collection($recentOrders),
-            'pending_vendors' => VendorProfileResource::collection($recentVendors),
         ]);
     }
 
@@ -326,6 +332,12 @@ class AdminController extends BaseController
             return $this->error('Only a super admin can create admin or super admin accounts', 403);
         }
 
+        $targetRole = \Spatie\Permission\Models\Role::where('name', $selectedRole)->first();
+        $missing = $targetRole ? PermissionGrant::missingFor($admin, $targetRole->permissions) : [];
+        if ($missing) {
+            return $this->error(PermissionGrant::message($missing), 403);
+        }
+
         $data = $request->only(['name', 'email', 'phone']);
         $data['role'] = $this->tierForRole($selectedRole);
         $data['password'] = bcrypt($request->password);
@@ -385,6 +397,14 @@ class AdminController extends BaseController
         $promotingToPrivileged = $roleIsActuallyChanging && in_array($selectedRole, ['admin', 'super_admin'], true);
         if (($targetIsSuperAdmin || $promotingToPrivileged) && !$admin->hasRole('super_admin')) {
             return $this->error('Only a super admin can edit a super admin account, or promote a user to admin/super admin', 403);
+        }
+
+        if ($roleIsActuallyChanging) {
+            $targetRole = \Spatie\Permission\Models\Role::where('name', $selectedRole)->first();
+            $missing = $targetRole ? PermissionGrant::missingFor($admin, $targetRole->permissions) : [];
+            if ($missing) {
+                return $this->error(PermissionGrant::message($missing), 403);
+            }
         }
 
         $oldData = $user->toArray();
@@ -743,6 +763,9 @@ class AdminController extends BaseController
             // not every product is individually serialized.
             'items.*.serials'    => 'nullable|array',
             'items.*.serials.*'  => 'nullable|string|max:191',
+            // Service items only (Repair, Recovery, ...) -- the same managed list Service
+            // Intake items pick from. Meaningless for product/custom lines; just left null there.
+            'items.*.problem_type_id' => 'nullable|exists:service_problem_types,id',
         ]);
 
         $admin = $request->user();
@@ -845,6 +868,7 @@ class AdminController extends BaseController
                     'warranty_unit'  => $item['warranty_unit'] ?? $product?->warranty_unit,
                     'total_price' => $item['unit_price'] * $item['quantity'],
                     'notes'       => $item['notes'] ?? null,
+                    'problem_type_id' => $item['problem_type_id'] ?? null,
                 ]);
 
                 // Sale reduces stock; cancel/refund restore it (see restockOrderItems), so this
@@ -883,7 +907,7 @@ class AdminController extends BaseController
 
             DB::commit();
 
-            $order->load(['customer', 'vendorProfile', 'items.product', 'items.service', 'division', 'district', 'area']);
+            $order->load(['customer', 'vendorProfile', 'items.product', 'items.service', 'items.problemType', 'division', 'district', 'area']);
 
             return $this->created(new OrderResource($order), 'Manual order created successfully');
         } catch (\Exception $e) {
@@ -897,45 +921,8 @@ class AdminController extends BaseController
      */
     public function orders(Request $request): JsonResponse
     {
-        $query = Order::with(['customer', 'vendorProfile', 'items', 'creator:id,name']);
-
-        // Filter by status
-        if ($request->has('status')) {
-            $query->where('order_status', $request->status);
-        }
-
-        // Filter by payment status
-        if ($request->has('payment_status')) {
-            $query->where('payment_status', $request->payment_status);
-        }
-
-        // Filter by vendor
-        if ($request->has('vendor_id')) {
-            $query->where('vendor_profile_id', $request->vendor_id);
-        }
-
-        // Filter by customer
-        if ($request->has('customer_id')) {
-            $query->where('customer_id', $request->customer_id);
-        }
-
-        // Filter by whether a Purchase Order has been linked to source stock for this order
-        if ($request->has('has_purchase_order')) {
-            $query->{$request->boolean('has_purchase_order') ? 'whereHas' : 'whereDoesntHave'}('purchaseOrders');
-        }
-
-        // Date range
-        if ($request->has('start_date')) {
-            $query->whereDate('created_at', '>=', $request->start_date);
-        }
-        if ($request->has('end_date')) {
-            $query->whereDate('created_at', '<=', $request->end_date);
-        }
-
-        // Search
-        if ($request->has('search')) {
-            $query->where('order_number', 'like', "%{$request->search}%");
-        }
+        $query = Order::with(['customer', 'vendorProfile', 'items', 'creator:id,name,role']);
+        $this->applyOrderFilters($query, $request);
 
         // ->through() so every row goes through OrderResource (is_guest, can_be_edited,
         // can_be_cancelled, etc.) instead of raw model attributes — orderShow() already does
@@ -946,6 +933,167 @@ class AdminController extends BaseController
             ->through(fn (Order $order) => new OrderResource($order));
 
         return $this->paginated($orders);
+    }
+
+    /**
+     * Counts for the Orders page header -- by status, and total/manual/ecommerce -- under the
+     * same filters the list uses. Status and channel are excluded from the counts they drive,
+     * so each status chip or channel tab shows how many orders it would return if picked.
+     * (The old header counted only the 20 rows currently on the page, so it was wrong.)
+     */
+    public function orderSummary(Request $request): JsonResponse
+    {
+        $scope = $request->except(['page', 'per_page', 'status', 'order_channel']);
+
+        $countFor = function (array $extra) use ($scope): int {
+            $query = Order::query();
+            $this->applyOrderFilters($query, Request::create('/', 'GET', array_merge($scope, $extra)));
+
+            return $query->count();
+        };
+
+        $statusScope = $request->filled('order_channel') ? ['order_channel' => $request->order_channel] : [];
+        $statusQuery = Order::query();
+        $this->applyOrderFilters($statusQuery, Request::create('/', 'GET', array_merge($scope, $statusScope)));
+        $byStatus = $statusQuery->select('order_status', DB::raw('COUNT(*) as c'))
+            ->groupBy('order_status')
+            ->pluck('c', 'order_status');
+
+        return $this->success([
+            'total' => $countFor([]),
+            'manual' => $countFor(['order_channel' => 'manual']),
+            'ecommerce' => $countFor(['order_channel' => 'ecommerce']),
+            'by_status' => $byStatus,
+        ]);
+    }
+
+    /**
+     * Every filter the admin Orders list (and its CSV export) supports -- shared so the two
+     * never drift apart. Anything absent/empty in the request is simply skipped, so this is
+     * safe to call unconditionally.
+     */
+    private function applyOrderFilters(Builder $query, Request $request): void
+    {
+        // Filter by status
+        if ($request->filled('status')) {
+            $query->where('order_status', $request->status);
+        }
+
+        // Filter by payment status
+        if ($request->filled('payment_status')) {
+            $query->where('payment_status', $request->payment_status);
+        }
+
+        // Filter by payment method (cash, bkash, nagad, bank_transfer, card, other)
+        if ($request->filled('payment_method')) {
+            $query->where('payment_method', $request->payment_method);
+        }
+
+        // Filter by vendor
+        if ($request->filled('vendor_id')) {
+            $query->where('vendor_profile_id', $request->vendor_id);
+        }
+
+        // Manual (an admin/staff member placed it) vs ecommerce (storefront, logged-in or guest)
+        // -- see Order::isManualOrder() for why this can't just be a created_by null-check.
+        if ($request->filled('order_channel')) {
+            if ($request->order_channel === 'manual') {
+                $query->whereHas('creator', fn ($q) => $q->whereIn('role', ['admin', 'staff', 'super_admin']));
+            } elseif ($request->order_channel === 'ecommerce') {
+                $query->where(function ($q) {
+                    $q->whereNull('created_by')
+                        ->orWhereHas('creator', fn ($q2) => $q2->where('role', 'customer'));
+                });
+            }
+        }
+
+        // Filter by customer
+        if ($request->filled('customer_id')) {
+            $query->where('customer_id', $request->customer_id);
+        }
+
+        // Filter by whether a Purchase Order has been linked to source stock for this order
+        if ($request->has('has_purchase_order')) {
+            $query->{$request->boolean('has_purchase_order') ? 'whereHas' : 'whereDoesntHave'}('purchaseOrders');
+        }
+
+        // Date range (on when the order was placed)
+        if ($request->filled('start_date')) {
+            $query->whereDate('created_at', '>=', $request->start_date);
+        }
+        if ($request->filled('end_date')) {
+            $query->whereDate('created_at', '<=', $request->end_date);
+        }
+
+        // Order total range
+        if ($request->filled('min_amount')) {
+            $query->where('total', '>=', $request->min_amount);
+        }
+        if ($request->filled('max_amount')) {
+            $query->where('total', '<=', $request->max_amount);
+        }
+
+        // Which physical unit -- matches a serial number recorded against any line item on the
+        // order (ProductSerial, assigned at fulfillment), e.g. tracing a returned/faulty unit
+        // back to the order it was sold on.
+        if ($request->filled('serial')) {
+            $serial = $request->serial;
+            $query->whereHas('items.serials', function ($q) use ($serial) {
+                $q->where('serial_number', 'like', "%{$serial}%");
+            });
+        }
+
+        // Which product/service -- matches the line item's name or SKU as it was captured on
+        // the order (not a live product lookup, so it still finds items whose product was later
+        // renamed or deleted).
+        if ($request->filled('product')) {
+            $product = $request->product;
+            $query->whereHas('items', function ($q) use ($product) {
+                $q->where('item_name', 'like', "%{$product}%")
+                    ->orWhere('item_sku', 'like', "%{$product}%");
+            });
+        }
+
+        // Product category -- via the line item's live product record (a renamed/deleted
+        // product's orders won't match here, unlike the item_name/sku search above).
+        if ($request->filled('category_id')) {
+            $categoryId = $request->category_id;
+            $query->whereHas('items.product', function ($q) use ($categoryId) {
+                $q->where('category_id', $categoryId);
+            });
+        }
+
+        // Line item type -- orders containing at least one item of this type.
+        if ($request->filled('item_type')) {
+            $itemType = $request->item_type;
+            $query->whereHas('items', function ($q) use ($itemType) {
+                $q->where('item_type', $itemType);
+            });
+        }
+
+        // Delivery location
+        if ($request->filled('division_id')) {
+            $query->where('division_id', $request->division_id);
+        }
+        if ($request->filled('district_id')) {
+            $query->where('district_id', $request->district_id);
+        }
+        if ($request->filled('area_id')) {
+            $query->where('area_id', $request->area_id);
+        }
+
+        // Search -- order number or the customer's name/phone/email as captured on the order
+        // (previously only matched order_number, despite the search box's own placeholder
+        // claiming it searched customer too).
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('order_number', 'like', "%{$search}%")
+                    ->orWhere('customer_name', 'like', "%{$search}%")
+                    ->orWhere('customer_phone', 'like', "%{$search}%")
+                    ->orWhere('customer_email', 'like', "%{$search}%");
+            });
+        }
     }
 
     // ========== TICKET MANAGEMENT ==========
@@ -1098,7 +1246,7 @@ class AdminController extends BaseController
      */
     public function payments(Request $request): JsonResponse
     {
-        $query = Order::with(['customer', 'vendorProfile', 'items', 'creator:id,name']);
+        $query = Order::with(['customer', 'vendorProfile', 'items', 'creator:id,name,role']);
 
         // Filter by payment status
         if ($request->has('payment_status')) {
@@ -1148,7 +1296,7 @@ class AdminController extends BaseController
     public function paymentUpdate(Request $request, int $id): JsonResponse
     {
         $request->validate([
-            'status' => 'required|in:pending,awaiting_confirmation,paid,verified,failed,refunded',
+            'status' => 'required|in:pending,awaiting_confirmation,paid,verified,failed,refunded,cancelled',
             'transaction_reference' => 'nullable|string|max:255',
             'notes' => 'nullable|string|max:1000',
         ]);
@@ -1193,7 +1341,7 @@ class AdminController extends BaseController
             $order->update($updateData);
             JournalEntry::reverseAllFor('Order', $order->id, "Order #{$order->order_number} payment marked refunded by admin", $admin);
             $this->restockOrderItems($order, $admin, 'Order payment refunded by admin');
-        } elseif ($wasPaidOrPartial && in_array($request->status, ['pending', 'awaiting_confirmation', 'failed'], true)) {
+        } elseif (($wasPaidOrPartial || (float) $order->paid_amount > 0) && in_array($request->status, ['pending', 'awaiting_confirmation', 'failed', 'cancelled'], true)) {
             // Revenue has already been recognized for this order — silently downgrading the status
             // label without reversing the ledger would leave the books saying "money received"
             // while the order displays as unpaid. Force the explicit refund path instead, which
@@ -1691,41 +1839,143 @@ class AdminController extends BaseController
     /**
      * List audit logs
      */
-    public function auditLogs(Request $request): JsonResponse
+    private const AUDIT_GROUPS = [
+        'created' => ['create%'],
+        'updated' => ['update%', 'upload%'],
+        'removed' => ['delete%', 'reverse%', 'reject%', 'suspend%'],
+        'auth' => ['login', 'logout'],
+    ];
+
+    public function auditLogs(Request $request): \Symfony\Component\HttpFoundation\Response
     {
-        $query = AuditLog::with('actor');
+        $request->validate([
+            'group' => 'nullable|in:created,updated,removed,auth',
+            'per_page' => 'nullable|integer|min:1|max:100',
+        ]);
 
-        // Filter by actor (user)
-        if ($request->has('user_id')) {
-            $query->where('actor_id', $request->user_id);
-        }
+        $query = AuditLog::with('actor:id,name,email,role');
+        $this->applyAuditFilters($query, $request);
 
-        // Filter by action type
-        if ($request->has('action') || $request->has('action_type')) {
-            $query->where('action_type', $request->action ?? $request->action_type);
-        }
-
-        // Filter by resource type (model type)
-        if ($request->has('model_type') || $request->has('resource_type')) {
-            $query->where('resource_type', $request->model_type ?? $request->resource_type);
-        }
-
-        // Filter by resource ID
-        if ($request->has('resource_id')) {
-            $query->where('resource_id', $request->resource_id);
-        }
-
-        // Date range
-        if ($request->has('start_date')) {
-            $query->whereDate('created_at', '>=', $request->start_date);
-        }
-        if ($request->has('end_date')) {
-            $query->whereDate('created_at', '<=', $request->end_date);
+        if ($request->input('format') === 'csv') {
+            return $this->auditLogsCsv($query);
         }
 
         $logs = $query->latest()->paginate($request->get('per_page', 20));
 
-        return $this->paginated($logs);
+        $response = $this->paginated($logs)->getData(true);
+        $response['summary'] = $this->auditSummary($request);
+        $response['options'] = $this->auditOptions();
+
+        return response()->json($response);
+    }
+
+    private function applyAuditFilters(Builder $query, Request $request): void
+    {
+        if ($request->filled('user_id')) {
+            $query->where('actor_id', $request->user_id);
+        }
+        if ($request->filled('action_type')) {
+            $query->where('action_type', $request->action_type);
+        }
+        if ($request->filled('resource_type')) {
+            $query->where('resource_type', $request->resource_type);
+        }
+        if ($request->filled('resource_id')) {
+            $query->where('resource_id', $request->resource_id);
+        }
+        if ($request->filled('group')) {
+            $query->where(function ($q) use ($request) {
+                foreach (self::AUDIT_GROUPS[$request->group] as $pattern) {
+                    $q->orWhere('action_type', 'like', $pattern);
+                }
+            });
+        }
+        if ($request->filled('start_date')) {
+            $query->whereDate('created_at', '>=', $request->start_date);
+        }
+        if ($request->filled('end_date')) {
+            $query->whereDate('created_at', '<=', $request->end_date);
+        }
+        if ($request->filled('search')) {
+            $term = '%' . addcslashes($request->search, '%_\\') . '%';
+            $query->where(function ($q) use ($request, $term) {
+                $q->where('description', 'like', $term)
+                    ->orWhere('action_type', 'like', $term)
+                    ->orWhere('resource_type', 'like', $term)
+                    ->orWhere('ip_address', 'like', $term)
+                    ->orWhereHas('actor', fn ($a) => $a->where('name', 'like', $term)->orWhere('email', 'like', $term));
+                if (ctype_digit((string) $request->search)) {
+                    $q->orWhere('resource_id', (int) $request->search);
+                }
+            });
+        }
+    }
+
+    private function auditSummary(Request $request): array
+    {
+        $query = AuditLog::query();
+        $this->applyAuditFilters($query, $request);
+
+        $totals = $query->selectRaw("
+            COUNT(*) AS total,
+            COUNT(DISTINCT actor_id) AS users,
+            SUM(CASE WHEN action_type LIKE 'create%' THEN 1 ELSE 0 END) AS created,
+            SUM(CASE WHEN action_type LIKE 'update%' OR action_type LIKE 'upload%' THEN 1 ELSE 0 END) AS updated,
+            SUM(CASE WHEN action_type LIKE 'delete%' OR action_type LIKE 'reverse%' OR action_type LIKE 'reject%' OR action_type LIKE 'suspend%' THEN 1 ELSE 0 END) AS removed,
+            SUM(CASE WHEN action_type IN ('login', 'logout') THEN 1 ELSE 0 END) AS auth
+        ")->first();
+
+        return [
+            'total' => (int) $totals->total,
+            'users' => (int) $totals->users,
+            'created' => (int) $totals->created,
+            'updated' => (int) $totals->updated,
+            'removed' => (int) $totals->removed,
+            'auth' => (int) $totals->auth,
+        ];
+    }
+
+    private function auditOptions(): array
+    {
+        $actorIds = AuditLog::query()->whereNotNull('actor_id')->distinct()->pluck('actor_id');
+
+        return [
+            'actions' => AuditLog::query()->distinct()->orderBy('action_type')->pluck('action_type')->values(),
+            'resource_types' => AuditLog::query()->whereNotNull('resource_type')->distinct()->orderBy('resource_type')->pluck('resource_type')->values(),
+            'actors' => User::whereIn('id', $actorIds)->orderBy('name')->get(['id', 'name', 'role']),
+        ];
+    }
+
+    private function auditLogsCsv(Builder $query): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        $filename = 'audit-logs-' . now()->format('Y-m-d_His') . '.csv';
+        $headers = [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ];
+
+        $callback = function () use ($query) {
+            $file = fopen('php://output', 'w');
+            fprintf($file, chr(0xEF) . chr(0xBB) . chr(0xBF));
+            fputcsv($file, ['Time', 'User', 'Email', 'Action', 'Resource', 'Resource ID', 'Description', 'IP address', 'Old values', 'New values']);
+            foreach ((clone $query)->with('actor:id,name,email')->latest()->lazy(500) as $log) {
+                fputcsv($file, [
+                    $log->created_at?->format('Y-m-d H:i:s'),
+                    $log->actor?->name,
+                    $log->actor?->email,
+                    $log->action_type,
+                    $log->resource_type,
+                    $log->resource_id,
+                    $log->description,
+                    $log->ip_address,
+                    $log->old_values ? json_encode($log->old_values) : null,
+                    $log->new_values ? json_encode($log->new_values) : null,
+                ]);
+            }
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
     }
 
     // ========== ENHANCED ORDER MANAGEMENT ==========
@@ -1740,6 +1990,7 @@ class AdminController extends BaseController
             'vendorProfile',
             'items.product',
             'items.service',
+            'items.problemType',
             'items.costs',
             'items.serials',
             'paymentNotices',
@@ -1749,7 +2000,7 @@ class AdminController extends BaseController
             'area',
             'tickets',
             'serviceIntake.items',
-            'creator:id,name',
+            'creator:id,name,role',
             'purchaseOrders.items:id,purchase_order_id,product_id',
         ])->findOrFail($id);
 
@@ -1820,6 +2071,7 @@ class AdminController extends BaseController
                 'items.*.notes'      => 'nullable|string|max:500',
                 'items.*.serials'    => 'nullable|array',
                 'items.*.serials.*'  => 'nullable|string|max:191',
+                'items.*.problem_type_id' => 'nullable|exists:service_problem_types,id',
             ];
         }
 
@@ -1914,6 +2166,7 @@ class AdminController extends BaseController
                         'warranty_unit'  => $item['warranty_unit'] ?? $product?->warranty_unit,
                         'total_price' => $item['unit_price'] * $item['quantity'],
                         'notes'       => $item['notes'] ?? null,
+                        'problem_type_id' => $item['problem_type_id'] ?? null,
                     ]);
 
                     if ($product) {
@@ -1951,7 +2204,7 @@ class AdminController extends BaseController
 
             DB::commit();
 
-            $order->load(['customer', 'vendorProfile', 'items.product', 'items.service', 'division', 'district', 'area']);
+            $order->load(['customer', 'vendorProfile', 'items.product', 'items.service', 'items.problemType', 'division', 'district', 'area']);
 
             return $this->success(new OrderResource($order), 'Order updated successfully');
         } catch (\Exception $e) {
@@ -2089,6 +2342,11 @@ class AdminController extends BaseController
         if ($shouldReverseRevenue) {
             $updateData['payment_status'] = 'refunded';
             $updateData['refund_amount'] = $order->paid_amount;
+        } elseif ($newStatus === 'cancelled' && $oldStatus !== $newStatus && !$wasPaidOrPartial) {
+            // Never had any payment recognized (pending/awaiting_confirmation/failed) -- the
+            // payment itself is cancelled too, not left dangling at its pre-cancel status
+            // forever (this is the "still shows pending payment after cancel" bug fix).
+            $updateData['payment_status'] = 'cancelled';
         }
 
         $order->update($updateData);
@@ -2444,37 +2702,22 @@ class AdminController extends BaseController
      */
     public function orderExport(Request $request)
     {
-        $query = Order::with(['customer', 'vendorProfile', 'items']);
+        $query = Order::with(['customer', 'vendorProfile', 'items', 'creator:id,name,role']);
 
-        // Apply same filters as order listing
-        if ($request->has('status')) {
-            $query->where('order_status', $request->status);
-        }
-        if ($request->has('payment_status')) {
-            $query->where('payment_status', $request->payment_status);
-        }
-        if ($request->has('vendor_id')) {
-            $query->where('vendor_profile_id', $request->vendor_id);
-        }
-        if ($request->has('start_date')) {
-            $query->whereDate('created_at', '>=', $request->start_date);
-        }
-        if ($request->has('end_date')) {
-            $query->whereDate('created_at', '<=', $request->end_date);
-        }
-        if ($request->has('search')) {
-            $query->where('order_number', 'like', "%{$request->search}%");
-        }
+        // Same filters as the order listing (see applyOrderFilters()) so an export always
+        // matches exactly what's on screen.
+        $this->applyOrderFilters($query, $request);
 
         $orders = $query->latest()->get();
 
         $csvData = [];
-        $csvData[] = ['Order #', 'Date', 'Customer', 'Customer Phone', 'Vendor', 'Status', 'Payment Status', 'Payment Method', 'Subtotal', 'Tax', 'Shipping', 'Discount', 'Total'];
+        $csvData[] = ['Order #', 'Date', 'Channel', 'Customer', 'Customer Phone', 'Vendor', 'Status', 'Payment Status', 'Payment Method', 'Subtotal', 'Tax', 'Shipping', 'Discount', 'Total'];
 
         foreach ($orders as $order) {
             $csvData[] = [
                 $order->order_number,
                 $order->created_at->format('Y-m-d H:i'),
+                $order->isManualOrder() ? 'Manual' : 'Ecommerce',
                 $order->customer?->name ?? $order->customer_name,
                 $order->customer_phone,
                 $order->vendorProfile?->business_name ?? 'N/A',
@@ -2828,9 +3071,9 @@ class AdminController extends BaseController
     {
         $query = Service::with(['category', 'vendorProfile', 'creator:id,name']);
 
-        // Filter by category
+        // Filter by category — a parent category includes everything nested under it
         if ($request->has('category_id')) {
-            $query->where('category_id', $request->category_id);
+            $query->whereIn('category_id', $this->categoryDescendantIds((int) $request->category_id));
         }
 
         // Filter by vendor
@@ -2873,7 +3116,29 @@ class AdminController extends BaseController
 
         $services = $query->paginate($request->get('per_page', 15));
 
-        return $this->paginated($services);
+        $response = $this->paginated($services)->getData(true);
+        $totals = Service::selectRaw('
+            COUNT(*) AS total,
+            SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) AS active,
+            SUM(CASE WHEN is_featured = 1 THEN 1 ELSE 0 END) AS featured
+        ')->first();
+        $response['summary'] = [
+            'total' => (int) $totals->total,
+            'active' => (int) $totals->active,
+            'inactive' => (int) $totals->total - (int) $totals->active,
+            'featured' => (int) $totals->featured,
+        ];
+
+        return response()->json($response);
+    }
+
+    private function categoryDescendantIds(int $categoryId): array
+    {
+        $ids = [$categoryId];
+        foreach (ServiceCategory::where('parent_id', $categoryId)->pluck('id') as $childId) {
+            $ids = array_merge($ids, $this->categoryDescendantIds($childId));
+        }
+        return $ids;
     }
 
     /**
@@ -3148,6 +3413,16 @@ class AdminController extends BaseController
         $query->orderBy($sortBy, $sortOrder);
 
         $products = $query->paginate($request->get('per_page', 15));
+
+        // Without this, paginated() below JSON-encodes the raw Eloquent models -- and
+        // products.brand is BOTH a real (deprecated, legacy) column AND the name of the brand()
+        // relation eager-loaded above. Model::toArray() merges loaded relations over raw
+        // attributes when their keys collide, so the plain model's own "brand" key silently
+        // becomes the *entire nested ProductBrand array* instead of the legacy string -- and
+        // brand_name/brand_details (computed only inside ProductResource) never appear at all.
+        // Transforming through ProductResource here is what actually produces the fields the
+        // frontend expects, exactly as adminProductShow()/adminProductStore() already do.
+        $products->getCollection()->transform(fn ($product) => new ProductResource($product));
 
         return $this->paginated($products);
     }

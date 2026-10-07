@@ -1,13 +1,10 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { Search, Eye, Edit2, Trash2, Plus, Users as UsersIcon, UserCheck, UserX, Shield, KeyRound, Flame } from 'lucide-react';
+import { Search, Eye, Edit2, Trash2, Plus, Users as UsersIcon, UserCheck, UserX, Shield, KeyRound, Flame, X } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
-import {
-  Card, CardContent, CardHeader, CardTitle, Button, Input, Select,
-  Modal, Badge, LoadingSpinner, Pagination, EmptyState, ErrorState, ConfirmModal,
-} from '@/components/ui';
-import { User, Role, PaginatedResponse } from '@/types';
+import { Button, Input, Select, Modal, LoadingSpinner, Pagination, EmptyState, ErrorState, ConfirmModal } from '@/components/ui';
+import { User, Role } from '@/types';
 import { formatDate, getErrorMessage } from '@/lib/utils';
 import adminService from '@/lib/adminService';
 import { useAuthStore } from '@/store/auth';
@@ -35,6 +32,40 @@ const USER_TABS = [
 ] as const;
 type UserTabKey = (typeof USER_TABS)[number]['key'];
 
+const ROLE_TONE: Record<string, string> = {
+  super_admin: 'bg-rose-50 text-rose-700 border-rose-200',
+  admin: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  staff: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  vendor: 'bg-amber-50 text-amber-700 border-amber-200',
+  customer: 'bg-gray-50 text-gray-600 border-gray-200',
+};
+const CUSTOM_ROLE_TONE = 'bg-violet-50 text-violet-700 border-violet-200';
+
+const STATUS_TONE: Record<string, { chip: string; dot: string }> = {
+  active: { chip: 'bg-emerald-50 text-emerald-700 border-emerald-200', dot: 'bg-emerald-500' },
+  suspended: { chip: 'bg-rose-50 text-rose-700 border-rose-200', dot: 'bg-rose-500' },
+  inactive: { chip: 'bg-gray-50 text-gray-600 border-gray-200', dot: 'bg-gray-400' },
+};
+
+function RoleChip({ role }: { role: string }) {
+  const tone = TIER_ROLE_NAMES.includes(role) ? ROLE_TONE[role] : CUSTOM_ROLE_TONE;
+  return (
+    <span className={`inline-flex whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold capitalize ${tone}`}>
+      {role.replace(/_/g, ' ')}
+    </span>
+  );
+}
+
+function StatusChip({ status }: { status: string }) {
+  const tone = STATUS_TONE[status] ?? STATUS_TONE.inactive;
+  return (
+    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-semibold capitalize ${tone.chip}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${tone.dot}`} />
+      {status}
+    </span>
+  );
+}
+
 export default function UsersPage() {
   const currentUser = useAuthStore((s) => s.user);
   const isSuperAdmin = currentUser?.role === 'super_admin';
@@ -43,11 +74,13 @@ export default function UsersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(false);
   const [activeTab, setActiveTab] = useState<UserTabKey>('customers');
+  const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterRole, setFilterRole] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
 
   // All Spatie roles — the tier ones plus any custom roles created on the Roles page, combined
   // into a single flat dropdown wherever a user's role is picked (see roleSelectOptions below).
@@ -79,6 +112,15 @@ export default function UsersPage() {
     ...allRoles.filter((r) => !TIER_ROLE_NAMES.includes(r.name)).map((r) => ({ value: r.name, label: r.name })),
   ];
 
+  // Debounce typing so each keystroke doesn't fire a request; any new search starts at page 1.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchQuery(searchInput.trim());
+      setCurrentPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
   const fetchUsers = useCallback(async () => {
     setIsLoading(true);
     setError(false);
@@ -96,9 +138,11 @@ export default function UsersPage() {
       if (Array.isArray(data)) {
         setUsers(data);
         setTotalPages(1);
+        setTotalCount(data.length);
       } else {
         setUsers(data.data);
         setTotalPages(data.meta?.last_page || 1);
+        setTotalCount(data.meta?.total ?? data.data.length);
       }
     } catch (err) {
       console.error('Error fetching users:', err);
@@ -122,7 +166,14 @@ export default function UsersPage() {
     setCurrentPage(1);
   };
 
-  const handleSearch = () => { setCurrentPage(1); fetchUsers(); };
+  const clearFilters = () => {
+    setSearchInput('');
+    setFilterRole('');
+    setFilterStatus('');
+    setCurrentPage(1);
+  };
+
+  const hasFilters = !!searchInput || !!filterRole || !!filterStatus;
 
   const openCreateModal = () => {
     setSelectedUser(null);
@@ -254,37 +305,31 @@ export default function UsersPage() {
     }
   };
 
-  const getRoleBadge = (role: string) => {
-    const colors: Record<string, 'success' | 'warning' | 'info' | 'default' | 'danger'> = {
-      super_admin: 'danger', admin: 'info', staff: 'success', vendor: 'warning', customer: 'default',
-    };
-    return <Badge variant={colors[role] || 'default'}>{role.replace('_', ' ')}</Badge>;
-  };
-
   if (error && users.length === 0) {
     return (<AdminLayout><ErrorState title="Failed to load users" onRetry={fetchUsers} /></AdminLayout>);
   }
 
   return (
     <AdminLayout>
-      <div className="page-header flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="page-title">Users</h1>
-          <p className="page-description">Manage all users and their access</p>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <h1 className="text-lg font-bold text-gray-900">Users</h1>
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-600">
+            {totalCount.toLocaleString()} in this view
+          </span>
         </div>
-        <Button onClick={openCreateModal}><Plus className="w-4 h-4 mr-2" />Add User</Button>
+        <Button size="sm" onClick={openCreateModal} leftIcon={<Plus className="h-3.5 w-3.5" />}>Add user</Button>
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-gray-200 mb-6">
+      <div className="mb-3 inline-flex rounded-lg border border-gray-200 bg-white p-0.5">
         {USER_TABS.map((tab) => (
           <button
             key={tab.key}
+            type="button"
             onClick={() => handleTabChange(tab.key)}
-            className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-              activeTab === tab.key
-                ? 'border-primary-600 text-primary-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+              activeTab === tab.key ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-50'
             }`}
           >
             {tab.label}
@@ -292,100 +337,123 @@ export default function UsersPage() {
         ))}
       </div>
 
-      <Card className="mb-6">
-        <CardContent className="p-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <Input placeholder="Search users..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} className="pl-10" />
-            </div>
-            {activeTab === 'staff' && (
-              <Select
-                options={[{ value: '', label: 'All Staff & Admins' }, ...ROLE_OPTIONS.filter((r) => ['staff', 'admin', 'super_admin'].includes(r.value))]}
-                value={filterRole}
-                onChange={(e) => { setFilterRole(e.target.value); setCurrentPage(1); }}
-              />
-            )}
-            <Select options={[{ value: '', label: 'All Status' }, { value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }, { value: 'suspended', label: 'Suspended' }]} value={filterStatus} onChange={(e) => { setFilterStatus(e.target.value); setCurrentPage(1); }} />
-            <Button onClick={handleSearch}>Search</Button>
+      {/* Filters */}
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white p-3">
+        <div className="relative min-w-[240px] flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+          <input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search name, email or phone…"
+            className="h-8 w-full rounded-lg border border-gray-300 pl-8 pr-3 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+        {activeTab === 'staff' && (
+          <div className="w-44">
+            <Select
+              options={[{ value: '', label: 'All staff & admins' }, ...ROLE_OPTIONS.filter((r) => ['staff', 'admin', 'super_admin'].includes(r.value))]}
+              value={filterRole}
+              onChange={(e) => { setFilterRole(e.target.value); setCurrentPage(1); }}
+            />
           </div>
-        </CardContent>
-      </Card>
+        )}
+        <div className="w-40">
+          <Select
+            options={[{ value: '', label: 'All statuses' }, { value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }, { value: 'suspended', label: 'Suspended' }]}
+            value={filterStatus}
+            onChange={(e) => { setFilterStatus(e.target.value); setCurrentPage(1); }}
+          />
+        </div>
+        {hasFilters && (
+          <Button variant="ghost" size="sm" onClick={clearFilters} leftIcon={<X className="h-3.5 w-3.5" />}>Clear</Button>
+        )}
+      </div>
 
-      <Card>
-        <CardHeader><CardTitle>{USER_TABS.find((t) => t.key === activeTab)?.label}</CardTitle></CardHeader>
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-12"><LoadingSpinner size="lg" text="Loading users..." /></div>
-          ) : users.length === 0 ? (
-            <EmptyState icon={<UsersIcon className="w-8 h-8 text-gray-400" />} title="No users found" />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-y">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Joined</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {users.map((user) => (
-                    <tr key={user.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4">
-                        <div>
-                          <p className="font-medium">{user.name}</p>
-                          <p className="text-sm text-gray-500">{user.email}</p>
-                          {user.phone && <p className="text-xs text-gray-400">{user.phone}</p>}
+      {/* Table */}
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        {isLoading && users.length === 0 ? (
+          <div className="flex items-center justify-center py-12"><LoadingSpinner size="lg" text="Loading users..." /></div>
+        ) : users.length === 0 ? (
+          <EmptyState
+            icon={<UsersIcon className="w-8 h-8 text-gray-400" />}
+            title={hasFilters ? 'No users match these filters' : 'No users in this view'}
+            description={hasFilters ? 'Clear the filters to see everyone.' : undefined}
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-3 py-2 text-left font-semibold">User</th>
+                  <th className="px-3 py-2 text-left font-semibold">Role</th>
+                  <th className="px-3 py-2 text-left font-semibold">Status</th>
+                  <th className="whitespace-nowrap px-3 py-2 text-left font-semibold">Joined</th>
+                  <th className="px-3 py-2 text-right font-semibold">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {users.map((user, i) => {
+                  const isSelf = user.id === currentUser?.id;
+                  // Any admin-tier viewer can manage a peer 'admin' row; only a super_admin
+                  // can manage a super_admin row (matches the backend's own guard).
+                  const canManage = isSuperAdmin || user.role !== 'super_admin';
+                  return (
+                    <tr key={user.id} className={`${i % 2 ? 'bg-slate-50/40' : 'bg-white'} hover:bg-indigo-50/40`}>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2.5">
+                          <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700">
+                            {user.name.charAt(0).toUpperCase()}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="flex items-center gap-1.5 truncate font-semibold text-gray-900">
+                              {user.name}
+                              {isSelf && <span className="rounded bg-indigo-600 px-1.5 py-px text-[10px] font-bold uppercase tracking-wide text-white">You</span>}
+                            </p>
+                            <p className="truncate text-xs text-gray-500">
+                              {user.email || 'No email'}{user.phone ? ` · ${user.phone}` : ''}
+                            </p>
+                          </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4">{getRoleBadge(effectiveRole(user))}</td>
-                      <td className="px-6 py-4">
-                        <Badge variant={user.status === 'active' ? 'success' : user.status === 'suspended' ? 'danger' : 'default'}>
-                          {user.status}
-                        </Badge>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-500">{formatDate(user.created_at)}</td>
-                      <td className="px-6 py-4">
-                        {(() => {
-                          const isSelf = user.id === currentUser?.id;
-                          // Any admin-tier viewer can manage a peer 'admin' row; only a super_admin
-                          // can manage a super_admin row (matches the backend's own guard).
-                          const canManage = isSuperAdmin || user.role !== 'super_admin';
-                          return (
-                            <div className="flex items-center justify-end gap-1">
-                              <Button variant="ghost" size="sm" title="View" onClick={() => openViewModal(user)}><Eye className="w-4 h-4" /></Button>
-                              {canManage && (
+                      <td className="px-3 py-2"><RoleChip role={effectiveRole(user)} /></td>
+                      <td className="px-3 py-2"><StatusChip status={user.status} /></td>
+                      <td className="whitespace-nowrap px-3 py-2 text-xs tabular-nums text-gray-600">{formatDate(user.created_at)}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center justify-end gap-0.5">
+                          <Button variant="ghost" size="sm" title="View" onClick={() => openViewModal(user)}><Eye className="w-4 h-4" /></Button>
+                          {canManage && (
+                            <>
+                              <Button variant="ghost" size="sm" title="Edit" onClick={() => openEditModal(user)}><Edit2 className="w-4 h-4 text-gray-500" /></Button>
+                              <Button variant="ghost" size="sm" title="Reset password" onClick={() => openResetPassword(user)}><KeyRound className="w-4 h-4 text-blue-500" /></Button>
+                              {!isSelf && (
                                 <>
-                                  <Button variant="ghost" size="sm" title="Edit" onClick={() => openEditModal(user)}><Edit2 className="w-4 h-4 text-gray-500" /></Button>
-                                  <Button variant="ghost" size="sm" title="Reset Password" onClick={() => openResetPassword(user)}><KeyRound className="w-4 h-4 text-blue-500" /></Button>
                                   <Button variant="ghost" size="sm" title={user.status === 'active' ? 'Suspend' : 'Activate'} onClick={() => openStatusModal(user)}>
                                     {user.status === 'active' ? <UserX className="w-4 h-4 text-red-500" /> : <UserCheck className="w-4 h-4 text-green-500" />}
                                   </Button>
-                                  {!isSelf && (
-                                    <Button variant="ghost" size="sm" title="Delete" onClick={() => openDelete(user)}><Trash2 className="w-4 h-4 text-red-500" /></Button>
-                                  )}
-                                  {!isSelf && isSuperAdmin && (
-                                    <Button variant="ghost" size="sm" title="Permanently delete" onClick={() => openForceDelete(user)}><Flame className="w-4 h-4 text-red-700" /></Button>
-                                  )}
+                                  <Button variant="ghost" size="sm" title="Delete" onClick={() => openDelete(user)}><Trash2 className="w-4 h-4 text-red-500" /></Button>
                                 </>
                               )}
-                            </div>
-                          );
-                        })()}
+                              {!isSelf && isSuperAdmin && (
+                                <Button variant="ghost" size="sm" title="Permanently delete" onClick={() => openForceDelete(user)}><Flame className="w-4 h-4 text-red-700" /></Button>
+                              )}
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
-      {totalPages > 1 && <div className="mt-6"><Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} /></div>}
+      {totalPages > 1 && (
+        <div className="mt-3 flex justify-end">
+          <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
+        </div>
+      )}
 
       {/* Create User Modal */}
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Create New User" size="lg">
@@ -532,8 +600,8 @@ export default function UsersPage() {
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-lg">
-              <div><p className="text-xs text-gray-500">Role</p>{getRoleBadge(effectiveRole(selectedUser))}</div>
-              <div><p className="text-xs text-gray-500">Status</p><Badge variant={selectedUser.status === 'active' ? 'success' : 'danger'}>{selectedUser.status}</Badge></div>
+              <div><p className="text-xs text-gray-500">Role</p><RoleChip role={effectiveRole(selectedUser)} /></div>
+              <div><p className="text-xs text-gray-500">Status</p><StatusChip status={selectedUser.status} /></div>
               <div><p className="text-xs text-gray-500">Phone</p><p className="text-sm">{selectedUser.phone || '-'}</p></div>
               <div><p className="text-xs text-gray-500">Joined</p><p className="text-sm">{formatDate(selectedUser.created_at)}</p></div>
             </div>

@@ -164,7 +164,7 @@ export default function GeneralFeedbackKioskPage() {
           <p className="text-white/60 text-sm sm:text-base">We appreciate you sharing your experience with us.</p>
         </div>
       ) : (
-        <div className="relative max-w-lg w-full flex flex-col items-center">
+        <div className="relative max-w-lg xl:max-w-4xl w-full flex flex-col items-center">
           <ProgressDots step={step} />
 
           {step === 1 && (
@@ -175,9 +175,9 @@ export default function GeneralFeedbackKioskPage() {
                 <HandRaisedIcon className="h-5 w-5 sm:h-6 sm:w-6 animate-bounce" />
                 <span className="text-xs sm:text-sm font-semibold tracking-wide uppercase">Tap to begin</span>
               </div>
-              <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-white mb-1">How was your visit today?</h1>
-              <p className="text-white/50 text-sm mb-8 sm:mb-10">Tap a face to rate your experience</p>
-              <div className="relative flex items-center justify-center gap-1.5 sm:gap-3 md:gap-4" role="radiogroup" aria-label="Overall rating">
+              <h1 className="text-xl sm:text-2xl md:text-3xl xl:text-5xl font-bold text-white mb-1">How was your visit today?</h1>
+              <p className="text-white/50 text-sm xl:text-lg mb-8 sm:mb-10 xl:mb-14">Tap a face to rate your experience</p>
+              <div className="relative flex items-center justify-center gap-1.5 sm:gap-3 md:gap-4 xl:gap-8" role="radiogroup" aria-label="Overall rating">
                 <div className="absolute inset-0 -z-10 rounded-full bg-amber-400/10 blur-2xl animate-pulse" aria-hidden="true" />
                 {FACES.map((f) => (
                   <button
@@ -187,7 +187,7 @@ export default function GeneralFeedbackKioskPage() {
                     aria-checked={rating === f.value}
                     aria-label={f.label}
                     onClick={() => pickRating(f.value)}
-                    className={`h-12 w-12 sm:h-16 sm:w-16 md:h-20 md:w-20 rounded-full flex items-center justify-center text-2xl sm:text-3xl md:text-4xl transition-all duration-200 touch-manipulation flex-shrink-0 ${
+                    className={`h-12 w-12 sm:h-16 sm:w-16 md:h-20 md:w-20 xl:h-32 xl:w-32 rounded-full flex items-center justify-center text-2xl sm:text-3xl md:text-4xl xl:text-6xl transition-all duration-200 touch-manipulation flex-shrink-0 ${
                       rating === f.value ? 'bg-amber-400 scale-110' : 'bg-white/10 hover:bg-white/15 active:scale-95'
                     }`}
                   >
@@ -200,12 +200,12 @@ export default function GeneralFeedbackKioskPage() {
 
           {step === 2 && (
             <div key={2} className="fade-in w-full text-center">
-              <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-white mb-8 sm:mb-10 px-2">Would you recommend us to a friend?</h1>
-              <div className="flex items-center justify-center gap-3 sm:gap-4">
+              <h1 className="text-xl sm:text-2xl md:text-3xl xl:text-5xl font-bold text-white mb-8 sm:mb-10 xl:mb-14 px-2">Would you recommend us to a friend?</h1>
+              <div className="flex items-center justify-center gap-3 sm:gap-4 xl:gap-8">
                 <button
                   type="button"
                   onClick={() => pickRecommend(true)}
-                  className={`flex flex-col items-center gap-2 px-6 sm:px-10 py-5 sm:py-7 rounded-2xl transition-all duration-200 touch-manipulation ${
+                  className={`flex flex-col items-center gap-2 px-6 sm:px-10 xl:px-16 py-5 sm:py-7 xl:py-10 rounded-2xl transition-all duration-200 touch-manipulation ${
                     wouldRecommend === true ? 'bg-amber-400 text-ink' : 'bg-white/10 text-white hover:bg-white/15 active:scale-95'
                   }`}
                 >

@@ -43,6 +43,8 @@ class ScrapedProduct extends Model
         'warranty_value',
         'warranty_unit',
         'status',
+        'last_ingest_action',
+        'last_ingested_at',
         'promoted_product_id',
         'reject_reason',
         'reviewed_by',
@@ -58,6 +60,7 @@ class ScrapedProduct extends Model
         'gallery' => 'array',
         'specifications' => 'array',
         'reviewed_at' => 'datetime',
+        'last_ingested_at' => 'datetime',
     ];
 
     public function category(): BelongsTo

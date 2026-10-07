@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\PermissionGrant;
 use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -25,7 +26,16 @@ class RoleController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Role::withCount('permissions')->with('permissions:id,name');
+        // users_count via a direct subquery on the pivot — Role::users() isn't usable here. Joins
+        // users so soft-deleted accounts (and orphaned pivot rows) aren't counted.
+        $query = Role::withCount('permissions')
+            ->addSelect(['users_count' => DB::table('model_has_roles')
+                ->join('users', 'users.id', '=', 'model_has_roles.model_id')
+                ->selectRaw('COUNT(*)')
+                ->whereColumn('model_has_roles.role_id', 'roles.id')
+                ->where('model_has_roles.model_type', \App\Models\User::class)
+                ->whereNull('users.deleted_at')])
+            ->with('permissions:id,name');
 
         // Search
         if ($request->has('search')) {
@@ -77,6 +87,11 @@ class RoleController extends Controller
 
         if ($validator->fails()) {
             return $this->error('Validation failed', 422, $validator->errors());
+        }
+
+        $missing = PermissionGrant::missingFor($request->user(), Permission::whereIn('id', $request->permissions ?? [])->get());
+        if ($missing) {
+            return $this->error(PermissionGrant::message($missing), 403);
         }
 
         // Prevent creating roles with protected names
@@ -137,6 +152,13 @@ class RoleController extends Controller
 
         if ($validator->fails()) {
             return $this->error('Validation failed', 422, $validator->errors());
+        }
+
+        if ($request->has('permissions')) {
+            $missing = PermissionGrant::missingFor($request->user(), Permission::whereIn('id', $request->permissions)->get());
+            if ($missing) {
+                return $this->error(PermissionGrant::message($missing), 403);
+            }
         }
 
         // Prevent renaming a *different* role to a protected name (name-collision squatting).
@@ -219,6 +241,15 @@ class RoleController extends Controller
         $user = \App\Models\User::find($request->user_id);
         $role = Role::find($request->role_id);
 
+        if ($user->id === $request->user()->id) {
+            return $this->error('Cannot change your own roles', 400);
+        }
+
+        $missing = PermissionGrant::missingFor($request->user(), $role->permissions);
+        if ($missing) {
+            return $this->error(PermissionGrant::message($missing), 403);
+        }
+
         // Check if user already has this role
         if ($user->hasRole($role->name)) {
             return $this->error('User already has this role', 422);
@@ -249,6 +280,10 @@ class RoleController extends Controller
 
         $user = \App\Models\User::find($request->user_id);
         $role = Role::find($request->role_id);
+
+        if ($user->id === $request->user()->id) {
+            return $this->error('Cannot change your own roles', 400);
+        }
 
         // Check if user has this role
         if (!$user->hasRole($role->name)) {
@@ -286,6 +321,15 @@ class RoleController extends Controller
 
         $user = \App\Models\User::find($request->user_id);
         $roles = Role::whereIn('id', $request->role_ids)->get();
+
+        if ($user->id === $request->user()->id) {
+            return $this->error('Cannot change your own roles', 400);
+        }
+
+        $missing = PermissionGrant::missingFor($request->user(), $roles->flatMap(fn ($role) => $role->permissions)->unique('id')->values());
+        if ($missing) {
+            return $this->error(PermissionGrant::message($missing), 403);
+        }
 
         $user->syncRoles($roles);
 

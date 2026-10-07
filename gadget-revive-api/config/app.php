@@ -75,6 +75,12 @@ return [
     'frontend_url' => env('STOREFRONT_URL', 'https://gadgetandrevive.com'),
 
     /*
+    | Admin panel base URL — used to build links printed on documents (QR codes on invoices,
+    | receipts and chalans) that open an order in the admin.
+    */
+    'admin_url' => env('ADMIN_URL', 'https://admin.gadgetandrevive.com'),
+
+    /*
     |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------

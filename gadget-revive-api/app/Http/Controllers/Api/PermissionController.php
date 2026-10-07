@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\PermissionGrant;
 use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -222,6 +223,11 @@ class PermissionController extends Controller
         $role = Role::find($request->role_id);
         $permission = Permission::find($request->permission_id);
 
+        $missing = PermissionGrant::missingFor($request->user(), collect([$permission]));
+        if ($missing) {
+            return $this->error(PermissionGrant::message($missing), 403);
+        }
+
         // Check if role already has this permission
         if ($role->hasPermissionTo($permission->name)) {
             return $this->error('Role already has this permission', 422);
@@ -284,6 +290,11 @@ class PermissionController extends Controller
 
         $role = Role::find($request->role_id);
         $permissions = Permission::whereIn('id', $request->permission_ids)->get();
+
+        $missing = PermissionGrant::missingFor($request->user(), $permissions);
+        if ($missing) {
+            return $this->error(PermissionGrant::message($missing), 403);
+        }
 
         $role->syncPermissions($permissions);
 

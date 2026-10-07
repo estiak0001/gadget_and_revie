@@ -1,12 +1,10 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Search, Star, ThumbsUp, ThumbsDown, Eye, Trash2, CheckCircle, XCircle, Flag, MessageSquare, Package, ExternalLink, Copy, Monitor } from 'lucide-react';
+import { Search, Star, ThumbsUp, ThumbsDown, Eye, Trash2, CheckCircle, XCircle, Flag, MessageSquare, Package, ExternalLink, Copy, Monitor, X } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
-import {
-  Card, CardContent, CardHeader, CardTitle, Button, Input, Select, Modal,
-  Badge, Pagination, LoadingSpinner, EmptyState, ErrorState, ConfirmModal,
-} from '@/components/ui';
+import { Button, Modal, Badge, Pagination, LoadingSpinner, EmptyState, ErrorState, ConfirmModal } from '@/components/ui';
+import { KpiTile, Panel } from '@/components/reports/shared';
 import { formatDateTime, getErrorMessage } from '@/lib/utils';
 import adminService from '@/lib/adminService';
 import toast from 'react-hot-toast';
@@ -23,8 +21,8 @@ interface Review {
 }
 
 const REVIEW_TABS = [
-  { value: 'order', label: 'Order & Product Reviews' },
-  { value: 'general', label: 'Walk-in Kiosk Feedback' },
+  { value: 'order', label: 'Order & product reviews' },
+  { value: 'general', label: 'Walk-in kiosk feedback' },
 ] as const;
 type ReviewTab = (typeof REVIEW_TABS)[number]['value'];
 
@@ -32,6 +30,8 @@ const REVIEW_STATUSES = [
   { value: 'pending', label: 'Pending', color: 'warning' }, { value: 'approved', label: 'Approved', color: 'success' },
   { value: 'rejected', label: 'Rejected', color: 'danger' }, { value: 'hidden', label: 'Hidden', color: 'danger' },
 ];
+
+const SELECT = 'h-8 rounded-lg border border-gray-300 bg-white px-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500';
 
 export default function ReviewsPage() {
   const [activeTab, setActiveTab] = useState<ReviewTab>('order');
@@ -134,8 +134,12 @@ export default function ReviewsPage() {
     }
   };
 
-  const renderStars = (rating: number) => (
-    <div className="flex items-center gap-0.5">{Array.from({ length: 5 }).map((_, i) => (<Star key={i} className={`w-4 h-4 ${i < rating ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'}`} />))}</div>
+  const renderStars = (rating: number, size = 'h-3.5 w-3.5') => (
+    <div className="flex items-center gap-0.5">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <Star key={i} className={`${size} ${i < rating ? 'fill-amber-400 text-amber-400' : 'text-gray-300'}`} />
+      ))}
+    </div>
   );
 
   const avgRating = reviews.length > 0 ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1) : '0.0';
@@ -143,6 +147,8 @@ export default function ReviewsPage() {
   const neutral = reviews.filter(r => r.rating === 3).length;
   const negative = reviews.filter(r => r.rating <= 2).length;
   const pending = reviews.filter(r => r.status === 'pending').length;
+  const filtered = !!searchQuery || !!filterStatus || !!filterRating;
+  const guestLabel = activeTab === 'general' ? 'Walk-in customer' : 'Guest customer';
 
   if (error && reviews.length === 0) {
     return (<AdminLayout><ErrorState title="Failed to load reviews" onRetry={fetchReviews} /></AdminLayout>);
@@ -150,170 +156,226 @@ export default function ReviewsPage() {
 
   return (
     <AdminLayout>
-      <div className="page-header"><h1 className="page-title">Reviews & Ratings</h1><p className="page-description">Approve customer feedback so it appears on the storefront</p></div>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <h1 className="text-lg font-bold text-gray-900">Reviews & ratings</h1>
+          <span className="text-[11px] text-gray-500">Approve feedback so it appears on the storefront</span>
+        </div>
+        <div className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5">
+          {REVIEW_TABS.map((tab) => (
+            <button
+              key={tab.value}
+              type="button"
+              onClick={() => handleTabChange(tab.value)}
+              className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${activeTab === tab.value ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
-      <Card className="mb-6 border-yellow-200 bg-yellow-50/40">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base"><Monitor className="w-4 h-4" />Collect Feedback From a Walk-in Customer</CardTitle>
-        </CardHeader>
-        <CardContent className="pt-0">
-          <p className="text-sm text-gray-600 mb-3">Look up their order, then hand them this screen to leave feedback on the spot — no phone number needed.</p>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Input
-              placeholder="Order number, e.g. ORD-20260824-ABCDEF"
+      {/* Walk-in collection: look up an order, then hand the customer this screen */}
+      <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50/50 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Monitor className="h-4 w-4 text-amber-700" />
+            <p className="text-sm font-semibold text-gray-900">Walk-in feedback at the counter</p>
+            <span className="text-[11px] text-gray-500">Look up their order, then hand them this screen — no phone number needed.</span>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => window.open(`${WEB_URL}/feedback`, '_blank')} className="whitespace-nowrap">
+            <Monitor className="mr-1.5 h-3.5 w-3.5" />
+            Open kiosk
+          </Button>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[260px] flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+            <input
               value={feedbackOrderNumber}
               onChange={(e) => setFeedbackOrderNumber(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleFeedbackLookup()}
-              className="flex-1"
+              placeholder="Order number, e.g. ORD-20260824-ABCDEF"
+              className="h-8 w-full rounded-lg border border-gray-300 bg-white pl-8 pr-3 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
-            <Button onClick={handleFeedbackLookup} isLoading={feedbackLookupLoading}>
-              <Search className="w-4 h-4 mr-2" />
-              Find Order
-            </Button>
           </div>
-          {feedbackLink && (
-            <div className="mt-4 bg-white border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
-                <p className="text-sm font-medium text-gray-900">Order #{feedbackLink.order_number}</p>
-                {feedbackLink.already_submitted && <Badge variant="warning">Already submitted feedback</Badge>}
-              </div>
-              <p className="text-xs text-gray-500 break-all mb-3">{feedbackLink.url}</p>
-              <div className="flex flex-wrap gap-2">
-                <Button size="sm" onClick={handleOpenFeedbackOnThisScreen}>
-                  <ExternalLink className="w-3.5 h-3.5 mr-1.5" />
-                  Open on This Screen
-                </Button>
-                <Button size="sm" variant="outline" onClick={handleCopyFeedbackLink}>
-                  <Copy className="w-3.5 h-3.5 mr-1.5" />
-                  Copy Link
-                </Button>
-              </div>
-            </div>
-          )}
-
-          <div className="mt-5 pt-5 border-t border-yellow-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-medium text-gray-900">Or leave a tablet running at the counter</p>
-              <p className="text-xs text-gray-500">A dedicated, order-less link any walk-in customer can use on their own — set it to full screen once and leave it running.</p>
-            </div>
-            <Button variant="outline" onClick={() => window.open(`${WEB_URL}/feedback`, '_blank')} className="whitespace-nowrap">
-              <Monitor className="w-4 h-4 mr-2" />
-              Open General Feedback Kiosk
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Order/product reviews and anonymous kiosk feedback are different enough in shape
-          (kiosk has no user/order/product, but does have would_recommend) that they're kept in
-          separate tabs rather than one mixed list. */}
-      <div className="flex gap-1 mb-6 border-b border-gray-200">
-        {REVIEW_TABS.map((tab) => (
-          <button
-            key={tab.value}
-            onClick={() => handleTabChange(tab.value)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              activeTab === tab.value
-                ? 'border-primary text-primary'
-                : 'border-transparent text-gray-500 hover:text-gray-800'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-        <Card><CardContent className="p-4"><div className="flex items-center gap-3"><div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center"><Star className="w-5 h-5 text-yellow-600" /></div><div><p className="text-xs text-gray-500">Avg Rating</p><p className="text-xl font-bold">{avgRating}</p></div></div></CardContent></Card>
-        <Card><CardContent className="p-4"><div className="flex items-center gap-3"><div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center"><ThumbsUp className="w-5 h-5 text-green-600" /></div><div><p className="text-xs text-gray-500">Positive</p><p className="text-xl font-bold">{positive}</p></div></div></CardContent></Card>
-        <Card><CardContent className="p-4"><div className="flex items-center gap-3"><div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center"><MessageSquare className="w-5 h-5 text-gray-600" /></div><div><p className="text-xs text-gray-500">Neutral</p><p className="text-xl font-bold">{neutral}</p></div></div></CardContent></Card>
-        <Card><CardContent className="p-4"><div className="flex items-center gap-3"><div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center"><ThumbsDown className="w-5 h-5 text-red-600" /></div><div><p className="text-xs text-gray-500">Negative</p><p className="text-xl font-bold">{negative}</p></div></div></CardContent></Card>
-        <Card><CardContent className="p-4"><div className="flex items-center gap-3"><div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center"><Flag className="w-5 h-5 text-orange-600" /></div><div><p className="text-xs text-gray-500">Pending</p><p className="text-xl font-bold">{pending}</p></div></div></CardContent></Card>
-      </div>
-
-      <Card className="mb-6"><CardContent className="p-4"><div className="flex flex-col md:flex-row gap-4">
-        <div className="relative flex-1"><Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" /><Input placeholder="Search reviews..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} className="pl-10" /></div>
-        <Select options={[{ value: '', label: 'All Status' }, ...REVIEW_STATUSES.map(s => ({ value: s.value, label: s.label }))]} value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} />
-        <Select options={[{ value: '', label: 'All Ratings' }, { value: '5', label: '5 Stars' }, { value: '4', label: '4 Stars' }, { value: '3', label: '3 Stars' }, { value: '2', label: '2 Stars' }, { value: '1', label: '1 Star' }]} value={filterRating} onChange={(e) => setFilterRating(e.target.value)} />
-        <Button onClick={handleSearch}>Search</Button>
-      </div></CardContent></Card>
-
-      {isLoading ? (<div className="flex items-center justify-center py-12"><LoadingSpinner size="lg" text="Loading reviews..." /></div>
-      ) : reviews.length === 0 ? (<EmptyState icon={<Star className="w-8 h-8 text-gray-400" />} title={activeTab === 'general' ? 'No walk-in kiosk feedback yet' : 'No reviews found'} />
-      ) : (
-        <div className="space-y-4">
-          {reviews.map((review) => {
-            const statusConfig = REVIEW_STATUSES.find(s => s.value === review.status);
-            return (
-              <Card key={review.id}>
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-4 flex-1">
-                      <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden">
-                        {review.user?.avatar ? <img src={review.user.avatar} alt="" className="w-full h-full object-cover" /> : <span className="text-lg font-bold text-gray-600">{(review.user?.name ?? 'G').charAt(0)}</span>}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <p className="font-medium">{review.user?.name ?? (activeTab === 'general' ? 'Walk-in customer' : 'Guest customer')}</p>
-                          {renderStars(review.rating)}
-                          <Badge variant={statusConfig?.color as 'success' | 'warning' | 'danger' | 'default' || 'default'}>{statusConfig?.label}</Badge>
-                          {review.would_recommend !== null && review.would_recommend !== undefined && (
-                            <Badge variant={review.would_recommend ? 'success' : 'danger'}>
-                              {review.would_recommend ? 'Would recommend' : "Wouldn't recommend"}
-                            </Badge>
-                          )}
-                        </div>
-                        {review.vendor && <p className="text-sm text-gray-500 mt-0.5">Vendor: {review.vendor.business_name}</p>}
-                        {review.product && (
-                          <p className="text-sm text-primary flex items-center gap-1 mt-0.5"><Package className="w-3.5 h-3.5" />{review.product.name}</p>
-                        )}
-                        {review.review && <p className="text-gray-600 mt-1">{review.review}</p>}
-                        {review.vendor_response && (
-                          <div className="mt-3 bg-blue-50 p-3 rounded-lg"><p className="text-xs text-blue-600 font-medium mb-1">Vendor Reply</p><p className="text-sm text-blue-800">{review.vendor_response}</p><p className="text-xs text-blue-400 mt-1">{review.vendor_responded_at ? formatDateTime(review.vendor_responded_at) : ''}</p></div>
-                        )}
-                        <p className="text-xs text-gray-400 mt-2">{formatDateTime(review.created_at)}{review.order && <> • Order: <span className="text-primary">{review.order.order_number}</span></>}</p>
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-2 ml-4">
-                      <Button variant="ghost" size="sm" onClick={() => { setSelectedReview(review); setIsViewModalOpen(true); }}><Eye className="w-4 h-4" /></Button>
-                      {review.status === 'pending' && (<><Button variant="ghost" size="sm" onClick={() => handleStatusChange(review, 'approved')} title="Approve"><CheckCircle className="w-4 h-4 text-green-600" /></Button><Button variant="ghost" size="sm" onClick={() => handleStatusChange(review, 'rejected')} title="Reject"><XCircle className="w-4 h-4 text-red-600" /></Button></>)}
-                      {review.status !== 'hidden' && (<Button variant="ghost" size="sm" onClick={() => handleStatusChange(review, 'hidden')} title="Hide"><Flag className="w-4 h-4 text-orange-500" /></Button>)}
-                      <Button variant="ghost" size="sm" onClick={() => { setSelectedReview(review); setIsDeleteModalOpen(true); }}><Trash2 className="w-4 h-4 text-red-500" /></Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+          <Button size="sm" onClick={handleFeedbackLookup} isLoading={feedbackLookupLoading} className="whitespace-nowrap">
+            <Search className="mr-1.5 h-3.5 w-3.5" />
+            Find order
+          </Button>
         </div>
+        {feedbackLink && (
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white p-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-gray-900">
+                Order #{feedbackLink.order_number}
+                {feedbackLink.already_submitted && <span className="ml-2"><Badge variant="warning" className="text-[11px]">Already submitted</Badge></span>}
+              </p>
+              <p className="truncate text-[11px] text-gray-500" title={feedbackLink.url}>{feedbackLink.url}</p>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={handleOpenFeedbackOnThisScreen} className="whitespace-nowrap">
+                <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                Open here
+              </Button>
+              <Button size="sm" variant="outline" onClick={handleCopyFeedbackLink} className="whitespace-nowrap">
+                <Copy className="mr-1.5 h-3.5 w-3.5" />
+                Copy link
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-5">
+        <KpiTile label="Average rating" value={avgRating} tone="amber" icon={<Star className="h-4 w-4 opacity-60" />} sub={`${reviews.length} on this page`} />
+        <KpiTile label="Positive" value={String(positive)} tone="emerald" icon={<ThumbsUp className="h-4 w-4 opacity-60" />} sub="4–5 stars" />
+        <KpiTile label="Neutral" value={String(neutral)} tone="sky" icon={<MessageSquare className="h-4 w-4 opacity-60" />} sub="3 stars" />
+        <KpiTile label="Negative" value={String(negative)} tone="rose" icon={<ThumbsDown className="h-4 w-4 opacity-60" />} sub="1–2 stars" />
+        <KpiTile label="Pending" value={String(pending)} tone="orange" icon={<Flag className="h-4 w-4 opacity-60" />} sub="Waiting for approval" />
+      </div>
+
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white p-3">
+        <div className="relative min-w-[220px] flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+            placeholder="Search review text or customer…"
+            className="h-8 w-full rounded-lg border border-gray-300 pl-8 pr-3 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+        <select className={SELECT} value={filterStatus} onChange={(e) => { setFilterStatus(e.target.value); setCurrentPage(1); }}>
+          <option value="">All statuses</option>
+          {REVIEW_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+        </select>
+        <select className={SELECT} value={filterRating} onChange={(e) => { setFilterRating(e.target.value); setCurrentPage(1); }}>
+          <option value="">All ratings</option>
+          {[5, 4, 3, 2, 1].map((r) => <option key={r} value={String(r)}>{r} star{r === 1 ? '' : 's'}</option>)}
+        </select>
+        <Button size="sm" onClick={handleSearch} className="whitespace-nowrap">Search</Button>
+        {filtered && (
+          <button
+            type="button"
+            onClick={() => { setSearchQuery(''); setFilterStatus(''); setFilterRating(''); setCurrentPage(1); }}
+            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-100"
+          >
+            <X className="h-3.5 w-3.5" /> Clear
+          </button>
+        )}
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12"><LoadingSpinner size="lg" text="Loading reviews..." /></div>
+      ) : reviews.length === 0 ? (
+        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white p-4">
+          <EmptyState
+            icon={<Star className="h-8 w-8 text-gray-400" />}
+            title={filtered ? 'No reviews match these filters' : activeTab === 'general' ? 'No walk-in kiosk feedback yet' : 'No reviews yet'}
+          />
+        </div>
+      ) : (
+        <Panel title={activeTab === 'general' ? 'Walk-in kiosk feedback' : 'Order & product reviews'} hint={`${reviews.length} on this page`}>
+          <ul className="divide-y divide-gray-100">
+            {reviews.map((review) => {
+              const statusConfig = REVIEW_STATUSES.find(s => s.value === review.status);
+              return (
+                <li key={review.id} className="flex items-start gap-3 px-4 py-3 hover:bg-indigo-50/30">
+                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-200">
+                    {review.user?.avatar
+                      ? <img src={review.user.avatar} alt="" className="h-full w-full object-cover" />
+                      : <span className="text-xs font-bold text-gray-600">{(review.user?.name ?? 'G').charAt(0)}</span>}
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                      <p className="text-sm font-semibold text-gray-900">{review.user?.name ?? guestLabel}</p>
+                      {renderStars(review.rating)}
+                      <Badge variant={statusConfig?.color as 'success' | 'warning' | 'danger' | 'default' || 'default'} className="text-[11px]">{statusConfig?.label ?? review.status}</Badge>
+                      {review.would_recommend !== null && review.would_recommend !== undefined && (
+                        <Badge variant={review.would_recommend ? 'success' : 'danger'} className="text-[11px]">
+                          {review.would_recommend ? 'Would recommend' : "Wouldn't recommend"}
+                        </Badge>
+                      )}
+                    </div>
+
+                    <div className="mt-0.5 flex flex-wrap gap-x-3 text-[11px] text-gray-500">
+                      {review.vendor && <span>Vendor: {review.vendor.business_name}</span>}
+                      {review.product && <span className="inline-flex items-center gap-1 text-indigo-600"><Package className="h-3 w-3" />{review.product.name}</span>}
+                      <span>{formatDateTime(review.created_at)}</span>
+                      {review.order && <span>Order <span className="font-semibold text-indigo-600">{review.order.order_number}</span></span>}
+                    </div>
+
+                    {review.review && <p className="mt-1.5 line-clamp-2 text-sm text-gray-700">{review.review}</p>}
+
+                    {review.vendor_response && (
+                      <div className="mt-2 rounded-lg border border-sky-100 bg-sky-50 px-3 py-2">
+                        <p className="text-[11px] font-semibold text-sky-700">Vendor reply{review.vendor_responded_at ? ` · ${formatDateTime(review.vendor_responded_at)}` : ''}</p>
+                        <p className="text-xs text-sky-900">{review.vendor_response}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-shrink-0 items-center gap-0.5">
+                    <Button variant="ghost" size="sm" title="View" onClick={() => { setSelectedReview(review); setIsViewModalOpen(true); }}><Eye className="h-3.5 w-3.5" /></Button>
+                    {review.status === 'pending' && (
+                      <>
+                        <Button variant="ghost" size="sm" onClick={() => handleStatusChange(review, 'approved')} title="Approve"><CheckCircle className="h-3.5 w-3.5 text-emerald-600" /></Button>
+                        <Button variant="ghost" size="sm" onClick={() => handleStatusChange(review, 'rejected')} title="Reject"><XCircle className="h-3.5 w-3.5 text-rose-600" /></Button>
+                      </>
+                    )}
+                    {review.status !== 'hidden' && (
+                      <Button variant="ghost" size="sm" onClick={() => handleStatusChange(review, 'hidden')} title="Hide"><Flag className="h-3.5 w-3.5 text-orange-500" /></Button>
+                    )}
+                    <Button variant="ghost" size="sm" title="Delete" onClick={() => { setSelectedReview(review); setIsDeleteModalOpen(true); }}><Trash2 className="h-3.5 w-3.5 text-red-500" /></Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </Panel>
       )}
 
-      {totalPages > 1 && <div className="mt-6"><Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} /></div>}
+      {totalPages > 1 && <div className="mt-3 flex justify-end"><Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} /></div>}
 
       {/* View Modal */}
-      <Modal isOpen={isViewModalOpen} onClose={() => setIsViewModalOpen(false)} title="Review Details" size="lg">
+      <Modal isOpen={isViewModalOpen} onClose={() => setIsViewModalOpen(false)} title="Review details" size="lg">
         {selectedReview && (
-          <div className="space-y-6">
-            <div className="flex items-start gap-4">
-              <div className="w-14 h-14 bg-gray-200 rounded-full flex items-center justify-center overflow-hidden">{selectedReview.user?.avatar ? <img src={selectedReview.user.avatar} alt="" className="w-full h-full object-cover" /> : <span className="text-xl font-bold text-gray-600">{(selectedReview.user?.name ?? 'G').charAt(0)}</span>}</div>
-              <div><p className="text-lg font-semibold">{selectedReview.user?.name ?? (activeTab === 'general' ? 'Walk-in customer' : 'Guest customer')}</p>{renderStars(selectedReview.rating)}<p className="text-sm text-gray-500 mt-1">{formatDateTime(selectedReview.created_at)}</p></div>
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-gray-200">
+                {selectedReview.user?.avatar ? <img src={selectedReview.user.avatar} alt="" className="h-full w-full object-cover" /> : <span className="text-lg font-bold text-gray-600">{(selectedReview.user?.name ?? 'G').charAt(0)}</span>}
+              </div>
+              <div>
+                <p className="font-semibold text-gray-900">{selectedReview.user?.name ?? guestLabel}</p>
+                {renderStars(selectedReview.rating, 'h-4 w-4')}
+                <p className="text-xs text-gray-500">{formatDateTime(selectedReview.created_at)}</p>
+              </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              {selectedReview.vendor && <div className="bg-gray-50 p-3 rounded-lg"><p className="text-xs text-gray-500">Vendor</p><p className="font-medium">{selectedReview.vendor.business_name}</p></div>}
-              {selectedReview.product && <div className="bg-gray-50 p-3 rounded-lg"><p className="text-xs text-gray-500">Product</p><p className="font-medium">{selectedReview.product.name}</p></div>}
-              {selectedReview.order && <div className="bg-gray-50 p-3 rounded-lg"><p className="text-xs text-gray-500">Order</p><p className="font-medium text-primary">{selectedReview.order.order_number}</p></div>}
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {selectedReview.vendor && <div className="rounded-lg bg-slate-50 p-2.5"><p className="text-[11px] text-gray-500">Vendor</p><p className="text-sm font-semibold">{selectedReview.vendor.business_name}</p></div>}
+              {selectedReview.product && <div className="rounded-lg bg-slate-50 p-2.5"><p className="text-[11px] text-gray-500">Product</p><p className="text-sm font-semibold">{selectedReview.product.name}</p></div>}
+              {selectedReview.order && <div className="rounded-lg bg-slate-50 p-2.5"><p className="text-[11px] text-gray-500">Order</p><p className="text-sm font-semibold text-indigo-600">{selectedReview.order.order_number}</p></div>}
               {selectedReview.would_recommend !== null && selectedReview.would_recommend !== undefined && (
-                <div className="bg-gray-50 p-3 rounded-lg"><p className="text-xs text-gray-500">Would recommend</p><p className="font-medium">{selectedReview.would_recommend ? 'Yes' : 'No'}</p></div>
+                <div className="rounded-lg bg-slate-50 p-2.5"><p className="text-[11px] text-gray-500">Would recommend</p><p className="text-sm font-semibold">{selectedReview.would_recommend ? 'Yes' : 'No'}</p></div>
               )}
-              <div className="bg-gray-50 p-3 rounded-lg"><p className="text-xs text-gray-500">Status</p><Badge variant={REVIEW_STATUSES.find(s => s.value === selectedReview.status)?.color as 'success' | 'warning' | 'danger' | 'default'}>{selectedReview.status}</Badge></div>
             </div>
-            {selectedReview.review && <p className="text-gray-600">{selectedReview.review}</p>}
-            {selectedReview.images?.length ? <div><p className="text-sm font-medium mb-2">Photos</p><div className="flex gap-2 flex-wrap">{selectedReview.images.map((img, i) => (<img key={i} src={img} alt="" className="w-20 h-20 object-cover rounded-lg" />))}</div></div> : null}
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              Status <Badge variant={REVIEW_STATUSES.find(s => s.value === selectedReview.status)?.color as 'success' | 'warning' | 'danger' | 'default'} className="text-[11px]">{selectedReview.status}</Badge>
+            </div>
+            {selectedReview.review && <p className="rounded-lg border border-gray-200 p-3 text-sm text-gray-700">{selectedReview.review}</p>}
+            {selectedReview.images?.length ? (
+              <div>
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Photos</p>
+                <div className="flex flex-wrap gap-2">{selectedReview.images.map((img, i) => (<img key={i} src={img} alt="" className="h-20 w-20 rounded-lg object-cover" />))}</div>
+              </div>
+            ) : null}
           </div>
         )}
       </Modal>
 
-      <ConfirmModal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} onConfirm={handleDelete} title="Delete Review" message="Are you sure you want to delete this review? This cannot be undone." variant="danger" />
+      <ConfirmModal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} onConfirm={handleDelete} title="Delete review" message="Are you sure you want to delete this review? This cannot be undone." variant="danger" />
     </AdminLayout>
   );
 }

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import {
   Plus,
   Edit2,
@@ -22,6 +22,7 @@ import {
   Box,
   RefreshCw,
   History,
+  MoreHorizontal,
 } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import {
@@ -39,7 +40,6 @@ import {
   ConfirmModal,
   ErrorState,
   HistoryModal,
-  ActionsMenu,
 } from '@/components/ui';
 import { Product, ProductCategory, ProductBrand, PaginatedResponse } from '@/types';
 import { formatCurrency, getErrorMessage } from '@/lib/utils';
@@ -56,9 +56,51 @@ function getImageUrl(image?: string): string {
   return `${ASSET_BASE_URL}/storage/${image.replace(/^\//, '')}`;
 }
 
+type ProductTab = 'all' | 'active' | 'inactive' | 'draft' | 'bulk-upload' | 'low-stock' | 'out-of-stock';
+const VALID_PRODUCT_TABS: ProductTab[] = ['all', 'active', 'inactive', 'draft', 'bulk-upload', 'low-stock', 'out-of-stock'];
+
+// Read once, synchronously, as the very first render's initial state (via useState's lazy
+// initializer) rather than in a useEffect after mount. Doing this in an effect meant the list
+// always fetched once for the default "All"/page 1/no-batch filters *before* the restored
+// values took effect, and that stale fetch could still resolve after the corrected one --
+// whichever response landed last silently won, which is exactly why the tab pill/page number
+// could look right while the rows shown were still unfiltered. A lazy initializer means there
+// is only ever one initial value, so only one initial fetch.
+function getInitialProductTab(): ProductTab {
+  if (typeof window === 'undefined') return 'all';
+  try {
+    if (new URLSearchParams(window.location.search).get('source') === 'bulk_import') return 'bulk-upload';
+    const stored = sessionStorage.getItem('products_list_tab');
+    if (stored && VALID_PRODUCT_TABS.includes(stored as ProductTab)) return stored as ProductTab;
+  } catch { /* sessionStorage unavailable -- fall through to the default */ }
+  return 'all';
+}
+
+function getInitialProductPage(): number {
+  if (typeof window === 'undefined') return 1;
+  try {
+    // A fresh "Review this batch in Products" deep-link always starts at page 1 of that batch.
+    if (new URLSearchParams(window.location.search).get('source') === 'bulk_import') return 1;
+    const stored = sessionStorage.getItem('products_list_page');
+    if (stored && /^\d+$/.test(stored)) {
+      const n = Number(stored);
+      if (n > 1) return n;
+    }
+  } catch { /* ignore */ }
+  return 1;
+}
+
+function getInitialProductBatch(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    return new URLSearchParams(window.location.search).get('bulk_upload_batch') ?? '';
+  } catch {
+    return '';
+  }
+}
+
 function ProductsPageContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   // Data state
   const [products, setProducts] = useState<Product[]>([]);
@@ -73,7 +115,7 @@ function ProductsPageContent() {
   const [filterBrand, setFilterBrand] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterStock, setFilterStock] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(getInitialProductPage);
   const [totalPages, setTotalPages] = useState(1);
   const [totalProducts, setTotalProducts] = useState(0);
   const [perPage, setPerPage] = useState(15);
@@ -96,11 +138,13 @@ function ProductsPageContent() {
   const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const selectAllCheckboxRef = React.useRef<HTMLInputElement>(null);
-  const [activeTab, setActiveTab] = useState<'all' | 'active' | 'inactive' | 'draft' | 'bulk-upload' | 'low-stock' | 'out-of-stock'>('all');
+  const [activeTab, setActiveTab] = useState<ProductTab>(getInitialProductTab);
   const [togglingFeaturedId, setTogglingFeaturedId] = useState<number | null>(null);
-  // Set once from the URL on first load (arriving via "Review this batch in Products" straight
-  // after a bulk upload) — narrows the bulk-upload tab down to just that one spreadsheet's rows.
-  const [filterBatch, setFilterBatch] = useState('');
+  // Restored on first load -- either from the URL (arriving via "Review this batch in
+  // Products" straight after a bulk upload) or, failing that, from sessionStorage (coming
+  // back after editing a product) -- see getInitialProductTab/Page/Batch above. Narrows the
+  // Bulk Upload tab down to just one spreadsheet's rows.
+  const [filterBatch, setFilterBatch] = useState(getInitialProductBatch);
 
   // Featured products modal
   const [isFeaturedModalOpen, setIsFeaturedModalOpen] = useState(false);
@@ -127,19 +171,21 @@ function ProductsPageContent() {
     }
   }, []);
 
-  // Arriving from the bulk-upload result screen ("Review this batch in Products") — jump
-  // straight to the Bulk Upload tab, narrowed to that one spreadsheet's rows.
+  // activeTab/currentPage/filterBatch are all seeded synchronously by their useState lazy
+  // initializers above (getInitialProductTab/Page/Batch) -- no restore-on-mount effect here on
+  // purpose. An effect would run *after* the first render/fetch, so the list would fetch once
+  // for the default "All"/page 1/no-batch filters and then again for the restored ones; with
+  // no request sequencing, whichever response resolved last silently won, which is how this
+  // broke the first time around (tab pill/page number looked right, rows didn't match). A
+  // lazy initializer means there's only ever one initial value, so only one initial fetch.
+
+  // Remember the current tab/page across navigation (editing a product and coming back).
   useEffect(() => {
-    const source = searchParams.get('source');
-    const batch = searchParams.get('bulk_upload_batch');
-    if (source === 'bulk_import') {
-      setActiveTab('bulk-upload');
-    }
-    if (batch) {
-      setFilterBatch(batch);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    try {
+      sessionStorage.setItem('products_list_tab', activeTab);
+      sessionStorage.setItem('products_list_page', String(currentPage));
+    } catch { /* ignore */ }
+  }, [activeTab, currentPage]);
 
   // Shared by the list fetch and "select all N matching" bulk-delete, so a select-all can
   // never target a different set of rows than what's actually on screen.
@@ -434,23 +480,23 @@ function ProductsPageContent() {
   return (
     <AdminLayout>
       {/* Page Header */}
-      <div className="page-header flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="page-title">Products</h1>
-          <p className="page-description">Manage products and inventory</p>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div className="flex items-center gap-2.5">
+          <h1 className="text-lg font-bold text-gray-900">Products</h1>
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-600">{tabCounts.all} total</span>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handleExport}>
-            <Download className="w-4 h-4 mr-2" />
+          <Button variant="outline" size="sm" onClick={handleExport}>
+            <Download className="w-3.5 h-3.5 mr-1.5" />
             Export
           </Button>
-          <Button variant="outline" onClick={openFeaturedModal}>
-            <Star className="w-4 h-4 mr-2 text-amber-500" />
+          <Button variant="outline" size="sm" onClick={openFeaturedModal}>
+            <Star className="w-3.5 h-3.5 mr-1.5 text-amber-500" />
             Featured Products
           </Button>
           <Link href="/products/create">
-            <Button>
-              <Plus className="w-4 h-4 mr-2" />
+            <Button size="sm">
+              <Plus className="w-3.5 h-3.5 mr-1.5" />
               Add Product
             </Button>
           </Link>
@@ -458,55 +504,55 @@ function ProductsPageContent() {
       </div>
 
       {/* Stats Overview Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
         <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => { setActiveTab('all'); setCurrentPage(1); }}>
-          <CardContent className="p-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+          <CardContent className="p-2.5">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
                 <Package className="w-4 h-4 text-blue-600" />
               </div>
               <div>
-                <p className="text-xs text-gray-500">Total Products</p>
-                <p className="text-lg font-bold">{stats.total}</p>
+                <p className="text-[11px] text-gray-500">Total Products</p>
+                <p className="text-base font-bold tabular-nums">{stats.total}</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => { setActiveTab('active'); setCurrentPage(1); }}>
-          <CardContent className="p-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+          <CardContent className="p-2.5">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
                 <BarChart3 className="w-4 h-4 text-green-600" />
               </div>
               <div>
-                <p className="text-xs text-gray-500">Active</p>
-                <p className="text-lg font-bold">{stats.active}</p>
+                <p className="text-[11px] text-gray-500">Active</p>
+                <p className="text-base font-bold tabular-nums">{stats.active}</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => { setActiveTab('low-stock'); setCurrentPage(1); }}>
-          <CardContent className="p-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center flex-shrink-0">
+          <CardContent className="p-2.5">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 bg-yellow-100 rounded-lg flex items-center justify-center flex-shrink-0">
                 <TrendingDown className="w-4 h-4 text-yellow-600" />
               </div>
               <div>
-                <p className="text-xs text-gray-500">Low Stock</p>
-                <p className="text-lg font-bold">{stats.lowStock}</p>
+                <p className="text-[11px] text-gray-500">Low Stock</p>
+                <p className="text-base font-bold tabular-nums">{stats.lowStock}</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => { setActiveTab('out-of-stock'); setCurrentPage(1); }}>
-          <CardContent className="p-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
+          <CardContent className="p-2.5">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
                 <Box className="w-4 h-4 text-red-600" />
               </div>
               <div>
-                <p className="text-xs text-gray-500">Out of Stock</p>
-                <p className="text-lg font-bold">{stats.outOfStock}</p>
+                <p className="text-[11px] text-gray-500">Out of Stock</p>
+                <p className="text-base font-bold tabular-nums">{stats.outOfStock}</p>
               </div>
             </div>
           </CardContent>
@@ -538,31 +584,39 @@ function ProductsPageContent() {
       {/* Tabs + Search + Filters */}
       <Card className="mb-4">
         <CardContent className="p-0">
-          {/* Tabs */}
-          <div className="flex border-b overflow-x-auto">
-            {(['all', 'active', 'inactive', 'draft', 'bulk-upload', 'low-stock', 'out-of-stock'] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => { setActiveTab(tab); setCurrentPage(1); if (tab !== 'bulk-upload') setFilterBatch(''); }}
-                className={`px-3 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-                  activeTab === tab
-                    ? 'border-primary-600 text-primary-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-                title={
-                  tab === 'draft'
-                    ? 'Instant products created from Orders/Purchases that still need full details'
-                    : tab === 'bulk-upload'
-                    ? 'Products created via the Excel bulk-upload tool'
-                    : undefined
-                }
-              >
-                {tab === 'all' ? 'All' : tab === 'low-stock' ? 'Low Stock' : tab === 'out-of-stock' ? 'Out of Stock' : tab === 'bulk-upload' ? 'Bulk Upload' : tab.charAt(0).toUpperCase() + tab.slice(1)}
-                <span className="ml-2 text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-                  {tabCounts[tab]}
-                </span>
-              </button>
-            ))}
+          {/* Tabs — colored pills with live counts */}
+          <div className="flex gap-1.5 overflow-x-auto px-2.5 pt-2.5 pb-2 border-b border-gray-100">
+            {(['all', 'active', 'inactive', 'draft', 'bulk-upload', 'low-stock', 'out-of-stock'] as const).map((tab) => {
+              const on = activeTab === tab;
+              const tone: Record<string, [string, string]> = {
+                all: ['bg-slate-800 text-white border-slate-800', 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'],
+                active: ['bg-emerald-600 text-white border-emerald-600', 'bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50'],
+                inactive: ['bg-slate-600 text-white border-slate-600', 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'],
+                draft: ['bg-amber-500 text-white border-amber-500', 'bg-white text-amber-700 border-amber-200 hover:bg-amber-50'],
+                'bulk-upload': ['bg-sky-600 text-white border-sky-600', 'bg-white text-sky-700 border-sky-200 hover:bg-sky-50'],
+                'low-stock': ['bg-yellow-500 text-white border-yellow-500', 'bg-white text-yellow-700 border-yellow-200 hover:bg-yellow-50'],
+                'out-of-stock': ['bg-rose-600 text-white border-rose-600', 'bg-white text-rose-700 border-rose-200 hover:bg-rose-50'],
+              };
+              const label = tab === 'all' ? 'All' : tab === 'low-stock' ? 'Low Stock' : tab === 'out-of-stock' ? 'Out of Stock' : tab === 'bulk-upload' ? 'Bulk Upload' : tab.charAt(0).toUpperCase() + tab.slice(1);
+              return (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => { setActiveTab(tab); setCurrentPage(1); if (tab !== 'bulk-upload') setFilterBatch(''); }}
+                  title={
+                    tab === 'draft'
+                      ? 'Instant products created from Orders/Purchases that still need full details'
+                      : tab === 'bulk-upload'
+                      ? 'Products created via the Excel bulk-upload tool'
+                      : undefined
+                  }
+                  className={`shrink-0 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors ${on ? tone[tab][0] : tone[tab][1]}`}
+                >
+                  {label}
+                  <span className={`rounded-full px-1.5 text-[10px] tabular-nums ${on ? 'bg-white/25' : 'bg-gray-100 text-gray-600'}`}>{tabCounts[tab]}</span>
+                </button>
+              );
+            })}
           </div>
           {activeTab === 'bulk-upload' && filterBatch && (
             <div className="flex items-center justify-between gap-3 px-4 py-2 bg-sky-50 border-b border-sky-100 text-sm text-sky-800">
@@ -570,7 +624,7 @@ function ProductsPageContent() {
               <button
                 type="button"
                 className="font-medium underline hover:no-underline"
-                onClick={() => setFilterBatch('')}
+                onClick={() => { setFilterBatch(''); setCurrentPage(1); }}
               >
                 Show all Bulk Upload products
               </button>
@@ -578,47 +632,48 @@ function ProductsPageContent() {
           )}
 
           {/* Search & View Controls */}
-          <div className="p-4">
-            <div className="flex flex-col md:flex-row gap-3 items-start md:items-center">
+          <div className="p-2.5">
+            <div className="flex flex-col md:flex-row gap-2 items-start md:items-center">
               <div className="relative flex-1 w-full">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 w-3.5 h-3.5" />
                 <Input
                   placeholder="Search products by name, SKU..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
                   onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                  className="pl-10"
+                  className="h-8 pl-8 text-xs"
                 />
               </div>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)}>
-                  <Filter className="w-4 h-4 mr-1" />
+                  <Filter className="w-3.5 h-3.5 mr-1" />
                   Filters
                 </Button>
                 <div className="flex border rounded-lg overflow-hidden">
                   <button
                     onClick={() => setViewMode('table')}
-                    className={`p-2 ${viewMode === 'table' ? 'bg-primary-50 text-primary-600' : 'text-gray-400 hover:text-gray-600'}`}
+                    className={`p-1.5 ${viewMode === 'table' ? 'bg-primary-50 text-primary-600' : 'text-gray-400 hover:text-gray-600'}`}
                   >
-                    <LayoutList className="w-4 h-4" />
+                    <LayoutList className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={() => setViewMode('grid')}
-                    className={`p-2 ${viewMode === 'grid' ? 'bg-primary-50 text-primary-600' : 'text-gray-400 hover:text-gray-600'}`}
+                    className={`p-1.5 ${viewMode === 'grid' ? 'bg-primary-50 text-primary-600' : 'text-gray-400 hover:text-gray-600'}`}
                   >
-                    <LayoutGrid className="w-4 h-4" />
+                    <LayoutGrid className="w-3.5 h-3.5" />
                   </button>
                 </div>
                 <Button variant="ghost" size="sm" onClick={fetchProducts} title="Refresh">
-                  <RefreshCw className="w-4 h-4" />
+                  <RefreshCw className="w-3.5 h-3.5" />
                 </Button>
               </div>
             </div>
 
             {/* Expanded Filters */}
             {showFilters && (
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mt-4 pt-4 border-t">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-2 mt-2.5 pt-2.5 border-t">
                 <Select
+                  className="h-8 text-xs"
                   options={[
                     { value: '', label: 'All Categories' },
                     ...categories.map((cat) => ({
@@ -630,6 +685,7 @@ function ProductsPageContent() {
                   onChange={(e) => { setFilterCategory(e.target.value); setCurrentPage(1); }}
                 />
                 <Select
+                  className="h-8 text-xs"
                   options={[
                     { value: '', label: 'All Brands' },
                     ...brands.map((brand) => ({
@@ -641,6 +697,7 @@ function ProductsPageContent() {
                   onChange={(e) => { setFilterBrand(e.target.value); setCurrentPage(1); }}
                 />
                 <Select
+                  className="h-8 text-xs"
                   options={[
                     { value: '', label: 'All Stock Levels' },
                     { value: 'in', label: 'In Stock' },
@@ -651,6 +708,7 @@ function ProductsPageContent() {
                   onChange={(e) => { setFilterStock(e.target.value); setCurrentPage(1); }}
                 />
                 <Select
+                  className="h-8 text-xs"
                   options={[
                     { value: '', label: 'All Status' },
                     { value: 'active', label: 'Active' },
@@ -718,10 +776,13 @@ function ProductsPageContent() {
         <Card>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
-              <table className="w-full">
+              {/* table-fixed + explicit column widths — without this, one long product name
+                  stretches its column (and drags every other column's text onto a second line
+                  with it, since the browser's default auto-layout sizes columns to content). */}
+              <table className="w-full table-fixed">
                 <thead className="bg-gray-50 border-y">
                   <tr>
-                    <th className="w-10 px-4 py-2">
+                    <th className="w-9 px-3 py-2">
                       <input
                         ref={selectAllCheckboxRef}
                         type="checkbox"
@@ -731,19 +792,22 @@ function ProductsPageContent() {
                         aria-label="Select all products on this page"
                       />
                     </th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Price</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Stock</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    <th className="w-[30%] px-3 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Product</th>
+                    <th className="w-[10%] px-3 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Brand</th>
+                    <th className="w-[11%] px-3 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Category</th>
+                    <th className="w-[12%] px-3 py-2 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Price</th>
+                    <th className="w-[13%] px-3 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Stock</th>
+                    <th className="w-[17%] px-3 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                    {/* Just wide enough for the trigger icon — the revealed action set is a
+                        floating popover (see below), not part of the row's normal flow, so it
+                        never needs dedicated column space of its own. */}
+                    <th className="w-[7%] px-3 py-2 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {products.map((product) => (
-                    <tr key={product.id} className={`hover:bg-gray-50 transition-colors ${selectedIds.has(product.id) ? 'bg-red-50/40' : ''}`}>
-                      <td className="px-4 py-2.5">
+                    <tr key={product.id} className={`group hover:bg-gray-50/70 transition-colors ${selectedIds.has(product.id) ? 'bg-red-50/40' : ''}`}>
+                      <td className="px-3 py-2">
                         <input
                           type="checkbox"
                           checked={selectedIds.has(product.id)}
@@ -752,9 +816,9 @@ function ProductsPageContent() {
                           aria-label={`Select ${product.name}`}
                         />
                       </td>
-                      <td className="px-4 py-2.5">
+                      <td className="px-3 py-2">
                         <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden shrink-0">
+                          <div className="w-10 h-10 bg-gray-50 rounded-xl ring-1 ring-gray-200/70 flex items-center justify-center overflow-hidden shrink-0">
                             {product.image ? (
                               <img
                                 src={getImageUrl(product.image)}
@@ -767,15 +831,21 @@ function ProductsPageContent() {
                               />
                             ) : null}
                             <Package
-                              className="w-6 h-6 text-gray-400"
+                              className="w-5 h-5 text-gray-300"
                               style={product.image ? { display: 'none' } : undefined}
                             />
                           </div>
                           <div className="min-w-0">
-                            <p className="font-medium text-gray-900 truncate">{product.name}</p>
-                            <div className="flex items-center gap-1 mt-0.5">
+                            <p className="font-medium text-gray-900 truncate" title={product.name}>{product.name}</p>
+                            <div className="flex items-center gap-1.5 mt-1">
+                              <span
+                                className="inline-block rounded bg-gray-50 px-1.5 py-0.5 font-mono text-[11px] text-gray-500 ring-1 ring-gray-200/70 truncate max-w-full"
+                                title={product.sku}
+                              >
+                                {product.sku}
+                              </span>
                               {product.is_featured && (
-                                <span className="inline-flex items-center gap-0.5 text-xs text-amber-600">
+                                <span className="inline-flex items-center gap-0.5 text-xs text-amber-600 shrink-0">
                                   <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
                                   Featured
                                 </span>
@@ -784,24 +854,24 @@ function ProductsPageContent() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-2.5 font-mono text-sm text-gray-600">{product.sku}</td>
-                      <td className="px-4 py-2.5">
+                      <td className="px-3 py-2 truncate text-sm text-gray-600" title={product.brand_details?.name || product.brand_name || product.brand || undefined}>
+                        {product.brand_details?.name || product.brand_name || product.brand || '-'}
+                      </td>
+                      <td className="px-3 py-2 truncate">
                         <Badge variant="default">{product.category?.name || '-'}</Badge>
                       </td>
-                      <td className="px-4 py-2.5">
-                        <div>
-                          <p className="font-medium">{formatCurrency(product.discount_price || product.price)}</p>
-                          {product.discount_price && product.discount_price < product.price && (
-                            <p className="text-xs text-gray-400 line-through">{formatCurrency(product.price)}</p>
-                          )}
-                        </div>
+                      <td className="px-3 py-2 text-right whitespace-nowrap tabular-nums">
+                        <p className="font-semibold text-gray-900">{formatCurrency(product.discount_price || product.price)}</p>
+                        {product.discount_price && product.discount_price < product.price && (
+                          <p className="text-xs text-gray-400 line-through">{formatCurrency(product.price)}</p>
+                        )}
                       </td>
-                      <td className="px-4 py-2.5">
+                      <td className="px-3 py-2 whitespace-nowrap">
                         {getStockBadge(product)}
-                        <span className="text-sm text-gray-600 ml-2">({product.stock_qty})</span>
+                        <span className="text-xs text-gray-400 ml-1.5 tabular-nums">({product.stock_qty})</span>
                       </td>
-                      <td className="px-4 py-2.5">
-                        <div className="flex items-center gap-1.5">
+                      <td className="px-3 py-2">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           <Badge variant={product.is_active ? 'success' : 'danger'}>
                             {product.is_active ? 'Active' : 'Inactive'}
                           </Badge>
@@ -817,46 +887,83 @@ function ProductsPageContent() {
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-2.5">
-                        <div className="flex items-center justify-end">
-                          <ActionsMenu
-                            items={[
-                              {
-                                label: 'View Details',
-                                icon: <Eye className="w-4 h-4 text-gray-400" />,
-                                onClick: () => openViewModal(product),
-                              },
-                              {
-                                label: 'Edit',
-                                icon: <Edit2 className="w-4 h-4 text-gray-400" />,
-                                onClick: () => router.push(`/products/${product.id}/edit`),
-                              },
-                              {
-                                label: 'View History',
-                                icon: <History className="w-4 h-4 text-gray-400" />,
-                                onClick: () => setHistoryProduct(product),
-                              },
-                              {
-                                label: product.is_featured ? 'Remove from Featured' : 'Mark as Featured',
-                                icon: <Star className={`w-4 h-4 ${product.is_featured ? 'fill-amber-400 text-amber-400' : 'text-gray-400'}`} />,
-                                onClick: () => handleToggleFeatured(product),
-                                disabled: togglingFeaturedId === product.id,
-                              },
-                              {
-                                label: product.is_active ? 'Hide from Storefront' : 'Show on Storefront',
-                                icon: product.is_active
-                                  ? <EyeOff className="w-4 h-4 text-gray-400" />
-                                  : <Eye className="w-4 h-4 text-gray-400" />,
-                                onClick: () => handleToggleStatus(product),
-                              },
-                              {
-                                label: 'Delete',
-                                icon: <Trash2 className="w-4 h-4" />,
-                                onClick: () => openDeleteModal(product),
-                                variant: 'danger',
-                              },
-                            ]}
-                          />
+                      <td className="px-3 py-2 text-right">
+                        {/* The trigger icon is all this cell ever reserves space for — no
+                            dedicated column width for the action set. Hovering the ROW reveals a
+                            floating popover that overlays on top of it, backdrop-blurred so it
+                            stays legible over whatever it covers. `group` is set on the <tr>. */}
+                        <div className="relative inline-flex">
+                          <button type="button" className="p-1.5 rounded-md text-gray-300 group-hover:text-gray-500 transition-colors" aria-label="Actions">
+                            <MoreHorizontal className="w-4 h-4" />
+                          </button>
+
+                          <div
+                            className="absolute right-0 top-1/2 -translate-y-1/2 z-20 flex items-center divide-x divide-gray-200
+                                       rounded-lg bg-white/90 backdrop-blur-md shadow-lg ring-1 ring-gray-200
+                                       opacity-0 invisible scale-95 pointer-events-none origin-right
+                                       group-hover:opacity-100 group-hover:visible group-hover:scale-100 group-hover:pointer-events-auto
+                                       transition-all duration-200 ease-out"
+                          >
+                            {[
+                                {
+                                  key: 'edit',
+                                  label: 'Edit',
+                                  title: 'Edit',
+                                  icon: <Edit2 className="w-4 h-4" />,
+                                  onClick: () => router.push(`/products/${product.id}/edit`),
+                                  className: 'text-gray-400 hover:text-gray-700 hover:bg-gray-100',
+                                },
+                                {
+                                  key: 'view',
+                                  label: 'View',
+                                  title: 'View Details',
+                                  icon: <Eye className="w-4 h-4" />,
+                                  onClick: () => openViewModal(product),
+                                  className: 'text-gray-400 hover:text-gray-700 hover:bg-gray-100',
+                                },
+                                {
+                                  key: 'history',
+                                  label: 'History',
+                                  title: 'View History',
+                                  icon: <History className="w-4 h-4" />,
+                                  onClick: () => setHistoryProduct(product),
+                                  className: 'text-gray-400 hover:text-gray-700 hover:bg-gray-100',
+                                },
+                                {
+                                  key: 'feature',
+                                  label: product.is_featured ? 'Unfeature' : 'Feature',
+                                  title: product.is_featured ? 'Remove from Featured' : 'Mark as Featured',
+                                  icon: <Star className={`w-4 h-4 ${product.is_featured ? 'fill-amber-400 text-amber-400' : 'text-gray-400'}`} />,
+                                  onClick: () => handleToggleFeatured(product),
+                                  disabled: togglingFeaturedId === product.id,
+                                  className: 'hover:bg-gray-100',
+                                },
+                                {
+                                  key: 'toggle-status',
+                                  label: product.is_active ? 'Hide' : 'Show',
+                                  title: product.is_active ? 'Hide from Storefront' : 'Show on Storefront',
+                                  icon: product.is_active ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />,
+                                  onClick: () => handleToggleStatus(product),
+                                  className: 'text-gray-400 hover:text-gray-700 hover:bg-gray-100',
+                                },
+                                // Delete is intentionally not here — it now lives inside the
+                                // View Details modal instead, so removing a product always goes
+                                // through a deliberate "open details, then delete" step rather
+                                // than being a one-click icon in this quick-actions strip.
+                              ].map((action) => (
+                                <button
+                                  key={action.key}
+                                  type="button"
+                                  onClick={action.onClick}
+                                  disabled={action.disabled}
+                                  title={action.title}
+                                  className={`flex flex-col items-center gap-0.5 px-1.5 py-1 min-w-[40px] transition-colors disabled:opacity-50 ${action.className}`}
+                                >
+                                  {action.icon}
+                                  <span className="text-[10px] leading-none whitespace-nowrap">{action.label}</span>
+                                </button>
+                              ))}
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -1073,6 +1180,17 @@ function ProductsPageContent() {
             )}
 
             <div className="flex justify-end gap-2 pt-4 border-t">
+              <Button
+                variant="outline"
+                className="text-red-600 border-red-200 hover:bg-red-50"
+                onClick={() => {
+                  setIsViewModalOpen(false);
+                  openDeleteModal(selectedProduct);
+                }}
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Delete
+              </Button>
               <Link href={`/products/${selectedProduct.id}/edit`}>
                 <Button variant="outline" onClick={() => setIsViewModalOpen(false)}>
                   <Edit2 className="w-4 h-4 mr-2" />

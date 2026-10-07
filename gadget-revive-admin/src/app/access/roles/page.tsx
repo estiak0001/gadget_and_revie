@@ -1,21 +1,12 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { Plus, Edit2, Trash2, Shield, Search, Users } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Plus, Edit2, Trash2, Shield, Search, Users, Lock, X } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  Button,
-  Input,
-  Badge,
-  Modal,
-  LoadingSpinner,
-} from '@/components/ui';
+import { Button, Input, Modal, LoadingSpinner, EmptyState } from '@/components/ui';
 import { Role, Permission } from '@/types';
 import adminService from '@/lib/adminService';
+import { useAuthStore } from '@/store/auth';
 import { getErrorMessage } from '@/lib/utils';
 import toast from 'react-hot-toast';
 
@@ -25,9 +16,12 @@ interface RoleFormData {
   permissions: number[];
 }
 
+// Built-in tiers the backend refuses to rename or delete (RoleController::$protectedRoles).
+const PROTECTED_ROLES = ['admin', 'vendor', 'customer', 'staff', 'super_admin'];
+
 // Quick-fill presets for the Create Role form — pick one to pre-check a sensible starting set
 // of permissions instead of ticking every box by hand. Matched against permission *names*.
-const ROLE_PRESETS: { label: string; description: string; permissionNames: string[] }[] = [
+const ROLE_PRESETS: { label: string; description: string; permissionNames: string[] | null }[] = [
   {
     label: 'Staff (Operations)',
     description: 'Day-to-day shop work — orders, products, services, reviews, tickets. No user/role/settings/money access.',
@@ -59,12 +53,20 @@ const ROLE_PRESETS: { label: string; description: string; permissionNames: strin
   },
   {
     label: 'Full Access',
-    description: 'Every permission in the system — equivalent to Admin.',
-    permissionNames: [],
+    description: 'Every permission in the system — equivalent to Super Admin. Super admins only.',
+    permissionNames: null,
   },
 ];
 
 export default function RolesPage() {
+  const currentUser = useAuthStore((s) => s.user);
+  const isSuperAdmin = currentUser?.role === 'super_admin';
+  const myPermissions = useMemo(() => new Set(currentUser?.permissions ?? []), [currentUser]);
+
+  // The backend refuses any grant containing a permission the actor doesn't hold (super_admin
+  // holds everything), so the form only lets you tick what you could actually save.
+  const canGrant = (permission: Permission) => isSuperAdmin || myPermissions.has(permission.name);
+
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -73,11 +75,7 @@ export default function RolesPage() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [formData, setFormData] = useState<RoleFormData>({
-    name: '',
-    description: '',
-    permissions: [],
-  });
+  const [formData, setFormData] = useState<RoleFormData>({ name: '', description: '', permissions: [] });
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -101,29 +99,24 @@ export default function RolesPage() {
     fetchData();
   }, []);
 
-  const filteredRoles = roles.filter(
-    (role) =>
-      role.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      role.description?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredRoles = roles.filter((role) => {
+    const q = searchQuery.trim().toLowerCase();
+    return !q || role.name.toLowerCase().includes(q) || role.description?.toLowerCase().includes(q);
+  });
+
+  const grantableCount = permissions.filter(canGrant).length;
 
   // Group permissions by module
   const groupedPermissions = permissions.reduce((acc, permission) => {
     const module = permission.module || 'General';
-    if (!acc[module]) {
-      acc[module] = [];
-    }
+    if (!acc[module]) acc[module] = [];
     acc[module].push(permission);
     return acc;
   }, {} as Record<string, Permission[]>);
 
   const openCreateModal = () => {
     setSelectedRole(null);
-    setFormData({
-      name: '',
-      description: '',
-      permissions: [],
-    });
+    setFormData({ name: '', description: '', permissions: [] });
     setIsModalOpen(true);
   };
 
@@ -152,6 +145,7 @@ export default function RolesPage() {
       } else {
         await adminService.createRole(payload);
       }
+      toast.success(selectedRole ? 'Role updated' : 'Role created');
       setIsModalOpen(false);
       fetchData();
     } catch (error) {
@@ -165,6 +159,7 @@ export default function RolesPage() {
     if (!selectedRole) return;
     try {
       await adminService.deleteRole(selectedRole.id);
+      toast.success('Role deleted');
       setIsDeleteModalOpen(false);
       fetchData();
     } catch (error) {
@@ -172,264 +167,264 @@ export default function RolesPage() {
     }
   };
 
-  const togglePermission = (permissionId: number) => {
+  const togglePermission = (permission: Permission) => {
+    if (!canGrant(permission)) return;
     setFormData((prev) => ({
       ...prev,
-      permissions: prev.permissions.includes(permissionId)
-        ? prev.permissions.filter((id) => id !== permissionId)
-        : [...prev.permissions, permissionId],
+      permissions: prev.permissions.includes(permission.id)
+        ? prev.permissions.filter((id) => id !== permission.id)
+        : [...prev.permissions, permission.id],
     }));
   };
 
+  // Presets only ever tick permissions the signed-in admin holds, so applying one can't produce
+  // a save the backend would refuse.
   const applyPreset = (preset: (typeof ROLE_PRESETS)[number]) => {
-    if (preset.permissionNames.length === 0) {
-      setFormData((prev) => ({ ...prev, permissions: permissions.map((p) => p.id) }));
-      return;
-    }
     const ids = permissions
-      .filter((p) => preset.permissionNames.includes(p.name))
+      .filter((p) => canGrant(p) && (preset.permissionNames === null || preset.permissionNames.includes(p.name)))
       .map((p) => p.id);
     setFormData((prev) => ({ ...prev, permissions: ids }));
   };
 
   const toggleModulePermissions = (module: string) => {
-    const modulePermissionIds = groupedPermissions[module].map((p) => p.id);
-    const allSelected = modulePermissionIds.every((id) => formData.permissions.includes(id));
-
+    const grantable = groupedPermissions[module].filter(canGrant).map((p) => p.id);
+    if (grantable.length === 0) return;
+    const allSelected = grantable.every((id) => formData.permissions.includes(id));
     setFormData((prev) => ({
       ...prev,
       permissions: allSelected
-        ? prev.permissions.filter((id) => !modulePermissionIds.includes(id))
-        : [...new Set([...prev.permissions, ...modulePermissionIds])],
+        ? prev.permissions.filter((id) => !grantable.includes(id))
+        : [...new Set([...prev.permissions, ...grantable])],
     }));
   };
 
+  const isProtected = (role: Role) => PROTECTED_ROLES.includes(role.name);
+
   return (
     <AdminLayout>
-      <div className="page-header flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="page-title">Roles</h1>
-          <p className="page-description">Manage user roles and permissions</p>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <h1 className="text-lg font-bold text-gray-900">Roles</h1>
+          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-600">
+            {roles.length} role{roles.length === 1 ? '' : 's'}
+          </span>
         </div>
-        <Button onClick={openCreateModal}>
-          <Plus className="w-4 h-4 mr-2" />
-          Create Role
-        </Button>
+        <Button size="sm" onClick={openCreateModal} leftIcon={<Plus className="h-3.5 w-3.5" />}>Create role</Button>
       </div>
 
-      {/* Search */}
-      <Card className="mb-6">
-        <CardContent className="p-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-            <Input
-              placeholder="Search roles..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-        </CardContent>
-      </Card>
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white p-3">
+        <div className="relative min-w-[240px] flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search roles by name or description…"
+            className="h-8 w-full rounded-lg border border-gray-300 pl-8 pr-3 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+        {searchQuery && (
+          <Button variant="ghost" size="sm" onClick={() => setSearchQuery('')} leftIcon={<X className="h-3.5 w-3.5" />}>Clear</Button>
+        )}
+        <p className="ml-auto text-[11px] text-gray-500">
+          Tiers (admin, staff, vendor, customer) are built in and can&apos;t be renamed or deleted. Custom roles are yours to shape.
+        </p>
+      </div>
 
-      {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <LoadingSpinner size="lg" text="Loading roles..." />
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          {filteredRoles.map((role) => (
-            <Card key={role.id} className="hover:shadow-md transition-shadow">
-              <CardHeader className="pb-2">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                      <Shield className="w-5 h-5 text-primary" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-base">{role.name}</CardTitle>
-                      <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
-                        <Users className="w-3 h-3" />
-                        {role.users_count} users
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => openEditModal(role)}
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => openDeleteModal(role)}
-                      disabled={role.name === 'Super Admin'}
-                    >
-                      <Trash2 className="w-4 h-4 text-red-500" />
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-gray-600 mb-4">{role.description}</p>
-                <div className="flex flex-wrap gap-1">
-                  {role.permissions?.slice(0, 5).map((permission) => (
-                    <Badge key={permission.id} variant="default" className="text-xs">
-                      {permission.name}
-                    </Badge>
-                  ))}
-                  {role.permissions && role.permissions.length > 5 && (
-                    <Badge variant="default" className="text-xs">
-                      +{role.permissions.length - 5} more
-                    </Badge>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12"><LoadingSpinner size="lg" text="Loading roles..." /></div>
+        ) : filteredRoles.length === 0 ? (
+          <EmptyState icon={<Shield className="w-8 h-8 text-gray-400" />} title={searchQuery ? 'No roles match your search' : 'No roles yet'} />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-3 py-2 text-left font-semibold">Role</th>
+                  <th className="px-3 py-2 text-right font-semibold">Users</th>
+                  <th className="px-3 py-2 text-right font-semibold">Permissions</th>
+                  <th className="px-3 py-2 text-left font-semibold">Grants</th>
+                  <th className="px-3 py-2 text-right font-semibold">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredRoles.map((role, i) => {
+                  const perms = role.permissions ?? [];
+                  const grantableHere = perms.filter(canGrant).length;
+                  return (
+                    <tr key={role.id} className={`${i % 2 ? 'bg-slate-50/40' : 'bg-white'} hover:bg-indigo-50/40`}>
+                      <td className="px-3 py-2 align-top">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-sm font-semibold text-gray-900">{role.name}</span>
+                          {isProtected(role) && (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-1.5 py-px text-[10px] font-semibold text-slate-600">
+                              <Lock className="h-2.5 w-2.5" /> Built-in
+                            </span>
+                          )}
+                        </div>
+                        {role.description && <p className="mt-0.5 max-w-md text-xs text-gray-500">{role.description}</p>}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-gray-700">
+                        <span className="inline-flex items-center gap-1"><Users className="h-3 w-3 text-gray-400" />{role.users_count ?? 0}</span>
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-gray-700">{perms.length}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex max-w-xl flex-wrap gap-1">
+                          {perms.slice(0, 6).map((p) => (
+                            <span key={p.id} className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] text-gray-700">{p.name}</span>
+                          ))}
+                          {perms.length > 6 && <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500">+{perms.length - 6} more</span>}
+                          {perms.length === 0 && <span className="text-xs text-gray-400">No permissions</span>}
+                        </div>
+                        {!isSuperAdmin && grantableHere < perms.length && (
+                          <p className="mt-1 text-[10px] text-amber-700">You can edit {grantableHere} of these {perms.length}</p>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right align-top">
+                        <div className="flex items-center justify-end gap-0.5">
+                          <Button variant="ghost" size="sm" title="Edit" onClick={() => openEditModal(role)}><Edit2 className="w-4 h-4" /></Button>
+                          <Button variant="ghost" size="sm" title={isProtected(role) ? 'Built-in tiers cannot be deleted' : 'Delete'} onClick={() => openDeleteModal(role)} disabled={isProtected(role)}>
+                            <Trash2 className="w-4 h-4 text-red-500" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {/* Create/Edit Modal */}
-      <Modal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        title={selectedRole ? 'Edit Role' : 'Create Role'}
-        size="lg"
-      >
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Role Name
-            </label>
-            <Input
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              placeholder="Enter role name"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Description
-            </label>
-            <Input
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              placeholder="Enter role description"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Quick Presets
-            </label>
-            <p className="text-xs text-gray-500 mb-3">Pick a starting point, then fine-tune the checkboxes below.</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
-              {ROLE_PRESETS.map((preset) => (
-                <button
-                  key={preset.label}
-                  type="button"
-                  onClick={() => applyPreset(preset)}
-                  className="text-left rounded-lg border border-gray-200 px-3 py-2 hover:border-primary-400 hover:bg-primary-50 transition-colors"
-                >
-                  <p className="text-sm font-medium text-gray-900">{preset.label}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{preset.description}</p>
-                </button>
-              ))}
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={selectedRole ? `Edit role — ${selectedRole.name}` : 'Create role'} size="lg">
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Role name</label>
+              <Input
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="e.g. Shop Staff"
+                required
+                disabled={!!selectedRole && isProtected(selectedRole)}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Description</label>
+              <Input
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="What this role is for"
+              />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Permissions
-            </label>
-            <p className="text-xs text-gray-500 mb-3">Grouped by admin menu section — checking a section here is what lets this role see and use that menu.</p>
-            <div className="space-y-4 max-h-96 overflow-y-auto border rounded-lg p-4">
-              {Object.entries(groupedPermissions).map(([module, modulePermissions]) => (
-                <div key={module} className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id={`module-${module}`}
-                      checked={modulePermissions.every((p) =>
-                        formData.permissions.includes(p.id)
-                      )}
-                      onChange={() => toggleModulePermissions(module)}
-                      className="rounded border-gray-300 text-primary focus:ring-primary"
-                    />
-                    <label
-                      htmlFor={`module-${module}`}
-                      className="font-medium text-gray-900"
-                    >
-                      {module}
-                    </label>
-                  </div>
-                  <div className="ml-6 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {modulePermissions.map((permission) => (
-                      <label
-                        key={permission.id}
-                        className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer"
-                      >
+            <p className="mb-2 text-sm font-medium text-gray-700">Start from a preset</p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {ROLE_PRESETS.map((preset) => {
+                const locked = preset.permissionNames === null && !isSuperAdmin;
+                return (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    disabled={locked}
+                    title={locked ? 'Only a super admin can grant every permission' : undefined}
+                    onClick={() => applyPreset(preset)}
+                    className="rounded-lg border border-gray-200 px-3 py-2 text-left transition-colors hover:border-indigo-300 hover:bg-indigo-50/50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <p className="text-sm font-semibold text-gray-900">{preset.label}</p>
+                    <p className="mt-0.5 text-xs text-gray-500">{locked ? 'Super admins only' : preset.description}</p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-medium text-gray-700">
+                Permissions <span className="ml-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">{formData.permissions.length} selected</span>
+              </p>
+              <p className="text-[11px] text-gray-500">
+                {isSuperAdmin ? 'Super admin — every permission is available.' : `You can grant ${grantableCount} of ${permissions.length}. Greyed-out ones you don't hold yourself.`}
+              </p>
+            </div>
+            <div className="grid max-h-[46vh] grid-cols-1 gap-3 overflow-y-auto rounded-lg border border-gray-200 bg-slate-50/50 p-3 md:grid-cols-2">
+              {Object.entries(groupedPermissions).map(([module, modulePermissions]) => {
+                const grantable = modulePermissions.filter(canGrant);
+                const selectedHere = modulePermissions.filter((p) => formData.permissions.includes(p.id)).length;
+                const allSelected = grantable.length > 0 && grantable.every((p) => formData.permissions.includes(p.id));
+                return (
+                  <div key={module} className="rounded-lg border border-gray-200 bg-white p-3">
+                    <label className="mb-2 flex cursor-pointer items-center justify-between gap-2">
+                      <span className="flex items-center gap-2">
                         <input
                           type="checkbox"
-                          checked={formData.permissions.includes(permission.id)}
-                          onChange={() => togglePermission(permission.id)}
-                          className="rounded border-gray-300 text-primary focus:ring-primary"
+                          checked={allSelected}
+                          disabled={grantable.length === 0}
+                          onChange={() => toggleModulePermissions(module)}
+                          className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                         />
-                        {permission.description || permission.name}
-                      </label>
-                    ))}
+                        <span className="text-sm font-semibold text-gray-900">{module}</span>
+                      </span>
+                      <span className="text-[11px] tabular-nums text-gray-500">{selectedHere}/{modulePermissions.length}</span>
+                    </label>
+                    <div className="space-y-1 pl-6">
+                      {modulePermissions.map((permission) => {
+                        const allowed = canGrant(permission);
+                        return (
+                          <label
+                            key={permission.id}
+                            title={allowed ? permission.name : "You don't hold this permission yourself"}
+                            className={`flex items-start gap-2 text-xs ${allowed ? 'cursor-pointer text-gray-700' : 'cursor-not-allowed text-gray-400'}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={formData.permissions.includes(permission.id)}
+                              disabled={!allowed}
+                              onChange={() => togglePermission(permission)}
+                              className="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <span>
+                              {permission.description || permission.name}
+                              <span className="block font-mono text-[10px] text-gray-400">{permission.name}</span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
-          <div className="flex justify-end gap-3 pt-4 border-t">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setIsModalOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" isLoading={isSaving}>
-              {selectedRole ? 'Update Role' : 'Create Role'}
-            </Button>
+          <div className="flex justify-end gap-3 border-t pt-4">
+            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>Cancel</Button>
+            <Button type="submit" isLoading={isSaving}>{selectedRole ? 'Save role' : 'Create role'}</Button>
           </div>
         </form>
       </Modal>
 
       {/* Delete Modal */}
-      <Modal
-        isOpen={isDeleteModalOpen}
-        onClose={() => setIsDeleteModalOpen(false)}
-        title="Delete Role"
-      >
+      <Modal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} title="Delete role">
         <div className="space-y-4">
-          <p className="text-gray-600">
-            Are you sure you want to delete the role &quot;{selectedRole?.name}&quot;?
-            This action cannot be undone.
+          <p className="text-sm text-gray-600">
+            Delete the role <strong>{selectedRole?.name}</strong>? This cannot be undone.
           </p>
-          {selectedRole && selectedRole.users_count && selectedRole.users_count > 0 && (
-            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-              <p className="text-sm text-yellow-800">
-                Warning: {selectedRole.users_count} user(s) currently have this role assigned.
+          {selectedRole && (selectedRole.users_count ?? 0) > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <p className="text-sm text-amber-800">
+                {selectedRole.users_count} user(s) currently have this role and will lose its permissions.
               </p>
             </div>
           )}
-          <div className="flex justify-end gap-3 pt-4 border-t">
-            <Button variant="outline" onClick={() => setIsDeleteModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button variant="danger" onClick={handleDelete}>
-              Delete Role
-            </Button>
+          <div className="flex justify-end gap-3 border-t pt-4">
+            <Button variant="outline" onClick={() => setIsDeleteModalOpen(false)}>Cancel</Button>
+            <Button variant="danger" onClick={handleDelete}>Delete role</Button>
           </div>
         </div>
       </Modal>

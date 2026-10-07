@@ -22,23 +22,50 @@ class ServiceIntake extends Model
         'division_id',
         'district_id',
         'area_id',
+        'received_by_name',
         'status',
+        'work_status',
         'estimated_cost',
+        'amount',
+        'non_refundable_amount',
+        'non_refundable_reason',
+        'reference_name',
+        'commission_amount',
         'received_at',
         'expected_delivery_at',
         'delivered_at',
         'notes',
         'admin_notes',
+        'customer_feedback',
         'order_id',
         'created_by',
     ];
 
     protected $casts = [
-        'estimated_cost'       => 'decimal:2',
-        'received_at'          => 'datetime',
-        'expected_delivery_at' => 'date',
-        'delivered_at'         => 'datetime',
+        'estimated_cost'        => 'decimal:2',
+        'amount'                => 'decimal:2',
+        'non_refundable_amount' => 'decimal:2',
+        'commission_amount'     => 'decimal:2',
+        'received_at'           => 'datetime',
+        'expected_delivery_at'  => 'date',
+        'delivered_at'          => 'datetime',
     ];
+
+    /** Computed, not stored -- see getDaysUntilEstimateAttribute(). */
+    protected $appends = ['days_until_estimate'];
+
+    /**
+     * "Days" column: how many days remain until expected_delivery_at (negative once overdue).
+     * Null when no estimate date has been set yet.
+     */
+    public function getDaysUntilEstimateAttribute(): ?int
+    {
+        if (!$this->expected_delivery_at) {
+            return null;
+        }
+
+        return (int) now()->startOfDay()->diffInDays($this->expected_delivery_at->copy()->startOfDay(), false);
+    }
 
     protected static function boot()
     {
@@ -117,17 +144,18 @@ class ServiceIntake extends Model
     /** A walk-in intake (no pre-existing order) may be converted into a new order. */
     public function canBeConverted(): bool
     {
-        return is_null($this->order_id) && !in_array($this->status, ['converted', 'cancelled']);
+        return is_null($this->order_id) && !in_array($this->status, ['converted', 'cancelled', 'returned']);
     }
 
     /** A linked intake may have its price confirmed back onto the existing order. */
     public function canConfirmPrice(): bool
     {
-        return !is_null($this->order_id) && $this->status !== 'cancelled';
+        return !is_null($this->order_id) && !in_array($this->status, ['cancelled', 'returned']);
     }
 
+    /** 'returned' is a terminal state too -- the device already left, same as 'cancelled'. */
     public function isLocked(): bool
     {
-        return in_array($this->status, ['converted', 'cancelled']);
+        return in_array($this->status, ['converted', 'cancelled', 'returned']);
     }
 }

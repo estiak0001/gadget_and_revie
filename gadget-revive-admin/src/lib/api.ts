@@ -1,5 +1,6 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import Cookies from 'js-cookie';
+import { publicOrderTrackingRedirect } from './utils';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 
@@ -33,7 +34,12 @@ api.interceptors.response.use(
       Cookies.remove('token');
       Cookies.remove('user');
       if (typeof window !== 'undefined') {
-        window.location.href = '/login';
+        // A customer scanning a printed invoice/receipt/chalan QR with their phone lands on an
+        // admin order link with no session — this 401 is the first definitive confirmation of
+        // that (it can arrive before or after AdminLayout's own check), so it must agree on the
+        // same destination rather than racing it to /login.
+        const storefrontRedirect = publicOrderTrackingRedirect(window.location.pathname, window.location.search);
+        window.location.href = storefrontRedirect || '/login';
       }
     }
     return Promise.reject(error);

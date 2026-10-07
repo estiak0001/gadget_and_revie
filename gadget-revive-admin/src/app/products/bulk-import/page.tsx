@@ -10,15 +10,15 @@ import BulkUploadPanel from '@/components/products/BulkUploadPanel';
 export default function ProductBulkImportPage() {
   return (
     <AdminLayout>
-      <div className="page-header">
-        <h1 className="page-title">Bulk Import</h1>
-        <p className="page-description">Bring in a catalog from a spreadsheet — including one produced by a scraping script</p>
+      <div className="mb-3">
+        <h1 className="text-lg font-bold text-gray-900">Bulk Import</h1>
+        <p className="text-xs text-gray-500">Bring in a catalog from a spreadsheet — including one produced by a scraping script</p>
       </div>
 
-      <Card className="mb-6 border-amber-200 bg-amber-50/50">
-        <CardContent className="p-4 flex gap-3">
-          <Info className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-          <div className="text-sm text-amber-900 space-y-1.5">
+      <Card className="mb-3 border-amber-200 bg-amber-50/50">
+        <CardContent className="p-3 flex gap-2.5">
+          <Info className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div className="text-xs text-amber-900 space-y-1">
             <p>
               <strong>This runs the upload only — not the scraping itself.</strong> A scraping
               script (e.g. the Star Tech notebook) has to run on your own computer, not this
@@ -40,15 +40,15 @@ export default function ProductBulkImportPage() {
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Upload a Catalog File</CardTitle>
+        <CardHeader className="px-3 py-2">
+          <CardTitle className="text-sm">Upload a Catalog File</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-3">
           <BulkUploadPanel />
         </CardContent>
       </Card>
 
-      <div className="mt-6 flex justify-end">
+      <div className="mt-3 flex justify-end">
         <Link
           href="/products?source=bulk_import"
           className="inline-flex items-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-700"
