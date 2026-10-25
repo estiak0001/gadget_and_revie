@@ -77,35 +77,57 @@ Code lives at:
 
 ---
 
-## 1. Deploying an update (the day-to-day operation)
+## 1. Deploying an update (git-based)
 
-**API:**
+The server holds one clone of the monorepo at `/srv/gadget-revive`.
+`deploy/deploy.sh` (installed as `/usr/local/bin/gadget-deploy`) fetches
+`origin/main` and syncs each changed app into its `/var/www/gadget-revive-*`
+directory, leaving `.env*`, `storage/`, `vendor/`, `node_modules/` and `.next/`
+alone. Nginx and PM2 paths are unchanged.
+
+Per app it does what the old manual steps did, in the safe order:
+- **api**: `migrate --force` first, then code sync, `composer install` if
+  `composer.lock` changed, `config/route/view:cache`, reload php-fpm, restart queue worker.
+- **admin / web**: sync, `npm install` if `package.json` changed, `rm -rf .next/cache`,
+  `npm run build`, `pm2 restart`.
+
+**Day to day**: `git push origin main`. GitHub Actions (`.github/workflows/deploy.yml`)
+SSHes in and runs `gadget-deploy`. Or run it by hand:
 ```bash
-ssh root@72.61.227.247
-cd /var/www/gadget-revive-api
-git pull
-composer install --no-dev --optimize-autoloader
-php artisan migrate --force
-php artisan config:cache && php artisan route:cache && php artisan view:cache
+ssh root@72.61.227.247 gadget-deploy          # only apps that changed
+ssh root@72.61.227.247 gadget-deploy --all    # everything
+ssh root@72.61.227.247 gadget-deploy web      # one app
 ```
 
-**Admin panel:**
+**One-time server setup:**
 ```bash
-cd /var/www/gadget-revive-admin
-git pull
-npm install
-npm run build
-pm2 restart gadget-revive-admin
-```
+# 1. read-only deploy key so the server can pull the private repo
+ssh-keygen -t ed25519 -f ~/.ssh/gadget_repo_deploy -N ''
+cat ~/.ssh/gadget_repo_deploy.pub     # GitHub repo > Settings > Deploy keys (read-only)
+cat >> ~/.ssh/config <<'CFG'
+Host github.com
+  IdentityFile ~/.ssh/gadget_repo_deploy
+CFG
 
-**Storefront:**
-```bash
-cd /var/www/gadget-revive-web
-git pull
-npm install
-npm run build
-pm2 restart gadget-revive-web
+# 2. clone and install the script
+apt install -y rsync
+git clone git@github.com:estiak0001/gadget_and_revie.git /srv/gadget-revive
+ln -sf /srv/gadget-revive/deploy/deploy.sh /usr/local/bin/gadget-deploy
+
+# 3. first run: baselines the current state
+gadget-deploy --all
 ```
+**GitHub Actions secrets** (repo > Settings > Secrets): `DEPLOY_HOST` = `72.61.227.247`,
+`DEPLOY_SSH_KEY` = a private key whose public half is in the server's
+`/root/.ssh/authorized_keys` (make a dedicated one: `ssh-keygen -t ed25519 -f deploy_ci`).
+
+Notes:
+- The script is a symlink into the clone, so editing `deploy.sh` takes effect on the
+  next deploy (after the fetch of the run that ships it).
+- Files deleted from the repo are removed on admin/web (`rsync --delete`) but
+  **not** on the API, to avoid wiping server-only uploads; delete those by hand.
+- Roll back: `git revert <sha>` locally and push; the deploy always follows `origin/main`.
+- Never edit files directly in `/var/www`; the next deploy overwrites them.
 
 Health check after any deploy:
 ```bash

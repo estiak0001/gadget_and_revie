@@ -1,0 +1,28 @@
+name: Deploy
+
+# Pushing to main deploys to production. Remove the push trigger to deploy only on demand.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      apps:
+        description: "Apps to redeploy (api admin web), or --all. Empty = only what changed."
+        required: false
+
+concurrency: deploy
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.DEPLOY_HOST }}
+          APPS: ${{ inputs.apps }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
+          ssh -i ~/.ssh/id_deploy "root@$SSH_HOST" "/usr/local/bin/gadget-deploy $APPS"
