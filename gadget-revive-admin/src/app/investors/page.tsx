@@ -10,7 +10,7 @@ import { formatCurrency, getErrorMessage } from '@/lib/utils';
 import adminService from '@/lib/adminService';
 import toast from 'react-hot-toast';
 
-const EMPTY_EDIT_FORM = { name: '', phone: '', email: '', address: '', notes: '', is_active: true };
+const EMPTY_EDIT_FORM = { name: '', phone: '', email: '', address: '', notes: '', is_active: true, share_percentage: '' };
 const TEXTAREA = 'w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500';
 
 type StatusFilter = 'all' | 'active' | 'inactive';
@@ -182,6 +182,7 @@ export default function InvestorsPage() {
       address: investor.address || '',
       notes: investor.notes || '',
       is_active: investor.is_active,
+      share_percentage: investor.share_percentage != null ? String(investor.share_percentage) : '',
     });
     setIsEditOpen(true);
   };
@@ -190,6 +191,11 @@ export default function InvestorsPage() {
     if (!selectedInvestor) return;
     if (!editForm.name.trim()) {
       toast.error('Name is required');
+      return;
+    }
+    const sharePct = editForm.share_percentage.trim();
+    if (sharePct !== '' && (Number.isNaN(Number(sharePct)) || Number(sharePct) < 0 || Number(sharePct) > 100)) {
+      toast.error('Share % must be a number between 0 and 100');
       return;
     }
     setIsSaving(true);
@@ -201,6 +207,7 @@ export default function InvestorsPage() {
         address: editForm.address.trim() || null,
         notes: editForm.notes.trim() || null,
         is_active: editForm.is_active,
+        share_percentage: sharePct === '' ? null : Number(sharePct),
       });
       toast.success('Investor updated.');
       setIsEditOpen(false);
@@ -254,7 +261,7 @@ export default function InvestorsPage() {
         <KpiTile label="Capital outstanding" value={formatCurrency(totalCapital)} tone="emerald" icon={<TrendingUp className="h-4 w-4 opacity-60" />} sub="Sum of investor balances" />
         <KpiTile label="Active investors" value={`${activeCount} of ${investors.length}`} tone="sky" icon={<UserCheck className="h-4 w-4 opacity-60" />} sub="Marked active" />
         <KpiTile label="Largest holder" value={topHolder && (topHolder.balance ?? 0) > 0 ? topHolder.name : '—'} tone="indigo" icon={<Users className="h-4 w-4 opacity-60" />}
-          sub={topHolder && (topHolder.balance ?? 0) > 0 ? `${shareOf(topHolder.balance).toFixed(1)}% of capital` : 'No capital yet'} />
+          sub={topHolder && (topHolder.balance ?? 0) > 0 ? (topHolder.share_percentage != null ? `${topHolder.share_percentage.toFixed(1)}% share` : 'Largest by capital — no share % set') : 'No capital yet'} />
         <KpiTile label="Average per investor" value={formatCurrency(investors.length ? totalCapital / investors.length : 0)} tone="amber" sub="Across all investors" />
       </div>
 
@@ -320,7 +327,7 @@ export default function InvestorsPage() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {visible.map((investor, i) => {
-                  const share = shareOf(investor.balance);
+                  const share = investor.share_percentage;
                   return (
                     <tr key={investor.id} className={`${i % 2 ? 'bg-slate-50/40' : 'bg-white'} hover:bg-indigo-50/40`}>
                       <td className="px-4 py-2">
@@ -335,7 +342,7 @@ export default function InvestorsPage() {
                         {formatCurrency(investor.balance ?? 0)}
                       </td>
                       <td className="px-4 py-2">
-                        {share > 0 ? (
+                        {share != null ? (
                           <div className="flex items-center gap-2">
                             <div className="h-1.5 w-24 overflow-hidden rounded-full bg-gray-100">
                               <div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.min(100, share)}%` }} />
@@ -343,7 +350,7 @@ export default function InvestorsPage() {
                             <span className="text-[11px] tabular-nums text-gray-600">{share.toFixed(1)}%</span>
                           </div>
                         ) : (
-                          <span className="text-xs text-gray-400">—</span>
+                          <span className="text-xs text-gray-400" title="Not set — edit this investor to enter it">Not set</span>
                         )}
                       </td>
                       <td className="px-4 py-2">
@@ -545,6 +552,24 @@ export default function InvestorsPage() {
               value={editForm.email}
               onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
             />
+          </div>
+          <div>
+            <Input
+              label="Share % (manual)"
+              type="number"
+              min={0}
+              max={100}
+              step="0.01"
+              value={editForm.share_percentage}
+              onChange={(e) => setEditForm({ ...editForm, share_percentage: e.target.value })}
+              placeholder="e.g. 25"
+            />
+            <p className="mt-1 text-[11px] text-gray-500">
+              Ownership share — set this directly; it no longer follows the capital amount.
+              {selectedInvestor && totalCapital > 0 && (selectedInvestor.balance ?? 0) > 0 && (
+                <> For reference, capital contributed is ≈{shareOf(selectedInvestor.balance).toFixed(1)}% of the total pool.</>
+              )}
+            </p>
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">Address</label>

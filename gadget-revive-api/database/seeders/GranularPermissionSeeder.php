@@ -71,7 +71,7 @@ class GranularPermissionSeeder extends Seeder
             'process_investor_returns',
             // Accounts & Finance
             'view_financial_statements', 'manage_chart_of_accounts', 'post_journal_entries',
-            'process_pending_ledger_items',
+            'process_pending_ledger_items', 'manage_payment_methods',
             // Roles & Permissions
             'manage_role_definitions', 'assign_roles',
         ];

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Support\PermissionGrant;
+use App\Support\UserRoleTier;
 use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -255,7 +256,11 @@ class RoleController extends Controller
             return $this->error('User already has this role', 422);
         }
 
-        $user->assignRole($role);
+        // syncSelectedRole (not assignRole) — a user has exactly one role at a time everywhere
+        // else in this app (see its docblock), and it also keeps the coarse `role` tier column
+        // in sync so the new permissions aren't silently blocked by the role:admin,staff,
+        // super_admin route gate that runs before any permission check.
+        UserRoleTier::syncSelectedRole($user, $role->name);
 
         return $this->success([
             'user_id' => $user->id,
@@ -331,7 +336,12 @@ class RoleController extends Controller
             return $this->error(PermissionGrant::message($missing), 403);
         }
 
-        $user->syncRoles($roles);
+        // This endpoint's own contract takes an array, but the app has no concept of a user
+        // holding more than one role at once (see UserRoleTier's docblock) — every other role
+        // change collapses to a single role, and the coarse `role` tier column can only reflect
+        // one tier anyway. Collapse to the first selected role for the same single-role sync
+        // (and tier-column) guarantee every other role-change path gives.
+        UserRoleTier::syncSelectedRole($user, $roles->first()->name);
 
         return $this->success([
             'user_id' => $user->id,

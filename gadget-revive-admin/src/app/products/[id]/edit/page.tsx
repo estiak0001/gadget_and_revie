@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { ArrowLeft, Save, Plus, Trash2, RefreshCw, Tag, GripVertical, Edit2, Check, X, ChevronRight, ExternalLink } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
-import { Card, CardContent, CardHeader, CardTitle, Button, Input, Textarea, Select, SearchableSelect, LoadingSpinner, RichTextEditor, Modal, ImageUpload } from '@/components/ui';
+import { Card, CardContent, CardHeader, CardTitle, Button, Input, Select, SearchableSelect, LoadingSpinner, RichTextEditor, Modal, ImageUpload, ImageLightbox } from '@/components/ui';
 import { Product, ProductCategory, ProductBrand, CategoryAttribute, ProductAttributeValueEntry, ProductSerial } from '@/types';
 import { getErrorMessage } from '@/lib/utils';
 import adminService from '@/lib/adminService';
@@ -34,7 +34,7 @@ export default function EditProductPage() {
   const [product, setProduct] = useState<Product | null>(null);
   const [serials, setSerials] = useState<ProductSerial[]>([]);
   const [newSerialsText, setNewSerialsText] = useState('');
-  const [isAddingSerials, setIsAddingSerials] = useState(false);
+  const [pendingSerialCount, setPendingSerialCount] = useState(0);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -62,10 +62,17 @@ export default function EditProductPage() {
     sort_order: '0',
   });
 
-  // Image state
+  // Image state. galleryFiles/galleryPreviews only ever hold newly-picked files (kept in
+  // lockstep with each other); existingGallery holds the product's current gallery URLs that
+  // the admin hasn't removed -- keeping these separate (rather than one array mixing both, as
+  // this page used to) is what makes removing an existing thumbnail and removing a
+  // newly-picked one never collide on the same index.
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState('');
+  const [removeImage, setRemoveImage] = useState(false);
+  const [existingGallery, setExistingGallery] = useState<string[]>([]);
   const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
+  const [lightbox, setLightbox] = useState<{ images: string[]; index: number } | null>(null);
   const [galleryPreviews, setGalleryPreviews] = useState<string[]>([]);
 
   // Specifications state
@@ -171,7 +178,7 @@ export default function EditProductPage() {
 
       // Set existing gallery previews
       if (data.gallery && Array.isArray(data.gallery)) {
-        setGalleryPreviews(data.gallery);
+        setExistingGallery(data.gallery);
       }
 
       // Set specifications
@@ -376,20 +383,45 @@ export default function EditProductPage() {
     }
   };
 
-  const handleAddSerials = async () => {
-    const newSerials = newSerialsText.split('\n').map((s) => s.trim()).filter(Boolean);
-    if (newSerials.length === 0) return;
+  // Scan/type a serial and press Enter: it's saved immediately and the input is cleared and kept
+  // focused for the next one. Saves are chained so rapid scanner input can't race.
+  const serialQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const serialInputRef = useRef<HTMLInputElement>(null);
 
-    setIsAddingSerials(true);
-    try {
-      const response = await adminService.addProductSerials(productId, newSerials);
-      setSerials(response.data?.data || []);
-      setNewSerialsText('');
-      toast.success('Serial numbers added');
-    } catch (error) {
-      toast.error(getErrorMessage(error));
-    } finally {
-      setIsAddingSerials(false);
+  const submitSerials = (raw: string) => {
+    const incoming = Array.from(new Set(raw.split(/[\n,;\t]+/).map((s) => s.trim()).filter(Boolean)));
+    if (incoming.length === 0) return;
+
+    setNewSerialsText('');
+    serialInputRef.current?.focus();
+
+    setPendingSerialCount((c) => c + incoming.length);
+    serialQueueRef.current = serialQueueRef.current.then(async () => {
+      try {
+        const response = await adminService.addProductSerials(productId, incoming);
+        setSerials(response.data?.data || []);
+        toast.success(incoming.length === 1 ? `Added ${incoming[0]}` : `Added ${incoming.length} serials`);
+      } catch (error) {
+        toast.error(`${incoming.join(', ')}: ${getErrorMessage(error)}`);
+        setNewSerialsText((cur) => cur || incoming.join('\n'));
+      } finally {
+        setPendingSerialCount((c) => c - incoming.length);
+      }
+    });
+  };
+
+  const handleSerialKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submitSerials(newSerialsText);
+    }
+  };
+
+  const handleSerialPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const text = e.clipboardData.getData('text');
+    if (/[\n,;]/.test(text.trim())) {
+      e.preventDefault();
+      submitSerials(text);
     }
   };
 
@@ -413,6 +445,7 @@ export default function EditProductPage() {
     }
 
     setImageFile(file);
+    setRemoveImage(false);
     const reader = new FileReader();
     reader.onloadend = () => setImagePreview(reader.result as string);
     reader.readAsDataURL(file);
@@ -445,9 +478,18 @@ export default function EditProductPage() {
     });
   };
 
+  // Removes a newly-picked (not yet uploaded) gallery file -- galleryFiles/galleryPreviews
+  // only ever hold new picks, so the same index is valid in both.
   const removeGalleryImage = (index: number) => {
     setGalleryFiles(prev => prev.filter((_, i) => i !== index));
     setGalleryPreviews(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Removes one of the product's current (already-saved) gallery images. It stays removed
+  // only once the form is actually submitted -- gallery_keep in handleSubmit is what tells the
+  // backend to drop it from the stored gallery.
+  const removeExistingGalleryImage = (index: number) => {
+    setExistingGallery(prev => prev.filter((_, i) => i !== index));
   };
 
   const addSpecification = () => {
@@ -522,53 +564,47 @@ export default function EditProductPage() {
     setIsSaving(true);
 
     try {
-      const hasFiles = imageFile || galleryFiles.length > 0;
+      // Always FormData, even with no image/gallery changes at all -- gallery_keep has to be
+      // sent on every save so a delete-only edit (no new files) still tells the backend what
+      // to drop, instead of only triggering when a new file happens to be picked too.
+      const formDataToSend = new FormData();
 
-      if (hasFiles) {
-        const formDataToSend = new FormData();
-        
-        // Append all text fields
-        Object.entries(formData).forEach(([key, value]) => {
-          if (value !== '' && value !== null && value !== undefined) {
-            formDataToSend.append(key, value.toString());
-          }
-        });
-
-        // Append specifications as JSON
-        if (specifications.length > 0) {
-          const specsObj = specifications.reduce((acc, spec) => {
-            acc[spec.key] = spec.value;
-            return acc;
-          }, {} as Record<string, string>);
-          formDataToSend.append('specifications', JSON.stringify(specsObj));
+      // Append all text fields
+      Object.entries(formData).forEach(([key, value]) => {
+        if (value !== '' && value !== null && value !== undefined) {
+          formDataToSend.append(key, value.toString());
         }
+      });
 
-        // Append structured attribute values
-        formDataToSend.append('attribute_values', JSON.stringify(buildAttributeValuesPayload()));
-
-        // Append main image
-        if (imageFile) {
-          formDataToSend.append('image', imageFile);
-        }
-
-        // Append gallery images
-        galleryFiles.forEach(file => {
-          formDataToSend.append('gallery[]', file);
-        });
-
-        await adminService.updateProduct(productId, formDataToSend);
-      } else {
-        // JSON payload without files
-        const payload: any = { ...formData };
-        if (specifications.length > 0) {
-          payload.specifications = specifications.reduce((acc, spec) => {
-            acc[spec.key] = spec.value;
-            return acc;
-          }, {} as Record<string, string>);
-        }
-        payload.attribute_values = buildAttributeValuesPayload();
-        await adminService.updateProduct(productId, payload);
+      // Append specifications as JSON
+      if (specifications.length > 0) {
+        const specsObj = specifications.reduce((acc, spec) => {
+          acc[spec.key] = spec.value;
+          return acc;
+        }, {} as Record<string, string>);
+        formDataToSend.append('specifications', JSON.stringify(specsObj));
       }
+
+      // Append structured attribute values
+      formDataToSend.append('attribute_values', JSON.stringify(buildAttributeValuesPayload()));
+
+      // Main image: a newly-picked file replaces it; otherwise remove_image tells the backend
+      // whether the existing one was deleted (no file re-sent means "leave it alone" unless
+      // this flag says otherwise).
+      if (imageFile) {
+        formDataToSend.append('image', imageFile);
+      } else if (removeImage) {
+        formDataToSend.append('remove_image', '1');
+      }
+
+      // Gallery: the existing images the admin left in place, plus any newly-picked files --
+      // the backend merges these into the final stored gallery (see adminProductUpdate()).
+      formDataToSend.append('gallery_keep', JSON.stringify(existingGallery));
+      galleryFiles.forEach(file => {
+        formDataToSend.append('gallery_new[]', file);
+      });
+
+      await adminService.updateProduct(productId, formDataToSend);
 
       toast.success('Product updated successfully');
       goBackToList();
@@ -801,16 +837,25 @@ export default function EditProductPage() {
                   />
                   {imagePreview && (
                     <div className="mt-3 relative inline-block">
-                      <img src={imagePreview} alt="Preview" className="w-32 h-32 object-cover rounded-lg border" />
-                      {imageFile && (
-                        <button
-                          type="button"
-                          onClick={() => { setImageFile(null); setImagePreview(product?.image || ''); }}
-                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600"
-                        >
-                          ×
-                        </button>
-                      )}
+                      <img src={imagePreview} alt="Preview" title="Click to zoom" onClick={() => setLightbox({ images: [imagePreview], index: 0 })} className="w-32 h-32 object-cover rounded-lg border cursor-zoom-in" />
+                      <button
+                        type="button"
+                        title={imageFile ? 'Cancel this new image' : 'Delete the current image'}
+                        onClick={() => {
+                          if (imageFile) {
+                            // Cancel the newly-picked file; fall back to whatever the main
+                            // image currently is (possibly already marked for removal).
+                            setImageFile(null);
+                            setImagePreview(removeImage ? '' : (product?.image || ''));
+                          } else {
+                            setRemoveImage(true);
+                            setImagePreview('');
+                          }
+                        }}
+                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600"
+                      >
+                        ×
+                      </button>
                     </div>
                   )}
                 </div>
@@ -825,13 +870,28 @@ export default function EditProductPage() {
                     onChange={handleGallerySelect}
                     className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100"
                   />
-                  {galleryPreviews.length > 0 && (
+                  {(existingGallery.length > 0 || galleryPreviews.length > 0) && (
                     <div className="mt-3 grid grid-cols-4 gap-3">
-                      {galleryPreviews.map((preview, idx) => (
-                        <div key={idx} className="relative">
-                          <img src={preview} alt={`Gallery ${idx + 1}`} className="w-full h-24 object-cover rounded-lg border" />
+                      {existingGallery.map((url, idx) => (
+                        <div key={`existing-${idx}`} className="relative">
+                          <img src={url} alt={`Gallery ${idx + 1}`} title="Click to zoom" onClick={() => setLightbox({ images: [...existingGallery, ...galleryPreviews], index: idx })} className="w-full h-24 object-cover rounded-lg border cursor-zoom-in" />
                           <button
                             type="button"
+                            title="Delete this image"
+                            onClick={() => removeExistingGalleryImage(idx)}
+                            className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                      {galleryPreviews.map((preview, idx) => (
+                        <div key={`new-${idx}`} className="relative">
+                          <img src={preview} alt={`New gallery ${idx + 1}`} title="Click to zoom" onClick={() => setLightbox({ images: [...existingGallery, ...galleryPreviews], index: existingGallery.length + idx })} className="w-full h-24 object-cover rounded-lg border cursor-zoom-in" />
+                          <span className="absolute bottom-1 left-1 bg-emerald-600 text-white text-[9px] px-1 rounded">New</span>
+                          <button
+                            type="button"
+                            title="Remove this pending image"
                             onClick={() => removeGalleryImage(idx)}
                             className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600"
                           >
@@ -1261,24 +1321,22 @@ export default function EditProductPage() {
                   )}
 
                   <div>
-                    <Textarea
-                      label="Add serial numbers (one per line)"
-                      rows={2}
-                      placeholder={'e.g.\nSN-00123\nSN-00124'}
+                    <Input
+                      ref={serialInputRef}
+                      label="Scan or type a serial number, then press Enter"
+                      placeholder="Scan barcode or type serial…"
+                      autoComplete="off"
+                      autoFocus={false}
                       value={newSerialsText}
                       onChange={(e) => setNewSerialsText(e.target.value)}
+                      onKeyDown={handleSerialKeyDown}
+                      onPaste={handleSerialPaste}
                     />
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="mt-2"
-                      onClick={handleAddSerials}
-                      isLoading={isAddingSerials}
-                      disabled={!newSerialsText.trim()}
-                    >
-                      Add
-                    </Button>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {pendingSerialCount > 0
+                        ? `Saving ${pendingSerialCount}…`
+                        : 'Each Enter adds the serial instantly. You can also paste a list (one per line).'}
+                    </p>
                   </div>
                 </CardContent>
               </Card>
@@ -1522,6 +1580,9 @@ export default function EditProductPage() {
           </div>
         </form>
       </Modal>
+      {lightbox && (
+        <ImageLightbox images={lightbox.images} index={lightbox.index} onIndexChange={(i) => setLightbox((l) => (l ? { ...l, index: i } : l))} onClose={() => setLightbox(null)} />
+      )}
     </AdminLayout>
   );
 }

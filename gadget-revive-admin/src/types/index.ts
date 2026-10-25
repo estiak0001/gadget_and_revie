@@ -637,6 +637,10 @@ export interface ServiceIntake {
   created_by?: number | null;
   created_at: string;
   updated_at?: string;
+  /** Only present on a trashed=only fetch (the Delete history tab) — see ServiceIntakeController::index(). */
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  delete_reason?: string | null;
   items?: ServiceIntakeItem[];
   customer?: User | null;
   creator?: { id: number; name: string };
@@ -960,6 +964,8 @@ export interface Investor {
   notes?: string;
   is_active: boolean;
   balance?: number;
+  // Ownership share, set by hand — not derived from the capital balance ratio.
+  share_percentage?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -1129,6 +1135,44 @@ export interface ChartOfAccount {
   is_active: boolean;
   is_system: boolean;
   balance?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type PaymentMethodType = 'cash' | 'bank' | 'mobile_banking' | 'card' | 'other';
+
+export interface PaymentMethod {
+  id: number;
+  name: string;
+  code: string;
+  type: PaymentMethodType;
+  chart_of_account_id: number;
+  chart_of_account?: ChartOfAccount;
+  account_holder_name?: string | null;
+  account_number?: string | null;
+  bank_name?: string | null;
+  branch_name?: string | null;
+  notes?: string | null;
+  is_active: boolean;
+  is_system: boolean;
+  sort_order?: number;
+  balance?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FundTransfer {
+  id: number;
+  from_payment_method_id: number;
+  to_payment_method_id: number;
+  from_payment_method?: PaymentMethod;
+  to_payment_method?: PaymentMethod;
+  amount: number;
+  transfer_date: string;
+  description?: string | null;
+  journal_entry_id?: number | null;
+  created_by?: number | null;
+  creator?: { id: number; name: string } | null;
   created_at: string;
   updated_at: string;
 }

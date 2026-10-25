@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Save, Plus, Trash2, RefreshCw, Tag, GripVertical, Edit2, Check, X, ChevronRight, UploadCloud, Image as ImageIcon, FileSpreadsheet } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
-import { Card, CardContent, CardHeader, CardTitle, Button, Input, Textarea, Select, SearchableSelect, LoadingSpinner, RichTextEditor, Modal, ImageUpload } from '@/components/ui';
+import { Card, CardContent, CardHeader, CardTitle, Button, Input, Textarea, Select, SearchableSelect, LoadingSpinner, RichTextEditor, Modal, ImageUpload, ImageLightbox } from '@/components/ui';
 import BulkUploadPanel from '@/components/products/BulkUploadPanel';
 import { ProductCategory, ProductBrand, CategoryAttribute } from '@/types';
 import { getErrorMessage, cn } from '@/lib/utils';
@@ -59,6 +59,7 @@ export default function CreateProductPage() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState('');
   const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
+  const [lightbox, setLightbox] = useState<{ images: string[]; index: number } | null>(null);
   const [galleryPreviews, setGalleryPreviews] = useState<string[]>([]);
   // Drag-over state purely for the dashed-border highlight — files themselves are held as raw
   // File objects (not uploaded yet) since both images ship together with the rest of the product
@@ -710,7 +711,7 @@ export default function CreateProductPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Main Image</label>
                   {imagePreview ? (
                     <div className="relative inline-block">
-                      <img src={imagePreview} alt="Preview" className="w-32 h-32 object-cover rounded-lg border" />
+                      <img src={imagePreview} alt="Preview" title="Click to zoom" onClick={() => setLightbox({ images: [imagePreview], index: 0 })} className="w-32 h-32 object-cover rounded-lg border cursor-zoom-in" />
                       <button
                         type="button"
                         onClick={() => { setImageFile(null); setImagePreview(''); }}
@@ -761,7 +762,7 @@ export default function CreateProductPage() {
                     <div className="mt-3 grid grid-cols-4 gap-3">
                       {galleryPreviews.map((preview, idx) => (
                         <div key={idx} className="relative">
-                          <img src={preview} alt={`Gallery ${idx + 1}`} className="w-full h-24 object-cover rounded-lg border" />
+                          <img src={preview} alt={`Gallery ${idx + 1}`} title="Click to zoom" onClick={() => setLightbox({ images: galleryPreviews, index: idx })} className="w-full h-24 object-cover rounded-lg border cursor-zoom-in" />
                           <button
                             type="button"
                             onClick={() => removeGalleryImage(idx)}
@@ -1377,6 +1378,9 @@ export default function CreateProductPage() {
           </div>
         </div>
       </Modal>
+      {lightbox && (
+        <ImageLightbox images={lightbox.images} index={lightbox.index} onIndexChange={(i) => setLightbox((l) => (l ? { ...l, index: i } : l))} onClose={() => setLightbox(null)} />
+      )}
     </AdminLayout>
   );
 }

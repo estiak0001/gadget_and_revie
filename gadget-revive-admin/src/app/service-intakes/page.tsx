@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   Plus, Search, Eye, Edit2, Trash2, Printer, RefreshCw, X, ClipboardCheck, ArrowRightCircle,
-  Link2, Download, BadgeDollarSign, History, ChevronRight, Check,
+  Link2, Download, BadgeDollarSign, History, ChevronRight, Check, Archive, RotateCcw,
 } from 'lucide-react';
 import { AdminLayout } from '@/components/layout';
 import {
@@ -228,6 +228,9 @@ export default function ServiceIntakesPage() {
   const [problemTypes, setProblemTypes] = useState<ServiceProblemType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(false);
+  // 'deleted' shows the Delete history tab (soft-deleted intakes, kept visible for reference
+  // instead of just vanishing -- see trashed=only handling in fetchIntakes()).
+  const [viewMode, setViewMode] = useState<'active' | 'deleted'>('active');
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
@@ -257,6 +260,7 @@ export default function ServiceIntakesPage() {
   const [isConvertOpen, setIsConvertOpen] = useState(false);
   const [isPriceOpen, setIsPriceOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [restoringId, setRestoringId] = useState<number | null>(null);
   const [selected, setSelected] = useState<ServiceIntake | null>(null);
   const [historyIntake, setHistoryIntake] = useState<ServiceIntake | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -285,6 +289,7 @@ export default function ServiceIntakesPage() {
     setError(false);
     try {
       const params: Record<string, string | number> = { page: currentPage };
+      if (viewMode === 'deleted') params.trashed = 'only';
       if (debouncedSearch) params.search = debouncedSearch;
       if (filterStatus) params.status = filterStatus;
       if (filterWorkStatus) params.work_status = filterWorkStatus;
@@ -351,7 +356,13 @@ export default function ServiceIntakesPage() {
   useEffect(() => {
     fetchIntakes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage, debouncedSearch, filterStatus, filterWorkStatus, filterBranchId, dateFrom, dateTo]);
+  }, [currentPage, viewMode, debouncedSearch, filterStatus, filterWorkStatus, filterBranchId, dateFrom, dateTo]);
+
+  const switchViewMode = (mode: 'active' | 'deleted') => {
+    if (mode === viewMode) return;
+    setViewMode(mode);
+    setCurrentPage(1);
+  };
 
   const customerOptions = customers.map((c) => ({
     value: c.id,
@@ -734,6 +745,22 @@ export default function ServiceIntakesPage() {
     }
   };
 
+  // Undo a soft delete from the Delete history tab -- the row disappears from this list (it's
+  // active again) and reappears in the Active tab.
+  const handleRestore = async (intake: ServiceIntake) => {
+    setRestoringId(intake.id);
+    try {
+      await adminService.restoreServiceIntake(intake.id);
+      toast.success(`${intake.receipt_number} restored.`);
+      setIntakes((prev) => prev.filter((i) => i.id !== intake.id));
+      setSelected((prev) => (prev && prev.id === intake.id ? { ...prev, deleted_at: null, deleted_by: null, delete_reason: null } : prev));
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setRestoringId(null);
+    }
+  };
+
   // ── Render ────────────────────────────────────
   return (
     <AdminLayout>
@@ -747,6 +774,28 @@ export default function ServiceIntakesPage() {
           <Button size="sm" onClick={() => router.push('/service-intakes/create')}>
             <Plus className="w-3.5 h-3.5 mr-1.5" /> New Intake
           </Button>
+        </div>
+
+        {/* Active / Delete history tabs */}
+        <div className="flex rounded-lg border border-gray-200 bg-white p-1 w-fit text-xs">
+          <button
+            type="button"
+            onClick={() => switchViewMode('active')}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition-colors ${
+              viewMode === 'active' ? 'bg-primary-600 text-white' : 'text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <ClipboardCheck className="w-3.5 h-3.5" /> Active
+          </button>
+          <button
+            type="button"
+            onClick={() => switchViewMode('deleted')}
+            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition-colors ${
+              viewMode === 'deleted' ? 'bg-primary-600 text-white' : 'text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <Archive className="w-3.5 h-3.5" /> Delete history
+          </button>
         </div>
 
         {/* Filters — one compact card */}
@@ -791,7 +840,81 @@ export default function ServiceIntakesPage() {
           </div>
         </div>
 
+        {/* Delete history — read-only: who deleted it, when, and why (if a reason was given) */}
+        {viewMode === 'deleted' && (
+          <Card>
+            <CardContent className="p-0">
+              {isLoading ? (
+                <div className="py-16 flex justify-center"><LoadingSpinner /></div>
+              ) : error ? (
+                <div className="py-12"><ErrorState onRetry={fetchIntakes} /></div>
+              ) : intakes.length === 0 ? (
+                <div className="py-12">
+                  <EmptyState
+                    icon={<Archive className="w-10 h-10" />}
+                    title="No deleted intakes"
+                    description="Receipts deleted from the Active tab show up here, so the receipt-number sequence stays explainable."
+                  />
+                </div>
+              ) : (
+                <div className="border border-gray-100 rounded-lg overflow-hidden">
+                  <table className="w-full text-xs table-fixed border-collapse">
+                    <thead className="bg-gray-50 border-b border-gray-100">
+                      <tr className="text-left text-gray-600 uppercase tracking-wide">
+                        <th className="border border-gray-100 w-[10%] px-2 py-1.5">Receipt</th>
+                        <th className="border border-gray-100 w-[12%] px-2 py-1.5">Customer</th>
+                        <th className="border border-gray-100 w-[9%] px-2 py-1.5">Mobile</th>
+                        <th className="border border-gray-100 w-[20%] px-2 py-1.5">Items</th>
+                        <th className="border border-gray-100 w-[12%] px-2 py-1.5">Deleted By</th>
+                        <th className="border border-gray-100 w-[11%] px-2 py-1.5">Deleted At</th>
+                        <th className="border border-gray-100 w-[18%] px-2 py-1.5">Reason</th>
+                        <th className="border border-gray-100 w-[8%] px-2 py-1.5 text-right">Act.</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {intakes.map((intake) => (
+                        <tr key={intake.id} className="hover:bg-gray-50">
+                          <td className="border border-gray-100 px-2 py-1.5 font-mono font-semibold text-gray-900 whitespace-nowrap">
+                            {intake.receipt_number}
+                          </td>
+                          <td className="border border-gray-100 px-2 py-1.5 text-gray-800 truncate">{intake.customer_name}</td>
+                          <td className="border border-gray-100 px-2 py-1.5 text-gray-700 truncate">{intake.customer_phone}</td>
+                          <td className="border border-gray-100 px-2 py-1.5 text-gray-700 truncate">
+                            {(intake.items ?? []).map((i) => i.item_name).join(', ') || '—'}
+                          </td>
+                          <td className="border border-gray-100 px-2 py-1.5 text-gray-700 truncate">{intake.deleted_by ?? '—'}</td>
+                          <td className="border border-gray-100 px-2 py-1.5 text-gray-600 whitespace-nowrap">{formatDMY(intake.deleted_at) ?? '—'}</td>
+                          <td className="border border-gray-100 px-2 py-1.5 text-gray-600 truncate" title={intake.delete_reason ?? undefined}>
+                            {intake.delete_reason ?? '—'}
+                          </td>
+                          <td className="border border-gray-100 px-2 py-1.5">
+                            <div className="flex items-center justify-end gap-1">
+                              <button type="button" onClick={() => openView(intake)} title="View details" className="p-0.5 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 inline-flex">
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRestore(intake)}
+                                disabled={restoringId === intake.id}
+                                title="Restore -- make active again"
+                                className="p-0.5 rounded hover:bg-emerald-50 text-emerald-600 hover:text-emerald-700 inline-flex disabled:opacity-40"
+                              >
+                                <RotateCcw className={`w-3.5 h-3.5 ${restoringId === intake.id ? 'animate-spin' : ''}`} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Table — same 16-column layout as before */}
+        {viewMode === 'active' && (
         <Card>
           <CardContent className="p-0">
             {isLoading ? (
@@ -1087,6 +1210,7 @@ export default function ServiceIntakesPage() {
             )}
           </CardContent>
         </Card>
+        )}
 
         {totalPages > 1 && (
           <div className="flex justify-end">
@@ -1181,7 +1305,14 @@ export default function ServiceIntakesPage() {
             <div className="flex flex-wrap items-start justify-between gap-3 pb-4 border-b border-gray-100">
               <div>
                 <p className="font-mono font-bold text-xl text-gray-900">{selected.receipt_number}</p>
-                <div className="mt-1"><Badge variant={STATUS_BADGE[selected.status]}>{statusLabel(selected.status)}</Badge></div>
+                <div className="mt-1 flex items-center gap-1.5">
+                  <Badge variant={STATUS_BADGE[selected.status]}>{statusLabel(selected.status)}</Badge>
+                  {selected.deleted_at && (
+                    <Badge variant="danger">
+                      Deleted {formatDMY(selected.deleted_at)} by {selected.deleted_by ?? 'unknown'}
+                    </Badge>
+                  )}
+                </div>
               </div>
               <div className="flex gap-2 flex-wrap justify-end">
                 <Button variant="outline" size="sm" onClick={() => handlePreviewReceipt(selected)}>
@@ -1200,9 +1331,21 @@ export default function ServiceIntakesPage() {
                     <Download className="w-4 h-4 mr-1" /> Invoice
                   </Button>
                 )}
-                {!selected.order_id && !isIntakeLocked(selected.status) && (
+                {/* A deleted intake is read-only here -- these actions hit find()-based endpoints
+                    that don't use withTrashed(), so they'd just 404 confusingly. */}
+                {!selected.order_id && !isIntakeLocked(selected.status) && !selected.deleted_at && (
                   <Button size="sm" onClick={() => openConvert(selected)}>
                     <ArrowRightCircle className="w-4 h-4 mr-1" /> Convert
+                  </Button>
+                )}
+                {selected.deleted_at && (
+                  <Button
+                    size="sm"
+                    onClick={() => handleRestore(selected)}
+                    disabled={restoringId === selected.id}
+                    className="bg-emerald-600 hover:bg-emerald-700"
+                  >
+                    <RotateCcw className={`w-4 h-4 mr-1 ${restoringId === selected.id ? 'animate-spin' : ''}`} /> Restore
                   </Button>
                 )}
               </div>
@@ -1334,27 +1477,30 @@ export default function ServiceIntakesPage() {
               </div>
             )}
             {/* Editable at any status/stage -- including cancelled/returned, since a wrong
-                status is exactly the kind of thing that needs correcting after the fact. */}
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 border-t border-gray-100">
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-500">Update status:</span>
-                <Select
-                  className="w-48"
-                  value={selected.status}
-                  onChange={(e) => handleStatusChange(selected, e.target.value)}
-                  options={STATUS_OPTIONS}
-                />
+                status is exactly the kind of thing that needs correcting after the fact.
+                Not shown for a deleted intake (Delete history tab) -- it's read-only there. */}
+            {!selected.deleted_at && (
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-2 border-t border-gray-100">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-500">Update status:</span>
+                  <Select
+                    className="w-48"
+                    value={selected.status}
+                    onChange={(e) => handleStatusChange(selected, e.target.value)}
+                    options={STATUS_OPTIONS}
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-500">Update work status:</span>
+                  <Select
+                    className="w-48"
+                    value={selected.work_status ?? 'pending'}
+                    onChange={(e) => handleWorkStatusChange(selected, e.target.value)}
+                    options={WORK_STATUS_OPTIONS}
+                  />
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-500">Update work status:</span>
-                <Select
-                  className="w-48"
-                  value={selected.work_status ?? 'pending'}
-                  onChange={(e) => handleWorkStatusChange(selected, e.target.value)}
-                  options={WORK_STATUS_OPTIONS}
-                />
-              </div>
-            </div>
+            )}
           </div>
         )}
       </Modal>

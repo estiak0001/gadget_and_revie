@@ -448,6 +448,24 @@ class Order extends Model
     }
 
     /**
+     * The Chart of Accounts code cash received for this order should land in — the account
+     * linked to this order's payment_method (e.g. a bKash payment lands in the bKash account, not
+     * lumped into Cash). Falls back to Cash (1000) if the method is missing/was deleted, so a
+     * payment can never hard-fail just because its payment method record is gone.
+     */
+    private function paymentAccountCode(): string
+    {
+        return PaymentMethod::where('code', $this->payment_method)->first()?->chartOfAccount?->code ?? '1000';
+    }
+
+    /** Every account any payment method is currently linked to — see correctPaidAmount(). */
+    private static function allPaymentAccountCodes(): array
+    {
+        return PaymentMethod::with('chartOfAccount')->get()
+            ->pluck('chartOfAccount.code')->filter()->unique()->values()->all();
+    }
+
+    /**
      * Record a payment against this order — full or partial. The first payment ever recorded
      * also recognizes the full sale (Dr Accounts Receivable / Cr Sales Revenue + Tax Payable);
      * every payment (first or subsequent) additionally posts Dr Cash / Cr Accounts Receivable
@@ -475,7 +493,7 @@ class Order extends Model
         }
 
         $entries[] = JournalEntry::post(now()->toDateString(), 'Order', $this->id, "Payment received for order #{$this->order_number}", [
-            ['account_code' => '1000', 'debit' => $amount],
+            ['account_code' => $this->paymentAccountCode(), 'debit' => $amount],
             ['account_code' => '1010', 'credit' => $amount],
         ], $user);
 
@@ -572,13 +590,17 @@ class Order extends Model
             throw new \InvalidArgumentException('Corrected amount matches the current recorded amount — nothing to change');
         }
 
-        $entries = JournalEntry::reverseForAccounts('Order', $this->id, ['1000'],
+        // Reverses against every payment-method-linked account, not just this order's current
+        // payment_method — if the method was changed between partial payments, earlier entries
+        // may sit on a different account than the one recordPayment() would use today, and this
+        // must still catch (and undo) all of them.
+        $entries = JournalEntry::reverseForAccounts('Order', $this->id, self::allPaymentAccountCodes(),
             "Payment amount correction for order #{$this->order_number}: {$reason}", $user);
 
         if ($newPaidAmount > 0) {
             $entries[] = JournalEntry::post(now()->toDateString(), 'Order', $this->id,
                 "Payment amount correction for order #{$this->order_number}: {$reason}", [
-                    ['account_code' => '1000', 'debit' => $newPaidAmount],
+                    ['account_code' => $this->paymentAccountCode(), 'debit' => $newPaidAmount],
                     ['account_code' => '1010', 'credit' => $newPaidAmount],
                 ], $user);
         }

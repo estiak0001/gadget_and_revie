@@ -39,6 +39,7 @@ use App\Models\Ticket;
 use App\Models\TicketMessage;
 use App\Models\User;
 use App\Support\PermissionGrant;
+use App\Support\UserRoleTier;
 use App\Models\VendorProfile;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -339,13 +340,15 @@ class AdminController extends BaseController
         }
 
         $data = $request->only(['name', 'email', 'phone']);
-        $data['role'] = $this->tierForRole($selectedRole);
         $data['password'] = bcrypt($request->password);
         $data['status'] = $request->get('status', 'active');
         $data['email_verified_at'] = now();
 
+        // UserRoleTier::syncSelectedRole sets both the Spatie role and the users.role tier
+        // column together, right after create() — the brief moment in between leaves `role`
+        // at its DB default, never observed outside this request.
         $user = User::create($data);
-        $this->syncSelectedRole($user, $selectedRole);
+        UserRoleTier::syncSelectedRole($user, $selectedRole);
 
         AuditLog::log($admin, 'create_user', 'User', $user->id, null, $user->toArray(), 'User created by admin');
 
@@ -410,13 +413,10 @@ class AdminController extends BaseController
         $oldData = $user->toArray();
 
         $updateData = $request->only(['name', 'email', 'phone', 'status']);
-        if ($roleIsActuallyChanging) {
-            $updateData['role'] = $this->tierForRole($selectedRole);
-        }
         $user->update($updateData);
 
         if ($roleIsActuallyChanging) {
-            $this->syncSelectedRole($user, $selectedRole);
+            UserRoleTier::syncSelectedRole($user, $selectedRole);
             // Their old session may still carry stale permissions (cached client-side from
             // login/me) — force an immediate re-login so the new role takes effect right away
             // instead of whenever their token would otherwise expire. (Never fires for a self-edit
@@ -497,51 +497,22 @@ class AdminController extends BaseController
     }
 
     /**
-     * The 5 DB-level tiers — the only values the users.role enum column can actually hold.
-     */
-    private function tierRoleNames(): array
-    {
-        return ['customer', 'vendor', 'staff', 'admin', 'super_admin'];
-    }
-
-    /**
-     * A custom role (anything created on the Roles page besides the 5 tiers) isn't a valid value
-     * for the users.role enum column, so it's stored there as 'staff' — custom roles are always
-     * staff-tier for admin-panel *access* purposes; the role name itself only drives *permissions*
-     * via Spatie (see syncSelectedRole).
-     */
-    private function tierForRole(string $roleName): string
-    {
-        return in_array($roleName, $this->tierRoleNames(), true) ? $roleName : 'staff';
-    }
-
-    /**
      * Validation rule for the 'role' field: either one of the 5 tiers, or the name of an existing
-     * custom role (created on the Roles page).
+     * custom role (created on the Roles page). The tier list and the actual role<->tier sync now
+     * live in App\Support\UserRoleTier, shared with RoleController's assign/sync endpoints so the
+     * two can't drift apart (see that class's docblock for why drift there is a real bug, not
+     * just duplication).
      */
     private function roleExistsRule(): \Closure
     {
         return function (string $attribute, mixed $value, \Closure $fail) {
-            if (in_array($value, $this->tierRoleNames(), true)) {
+            if (in_array($value, UserRoleTier::tierRoleNames(), true)) {
                 return;
             }
             if (!\Spatie\Permission\Models\Role::where('name', $value)->exists()) {
                 $fail('The selected role does not exist.');
             }
         };
-    }
-
-    /**
-     * A user has exactly ONE role at a time — no "additional roles" on top. Whatever is selected
-     * (a tier name like 'staff', or a custom role like 'Manager') becomes the user's sole Spatie
-     * role, replacing anything they had before; that role's checked permissions are the only thing
-     * that determines what they can do (see PermissionMiddleware / the sidebar's permission map).
-     */
-    private function syncSelectedRole(User $user, string $roleName): void
-    {
-        if (\Spatie\Permission\Models\Role::where('name', $roleName)->exists()) {
-            $user->syncRoles([$roleName]);
-        }
     }
 
     // ========== VENDOR MANAGEMENT ==========
@@ -3407,10 +3378,18 @@ class AdminController extends BaseController
     {
         $query = $this->applyProductFilters(Product::with(['category', 'vendorProfile', 'brand', 'creator:id,name']), $request);
 
-        // Sort
-        $sortBy = $request->get('sort_by', 'created_at');
-        $sortOrder = $request->get('sort_order', 'desc');
-        $query->orderBy($sortBy, $sortOrder);
+        // Sort. The Bulk Upload tab (source=bulk_import) defaults to surfacing not-yet-reviewed
+        // (still Inactive) rows first -- every bulk-uploaded product starts Inactive and an
+        // admin works through them until none are left, so burying the remaining ones under
+        // already-activated rows (plain newest-first) made them easy to lose track of. Only
+        // applies when the request didn't ask for a specific sort itself.
+        if ($request->source === 'bulk_import' && !$request->has('sort_by')) {
+            $query->orderBy('is_active', 'asc')->orderBy('created_at', 'desc');
+        } else {
+            $sortBy = $request->get('sort_by', 'created_at');
+            $sortOrder = $request->get('sort_order', 'desc');
+            $query->orderBy($sortBy, $sortOrder);
+        }
 
         $products = $query->paginate($request->get('per_page', 15));
 
@@ -3680,8 +3659,17 @@ class AdminController extends BaseController
             // dimensions, which an XML-based SVG doesn't have) — use mimes so admins can
             // upload an SVG the same way the category forms already do.
             'image' => 'nullable|file|mimes:jpeg,jpg,png,gif,webp,svg|max:4096',
-            'gallery' => 'nullable|array',
-            'gallery.*' => 'image|max:4096',
+            // remove_image: clears the main image when no new file is uploaded (edit page's ×
+            // button on the existing image). gallery_keep/gallery_new: the edit page always
+            // sends gallery_keep (JSON array of existing gallery URLs the admin left in place),
+            // and the final gallery column is this merged with any newly uploaded gallery_new
+            // files -- see below. This is split from "gallery" (still used, files-only, by the
+            // product *create* form where there's nothing existing to keep) because validating
+            // the same key as both an image-file array and a plain string array isn't possible.
+            'remove_image' => 'nullable',
+            'gallery_keep' => 'nullable|string',
+            'gallery_new' => 'nullable|array',
+            'gallery_new.*' => 'image|max:4096',
             'specifications' => 'nullable',
             'attribute_values' => 'nullable',
             'brand' => 'nullable|string|max:255', // Deprecated, use brand_id
@@ -3706,21 +3694,39 @@ class AdminController extends BaseController
             'warranty', 'warranty_value', 'warranty_unit', 'is_active', 'is_featured', 'sort_order',
         ]);
 
-        // Handle main image upload
+        // Handle main image upload / removal. remove_image is how the edit page's × button on
+        // an existing (not newly-picked) main image asks for it to be cleared.
         if ($request->hasFile('image')) {
             $data['image'] = $request->file('image')->store('products', 'public');
+        } elseif ($request->boolean('remove_image')) {
+            $data['image'] = null;
         }
 
-        // Handle gallery images upload
-        if ($request->hasFile('gallery')) {
-            $galleryPaths = [];
-            foreach ($request->file('gallery') as $image) {
-                $galleryPaths[] = $image->store('products/gallery', 'public');
+        // Handle gallery: ProductResource returns gallery entries as full asset() URLs, so
+        // gallery_keep (what the edit page is asking to retain) arrives as full URLs too --
+        // strip that prefix back to the relative storage path before persisting, otherwise
+        // the column ends up with double-prefixed URLs the next time it's resolved.
+        if ($request->has('gallery_keep') || $request->hasFile('gallery_new')) {
+            $storagePrefix = asset('storage') . '/';
+            $keepPaths = [];
+            $decoded = json_decode((string) $request->input('gallery_keep', '[]'), true);
+            if (is_array($decoded)) {
+                foreach ($decoded as $url) {
+                    if (!is_string($url) || $url === '') {
+                        continue;
+                    }
+                    $keepPaths[] = str_starts_with($url, $storagePrefix) ? substr($url, strlen($storagePrefix)) : $url;
+                }
             }
-            $data['gallery'] = $galleryPaths;
-        } elseif ($request->has('gallery') && is_array($request->gallery)) {
-            // Allow updating gallery with array of existing paths or empty array
-            $data['gallery'] = $request->gallery;
+
+            $newPaths = [];
+            if ($request->hasFile('gallery_new')) {
+                foreach ($request->file('gallery_new') as $image) {
+                    $newPaths[] = $image->store('products/gallery', 'public');
+                }
+            }
+
+            $data['gallery'] = array_merge($keepPaths, $newPaths);
         }
 
         // Handle specifications as JSON (from FormData it comes as string)

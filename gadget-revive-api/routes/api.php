@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AccountingController;
+use App\Http\Controllers\Api\PaymentMethodController;
 use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CartController;
@@ -470,6 +471,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::get('/{id}', [ServiceIntakeController::class, 'show'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
             Route::put('/{id}', [ServiceIntakeController::class, 'update'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
             Route::delete('/{id}', [ServiceIntakeController::class, 'destroy'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
+            Route::post('/{id}/restore', [ServiceIntakeController::class, 'restore'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
             Route::put('/{id}/status', [ServiceIntakeController::class, 'updateStatus'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
             Route::put('/{id}/work-status', [ServiceIntakeController::class, 'updateWorkStatus'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes');
             Route::post('/{id}/convert', [ServiceIntakeController::class, 'convertToOrder'])->middleware('permission:view_orders,manage_orders,process_orders,view_service_intakes,manage_service_intakes,convert_service_intakes');
@@ -864,6 +866,16 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::post('/process/expense/{id}', [AccountingController::class, 'processExpense'])->middleware('permission:manage_accounts,process_pending_ledger_items');
             Route::post('/process/order/{id}', [AccountingController::class, 'processOrder'])->middleware('permission:manage_accounts,process_pending_ledger_items');
             Route::post('/process/purchase-order/{id}', [AccountingController::class, 'processPurchaseOrder'])->middleware('permission:manage_accounts,process_pending_ledger_items');
+
+            Route::post('/transfer', [AccountingController::class, 'transfer'])->middleware('permission:manage_accounts,manage_payment_methods');
+            Route::get('/transfers', [AccountingController::class, 'transfers'])->middleware('permission:manage_accounts,view_ledger,manage_payment_methods');
+        });
+
+        Route::prefix('payment-methods')->group(function () {
+            Route::get('/', [PaymentMethodController::class, 'index'])->middleware('permission:manage_accounts,view_ledger,manage_payment_methods');
+            Route::post('/', [PaymentMethodController::class, 'store'])->middleware('permission:manage_accounts,manage_payment_methods');
+            Route::put('/{id}', [PaymentMethodController::class, 'update'])->middleware('permission:manage_accounts,manage_payment_methods');
+            Route::delete('/{id}', [PaymentMethodController::class, 'destroy'])->middleware('permission:manage_accounts,manage_payment_methods');
         });
 
         // Audit Logs

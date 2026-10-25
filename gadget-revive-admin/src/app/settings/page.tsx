@@ -12,6 +12,7 @@ import adminService from '@/lib/adminService';
 import toast from 'react-hot-toast';
 import { SmsConnection } from '@/types';
 import SmsLogTable from '@/components/sms/SmsLogTable';
+import PaymentMethodsManager from '@/components/settings/PaymentMethodsManager';
 
 const ASSET_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api').replace(/\/api$/, '');
 
@@ -324,6 +325,8 @@ export default function SettingsPage() {
         <div className="md:col-span-3">
           {activeGroup === 'sms' ? (
             <SmsConnectionsManager />
+          ) : activeGroup === 'payment' ? (
+            <PaymentMethodsManager />
           ) : (
             <Card>
               <CardHeader>

@@ -99,6 +99,19 @@ function getInitialProductBatch(): string {
   }
 }
 
+// Same lazy-initializer-from-sessionStorage pattern as tab/page/batch above, for the rest of
+// the filter bar (search/category/brand/status/stock) -- previously only tab/page/batch
+// survived leaving this page (e.g. opening a bulk-uploaded product to review/activate it,
+// then clicking back), so every other filter silently reset to empty on return.
+function getInitialProductFilter(key: string): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    return sessionStorage.getItem(key) ?? '';
+  } catch {
+    return '';
+  }
+}
+
 function ProductsPageContent() {
   const router = useRouter();
 
@@ -110,11 +123,11 @@ function ProductsPageContent() {
   const [error, setError] = useState(false);
 
   // Filter state
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterCategory, setFilterCategory] = useState('');
-  const [filterBrand, setFilterBrand] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
-  const [filterStock, setFilterStock] = useState('');
+  const [searchQuery, setSearchQuery] = useState(() => getInitialProductFilter('products_list_search'));
+  const [filterCategory, setFilterCategory] = useState(() => getInitialProductFilter('products_list_category'));
+  const [filterBrand, setFilterBrand] = useState(() => getInitialProductFilter('products_list_brand'));
+  const [filterStatus, setFilterStatus] = useState(() => getInitialProductFilter('products_list_status'));
+  const [filterStock, setFilterStock] = useState(() => getInitialProductFilter('products_list_stock'));
   const [currentPage, setCurrentPage] = useState(getInitialProductPage);
   const [totalPages, setTotalPages] = useState(1);
   const [totalProducts, setTotalProducts] = useState(0);
@@ -179,13 +192,21 @@ function ProductsPageContent() {
   // broke the first time around (tab pill/page number looked right, rows didn't match). A
   // lazy initializer means there's only ever one initial value, so only one initial fetch.
 
-  // Remember the current tab/page across navigation (editing a product and coming back).
+  // Remember the current tab/page/filters across navigation (editing a product and coming
+  // back) -- every filter the bar above can set, not just tab/page, so returning to this page
+  // (e.g. after opening a Bulk Upload row to activate it) shows the same narrowed-down list
+  // instead of silently resetting to "everything".
   useEffect(() => {
     try {
       sessionStorage.setItem('products_list_tab', activeTab);
       sessionStorage.setItem('products_list_page', String(currentPage));
+      sessionStorage.setItem('products_list_search', searchQuery);
+      sessionStorage.setItem('products_list_category', filterCategory);
+      sessionStorage.setItem('products_list_brand', filterBrand);
+      sessionStorage.setItem('products_list_status', filterStatus);
+      sessionStorage.setItem('products_list_stock', filterStock);
     } catch { /* ignore */ }
-  }, [activeTab, currentPage]);
+  }, [activeTab, currentPage, searchQuery, filterCategory, filterBrand, filterStatus, filterStock]);
 
   // Shared by the list fetch and "select all N matching" bulk-delete, so a select-all can
   // never target a different set of rows than what's actually on screen.

@@ -5,12 +5,15 @@ namespace App\Http\Controllers\Api;
 use App\Models\AuditLog;
 use App\Models\ChartOfAccount;
 use App\Models\Expense;
+use App\Models\FundTransfer;
 use App\Models\JournalEntry;
 use App\Models\JournalEntryLine;
 use App\Models\Order;
+use App\Models\PaymentMethod;
 use App\Models\PurchaseOrder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class AccountingController extends BaseController
 {
@@ -554,6 +557,75 @@ class AccountingController extends BaseController
                 ->whereColumn('journal_entries.reference_id', 'expenses.id')
                 ->where('journal_entries.reference_type', 'Expense');
         });
+    }
+
+    // =========================================================================
+    // FUND TRANSFERS — moving money between payment methods (Cash drawer -> Bank, etc.)
+    // =========================================================================
+
+    /**
+     * Move money from one payment method's account to another. A straightforward two-line
+     * journal entry (Dr the receiving account, Cr the sending one) via the same JournalEntry::post()
+     * every other money movement in this app already goes through — a transfer is not a different
+     * kind of ledger event, just a different description/reference.
+     */
+    public function transfer(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'from_payment_method_id' => 'required|integer|exists:payment_methods,id|different:to_payment_method_id',
+            'to_payment_method_id' => 'required|integer|exists:payment_methods,id',
+            'amount' => 'required|numeric|min:0.01',
+            'transfer_date' => 'nullable|date',
+            'description' => 'nullable|string|max:255',
+        ]);
+
+        $from = PaymentMethod::with('chartOfAccount')->find($data['from_payment_method_id']);
+        $to = PaymentMethod::with('chartOfAccount')->find($data['to_payment_method_id']);
+        if (!$from?->chartOfAccount || !$to?->chartOfAccount) {
+            return $this->error('Both payment methods must have a linked ledger account', 422);
+        }
+
+        $available = round($from->chartOfAccount->balanceAsOf(), 2);
+        if ($data['amount'] > $available) {
+            return $this->error("Transfer amount exceeds {$from->name}'s available balance of {$available}", 422);
+        }
+
+        $date = $data['transfer_date'] ?? now()->toDateString();
+        $description = $data['description'] ?? "Transfer: {$from->name} \u{2192} {$to->name}";
+
+        $transfer = DB::transaction(function () use ($from, $to, $data, $date, $description, $request) {
+            $transfer = FundTransfer::create([
+                'from_payment_method_id' => $from->id,
+                'to_payment_method_id' => $to->id,
+                'amount' => $data['amount'],
+                'transfer_date' => $date,
+                'description' => $data['description'] ?? null,
+                'created_by' => $request->user()->id,
+            ]);
+
+            $entry = JournalEntry::post($date, 'FundTransfer', $transfer->id, $description, [
+                ['account_code' => $to->chartOfAccount->code, 'debit' => $data['amount']],
+                ['account_code' => $from->chartOfAccount->code, 'credit' => $data['amount']],
+            ], $request->user());
+
+            $transfer->update(['journal_entry_id' => $entry->id]);
+
+            return $transfer;
+        });
+
+        $transfer->load(['fromPaymentMethod', 'toPaymentMethod']);
+
+        AuditLog::log($request->user(), 'transfer_funds', 'FundTransfer', $transfer->id, null, $transfer->toArray(), $description);
+
+        return $this->created($transfer);
+    }
+
+    public function transfers(Request $request): JsonResponse
+    {
+        $query = FundTransfer::with(['fromPaymentMethod', 'toPaymentMethod', 'creator:id,name'])
+            ->latest('transfer_date')->latest('id');
+
+        return $this->paginated($query->paginate($request->get('per_page', 20)));
     }
 
     private function unsyncedOrders()

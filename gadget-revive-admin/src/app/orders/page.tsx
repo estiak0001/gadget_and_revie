@@ -67,6 +67,13 @@ export default function OrdersPage() {
   const [filterCategoryId, setFilterCategoryId] = useState('');
   const [filterItemType, setFilterItemType] = useState('');
   const [filterPaymentMethod, setFilterPaymentMethod] = useState('');
+  const [paymentMethodFilterOptions, setPaymentMethodFilterOptions] = useState([
+    { value: '', label: 'All payment methods' },
+    { value: 'cash', label: 'Cash' },
+    { value: 'bkash', label: 'bKash' },
+    { value: 'nagad', label: 'Nagad' },
+    { value: 'bank_transfer', label: 'Bank transfer' },
+  ]);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [minAmount, setMinAmount] = useState('');
@@ -176,6 +183,14 @@ export default function OrdersPage() {
 
   useEffect(() => {
     fetchCategories();
+    // Unfiltered by is_active — a deactivated method may still be on historical orders, and
+    // staff filtering the list needs to be able to find those too.
+    adminService.getPaymentMethods().then((res) => {
+      const methods = res.data.data;
+      if (methods.length > 0) {
+        setPaymentMethodFilterOptions([{ value: '', label: 'All payment methods' }, ...methods.map((m) => ({ value: m.code, label: m.name }))]);
+      }
+    }).catch(() => { /* keep the fallback list */ });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -551,15 +566,7 @@ export default function OrdersPage() {
               />
               <Select
                 className="h-8 text-xs"
-                options={[
-                  { value: '', label: 'All payment methods' },
-                  { value: 'cash', label: 'Cash' },
-                  { value: 'bkash', label: 'bKash' },
-                  { value: 'nagad', label: 'Nagad' },
-                  { value: 'bank_transfer', label: 'Bank transfer' },
-                  { value: 'card', label: 'Card' },
-                  { value: 'other', label: 'Other' },
-                ]}
+                options={paymentMethodFilterOptions}
                 value={filterPaymentMethod}
                 onChange={(e) => { setFilterPaymentMethod(e.target.value); setCurrentPage(1); }}
               />

@@ -197,6 +197,7 @@ const navigation: NavSection[] = [
           { title: 'Balance sheet', href: '/accounts/balance-sheet' },
           { title: 'Cash position', href: '/accounts/cash-position' },
           { title: 'Cash book', href: '/accounts/cash-book' },
+          { title: 'Transfers', href: '/accounts/transfers', permissions: ['manage_accounts', 'manage_payment_methods'] },
           { title: 'Account reports', href: '/accounts/reports' },
           { title: 'Order flow guide', href: '/accounts/order-flow' },
           { title: 'Purchase flow guide', href: '/accounts/purchase-flow' },

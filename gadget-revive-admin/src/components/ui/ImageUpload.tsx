@@ -5,6 +5,7 @@ import { Upload, X, Image as ImageIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import adminService from '@/lib/adminService';
 import toast from 'react-hot-toast';
+import ImageLightbox from './ImageLightbox';
 
 interface ImageUploadProps {
   value?: string;
@@ -27,6 +28,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
 }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [zoomOpen, setZoomOpen] = useState(false);
   const [preview, setPreview] = useState<string | null>(value || null);
 
   const handleFile = useCallback(async (file: File) => {
@@ -87,10 +89,11 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
           <img
             src={preview || value}
             alt="Upload preview"
-            className="w-full h-48 object-cover rounded-lg border border-gray-200"
+            className="w-full h-48 object-cover rounded-lg border border-gray-200 cursor-zoom-in"
+            onClick={() => setZoomOpen(true)}
           />
-          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center gap-2">
-            <label className="cursor-pointer p-2 bg-white rounded-full hover:bg-gray-100">
+          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center gap-2 pointer-events-none">
+            <label className="cursor-pointer pointer-events-auto p-2 bg-white rounded-full hover:bg-gray-100">
               <Upload className="w-4 h-4 text-gray-700" />
               <input
                 type="file"
@@ -102,11 +105,14 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
             <button
               type="button"
               onClick={handleRemove}
-              className="p-2 bg-white rounded-full hover:bg-gray-100"
+              className="pointer-events-auto p-2 bg-white rounded-full hover:bg-gray-100"
             >
               <X className="w-4 h-4 text-red-500" />
             </button>
           </div>
+          {zoomOpen && (
+            <ImageLightbox images={[(preview || value) as string]} index={0} onIndexChange={() => {}} onClose={() => setZoomOpen(false)} />
+          )}
           {isUploading && (
             <div className="absolute inset-0 bg-white/80 rounded-lg flex items-center justify-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>

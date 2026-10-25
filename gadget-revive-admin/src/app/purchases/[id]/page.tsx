@@ -26,6 +26,37 @@ const STATUS_CONFIG: Record<PurchaseOrderStatus, { label: string; variant: 'defa
   cancelled: { label: 'Cancelled', variant: 'danger' },
 };
 
+function SerialScanBox({ onAdd, disabled, placeholder }: { onAdd: (raw: string) => boolean; disabled?: boolean; placeholder?: string }) {
+  const [draft, setDraft] = useState('');
+  const submit = (raw: string) => {
+    if (onAdd(raw)) setDraft('');
+  };
+  return (
+    <input
+      type="text"
+      value={draft}
+      disabled={disabled}
+      autoComplete="off"
+      placeholder={placeholder}
+      onChange={(e) => setDraft(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          submit(draft);
+        }
+      }}
+      onPaste={(e) => {
+        const text = e.clipboardData.getData('text');
+        if (/[\n,;]/.test(text.trim())) {
+          e.preventDefault();
+          submit(text);
+        }
+      }}
+      className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:bg-gray-50"
+    />
+  );
+}
+
 export default function PurchaseOrderDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -233,19 +264,30 @@ export default function PurchaseOrderDetailPage() {
     setIsReceiveOpen(true);
   };
 
-  const addSerialInput = (itemId: number) => {
-    setReceiveSerials((prev) => ({ ...prev, [itemId]: [...(prev[itemId] ?? []), ''] }));
+  // Scan/type a serial and press Enter to add it to the list; pasted lists are split on newline/comma.
+  const addReceiveSerials = (itemId: number, raw: string, max: number): boolean => {
+    const incoming = raw.split(/[\n,;\t]+/).map((v) => v.trim()).filter(Boolean);
+    if (incoming.length === 0) return false;
+    const current = receiveSerials[itemId] ?? [];
+    const seen = new Set(current.map((v) => v.toLowerCase()));
+    const fresh: string[] = [];
+    let duplicates = 0;
+    for (const v of incoming) {
+      if (seen.has(v.toLowerCase())) { duplicates++; continue; }
+      seen.add(v.toLowerCase());
+      fresh.push(v);
+    }
+    const room = Math.max(0, max - current.length);
+    const accepted = fresh.slice(0, room);
+    if (duplicates > 0) toast.error(duplicates === 1 && incoming.length === 1 ? `"${incoming[0]}" is already added` : `${duplicates} duplicate serial(s) skipped`);
+    else if (fresh.length > room) toast.error(`Only ${max} serial(s) can be added for this item`);
+    if (accepted.length === 0) return false;
+    setReceiveSerials((prev) => ({ ...prev, [itemId]: [...(prev[itemId] ?? []), ...accepted] }));
+    return true;
   };
 
   const removeSerialInput = (itemId: number, index: number) => {
     setReceiveSerials((prev) => ({ ...prev, [itemId]: (prev[itemId] ?? []).filter((_, i) => i !== index) }));
-  };
-
-  const updateSerialInput = (itemId: number, index: number, value: string) => {
-    setReceiveSerials((prev) => ({
-      ...prev,
-      [itemId]: (prev[itemId] ?? []).map((s, i) => (i === index ? value : s)),
-    }));
   };
 
   const handleReceive = async () => {
@@ -919,34 +961,28 @@ export default function PurchaseOrderDetailPage() {
                           {serialCount} of {qty}
                         </span>
                       </div>
-                      <div className="space-y-1.5">
-                        {serialInputs.map((value, index) => (
-                          <div key={index} className="flex items-center gap-1.5">
-                            <input
-                              type="text"
-                              value={value}
-                              onChange={(e) => updateSerialInput(item.id, index, e.target.value)}
-                              placeholder={`Serial #${index + 1}`}
-                              className="flex-1 px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => removeSerialInput(item.id, index)}
-                              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() => addSerialInput(item.id)}
-                          disabled={serialInputs.length >= qty}
-                          className="flex items-center gap-1 text-xs font-medium text-primary-600 hover:text-primary-700 disabled:text-gray-300 disabled:cursor-not-allowed"
-                        >
-                          <Plus className="w-3.5 h-3.5" /> Add serial number
-                        </button>
-                      </div>
+                      <SerialScanBox
+                        disabled={serialInputs.length >= qty}
+                        placeholder={serialInputs.length >= qty ? 'All serials entered' : `Scan or type serial #${serialInputs.length + 1}, then press Enter`}
+                        onAdd={(raw) => addReceiveSerials(item.id, raw, qty)}
+                      />
+                      {serialInputs.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {serialInputs.map((value, index) => (
+                            <span key={`${value}-${index}`} className="inline-flex items-center gap-1 pl-2 pr-1 py-0.5 bg-gray-100 rounded-full text-xs font-mono text-gray-800">
+                              {value}
+                              <button
+                                type="button"
+                                onClick={() => removeSerialInput(item.id, index)}
+                                className="p-0.5 text-gray-400 hover:text-red-600 rounded-full"
+                                aria-label={`Remove ${value}`}
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

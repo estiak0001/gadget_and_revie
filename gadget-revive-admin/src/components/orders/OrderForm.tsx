@@ -47,13 +47,13 @@ interface OrderLineItem {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const PAYMENT_METHODS = [
+// Shown until the real payment-methods list loads (Settings > Payment), and kept as a safety net
+// if that fetch ever fails — so the dropdown is never empty.
+const FALLBACK_PAYMENT_METHODS = [
   { value: 'cash', label: 'Cash' },
   { value: 'bkash', label: 'bKash' },
   { value: 'nagad', label: 'Nagad' },
   { value: 'bank_transfer', label: 'Bank Transfer' },
-  { value: 'card', label: 'Card' },
-  { value: 'other', label: 'Other' },
 ];
 
 const PAYMENT_STATUSES = [
@@ -620,6 +620,16 @@ export default function OrderForm({ orderId }: OrderFormProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingOrder, setIsLoadingOrder] = useState(isEditMode);
   const [loadedOrder, setLoadedOrder] = useState<Order | null>(null);
+
+  const [paymentMethodOptions, setPaymentMethodOptions] = useState(FALLBACK_PAYMENT_METHODS);
+  useEffect(() => {
+    adminService.getPaymentMethods({ is_active: 1 }).then((res) => {
+      const methods = res.data.data;
+      if (methods.length > 0) {
+        setPaymentMethodOptions(methods.map((m) => ({ value: m.code, label: m.name })));
+      }
+    }).catch(() => { /* keep the fallback list */ });
+  }, []);
 
   // Customer lookup (create mode only) — searches as the admin types into the Name/Phone
   // fields themselves rather than a separate search box, so there's only one place to type.
@@ -1829,7 +1839,7 @@ export default function OrderForm({ orderId }: OrderFormProps) {
                   label="Payment Method *"
                   value={meta.payment_method}
                   onChange={e => setMeta(p => ({ ...p, payment_method: e.target.value }))}
-                  options={PAYMENT_METHODS}
+                  options={paymentMethodOptions}
                 />
                 {isEditMode ? (
                   <>

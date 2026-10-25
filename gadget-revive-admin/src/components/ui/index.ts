@@ -12,6 +12,7 @@ export { default as ErrorState } from './ErrorState';
 export { default as EmptyState } from './EmptyState';
 export { default as ConfirmModal } from './ConfirmModal';
 export { default as ImageUpload } from './ImageUpload';
+export { default as ImageLightbox } from './ImageLightbox';
 export { default as DateRangePicker } from './DateRangePicker';
 export { default as RichTextEditor } from './RichTextEditor';
 export { default as IconPicker } from './IconPicker';

@@ -11,9 +11,9 @@ class Investor extends Model
 {
     use HasFactory, SoftDeletes;
 
-    protected $fillable = ['name', 'phone', 'email', 'address', 'notes', 'is_active'];
+    protected $fillable = ['name', 'phone', 'email', 'address', 'notes', 'is_active', 'share_percentage'];
 
-    protected $casts = ['is_active' => 'boolean'];
+    protected $casts = ['is_active' => 'boolean', 'share_percentage' => 'float'];
 
     public function investments(): HasMany
     {

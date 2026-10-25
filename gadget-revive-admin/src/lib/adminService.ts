@@ -5,6 +5,7 @@ import {
   DashboardStats, PaginatedResponse, ApiResponse, ServiceIntake, ServiceProblemType,
   Expense, ExpenseCategory, ExpenseReport, ExpenseAnalytics, Supplier, PurchaseOrder,
   ChartOfAccount, JournalEntry, TrialBalance, IncomeStatement, BalanceSheet, AccountLedger, CashPosition, CashBook, DuesResponse,
+  PaymentMethod, FundTransfer,
   PendingSyncSummary, Investor, Investment, CustomInvoice, ProductSerial, ScrapedProduct, ScrapeRun, PurchaseProductHistory, PurchaseSerialHistoryEntry,
   SmsLog, SmsConnection, SmsCampaign, SmsBalance, SmsUsageStats,
   Quotation, QuotationProductSearchResult, QuotationTemplate, QuotationTemplateType,
@@ -150,6 +151,8 @@ export const adminService = {
   updateServiceIntake: (id: number, data: Record<string, unknown>) =>
     api.put<ApiResponse<ServiceIntake>>(`/admin/service-intakes/${id}`, data),
   deleteServiceIntake: (id: number) => api.delete(`/admin/service-intakes/${id}`),
+  restoreServiceIntake: (id: number) =>
+    api.post<ApiResponse<ServiceIntake>>(`/admin/service-intakes/${id}/restore`),
   updateServiceIntakeStatus: (id: number, status: string) =>
     api.put<ApiResponse<ServiceIntake>>(`/admin/service-intakes/${id}/status`, { status }),
   updateServiceIntakeWorkStatus: (id: number, work_status: string) =>
@@ -661,6 +664,16 @@ export const adminService = {
     api.get<DuesResponse>('/admin/accounting/dues', { params }),
   getAccountLedger: (accountId: number, from?: string, to?: string) =>
     api.get<ApiResponse<AccountLedger>>(`/admin/accounting/ledger/${accountId}`, { params: { from, to } }),
+
+  // Payment Methods — each linked to its own auto-created Chart of Accounts entry
+  getPaymentMethods: (params?: ListParams) => api.get<ApiResponse<PaymentMethod[]>>('/admin/payment-methods', { params }),
+  createPaymentMethod: (data: Record<string, unknown>) => api.post<ApiResponse<PaymentMethod>>('/admin/payment-methods', data),
+  updatePaymentMethod: (id: number, data: Record<string, unknown>) => api.put<ApiResponse<PaymentMethod>>(`/admin/payment-methods/${id}`, data),
+  deletePaymentMethod: (id: number) => api.delete(`/admin/payment-methods/${id}`),
+
+  // Fund Transfers — move money between two payment methods' accounts
+  transferFunds: (data: Record<string, unknown>) => api.post<ApiResponse<FundTransfer>>('/admin/accounting/transfer', data),
+  getFundTransfers: (params?: ListParams) => api.get<ApiResponse<FundTransfer[]> & { meta: { current_page: number; last_page: number; per_page: number; total: number } }>('/admin/accounting/transfers', { params }),
 
   // Pending Ledger Sync (backfill historical/unsynced records)
   getPendingSyncSummary: () => api.get<ApiResponse<PendingSyncSummary>>('/admin/accounting/pending'),

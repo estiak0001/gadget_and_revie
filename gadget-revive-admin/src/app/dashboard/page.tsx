@@ -5,14 +5,14 @@ import Link from 'next/link';
 import toast from 'react-hot-toast';
 import {
   Wallet, ShoppingCart, Receipt, Users, Star, Ticket, Clock, Plus,
-  TrendingUp, TrendingDown, CircleDollarSign, Truck,
+  TrendingUp, TrendingDown, CircleDollarSign,
 } from 'lucide-react';
 import {
   AreaChart, Area, BarChart, Bar, Legend, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { AdminLayout } from '@/components/layout';
 import { Badge, LoadingSpinner, ErrorState } from '@/components/ui';
-import { DateRange, DateRangeBar, KpiTile, Panel, presetRange } from '@/components/reports/shared';
+import { DateRange, DateRangeBar, Panel, presetRange } from '@/components/reports/shared';
 import { formatCurrency, formatDate, getErrorMessage } from '@/lib/utils';
 import adminService from '@/lib/adminService';
 
@@ -74,16 +74,60 @@ function paymentVariant(status: string): 'success' | 'danger' | 'warning' | 'def
   return 'warning'; // pending, awaiting_confirmation, partially_paid
 }
 
-function TrendNote({ change }: { change: number | null | undefined }) {
-  if (change === null || change === undefined) {
-    return <span className="opacity-70">No previous period to compare</span>;
-  }
-  const up = change >= 0;
-  return (
-    <span className={`font-semibold ${up ? 'text-emerald-700' : 'text-rose-700'}`}>
-      {up ? '+' : ''}{change}% <span className="font-normal opacity-70">vs previous period</span>
-    </span>
+// Short form for a card's headline number — "BDT 351,606.00" doesn't fit a narrow card at a
+// size worth reading; "৳3.5L" does. The exact figure is still one hover away via `title`.
+function compactBdt(n: number): string {
+  const abs = Math.abs(n);
+  const sign = n < 0 ? '-' : '';
+  if (abs >= 10000000) return `${sign}৳${(abs / 10000000).toFixed(1)}Cr`;
+  if (abs >= 100000) return `${sign}৳${(abs / 100000).toFixed(1)}L`;
+  if (abs >= 1000) return `${sign}৳${(abs / 1000).toFixed(1)}k`;
+  return `${sign}৳${abs.toLocaleString()}`;
+}
+
+const STAT_TONES = {
+  emerald: 'bg-emerald-50 text-emerald-600',
+  indigo: 'bg-indigo-50 text-indigo-600',
+  sky: 'bg-sky-50 text-sky-600',
+  rose: 'bg-rose-50 text-rose-600',
+  amber: 'bg-amber-50 text-amber-600',
+  orange: 'bg-orange-50 text-orange-600',
+} as const;
+
+// A real stat-tile contract — label, a bold headline value, an optional delta colored by
+// direction, an optional one-line caption for the second-tier number it's standing in for
+// (e.g. Revenue's card also carries the period's expenses, so that didn't need its own card).
+function StatCard({
+  label, value, exactValue, icon, tone, deltaPct, caption, href,
+}: {
+  label: string;
+  value: string;
+  exactValue?: string;
+  icon: React.ReactNode;
+  tone: keyof typeof STAT_TONES;
+  deltaPct?: number | null;
+  caption?: string;
+  href?: string;
+}) {
+  const body = (
+    <div className={`flex h-full flex-col gap-1.5 rounded-xl border border-gray-200 bg-white p-3 shadow-sm transition-all ${href ? 'hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md' : ''}`}>
+      <div className="flex items-center justify-between">
+        <span className={`flex h-7 w-7 items-center justify-center rounded-lg ${STAT_TONES[tone]}`}>{icon}</span>
+        {deltaPct !== undefined && deltaPct !== null && (
+          <span className={`inline-flex items-center gap-0.5 text-[11px] font-semibold ${deltaPct >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+            {deltaPct >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+            {Math.abs(deltaPct)}%
+          </span>
+        )}
+      </div>
+      <div>
+        <p className="text-[11px] font-medium text-gray-500">{label}</p>
+        <p className="truncate text-lg font-bold text-gray-900" title={exactValue}>{value}</p>
+      </div>
+      {caption && <p className="truncate text-[11px] text-gray-400">{caption}</p>}
+    </div>
   );
+  return href ? <Link href={href} className="block h-full">{body}</Link> : body;
 }
 
 export default function DashboardPage() {
@@ -138,9 +182,9 @@ export default function DashboardPage() {
 
   const attention = st
     ? [
-        { label: 'Pending orders', value: st.orders.pending, href: '/orders?status=pending', kpiTone: 'orange' as const, icon: <Clock className="h-4 w-4 opacity-60" /> },
-        { label: 'Open tickets', value: st.pending_actions.tickets, href: '/tickets', kpiTone: 'rose' as const, icon: <Ticket className="h-4 w-4 opacity-60" /> },
-        { label: 'Pending reviews', value: st.pending_actions.reviews, href: '/reviews', kpiTone: 'amber' as const, icon: <Star className="h-4 w-4 opacity-60" /> },
+        { label: 'Pending orders', value: st.orders.pending, href: '/orders?status=pending', icon: <Clock className="h-3.5 w-3.5" /> },
+        { label: 'Open tickets', value: st.pending_actions.tickets, href: '/tickets', icon: <Ticket className="h-3.5 w-3.5" /> },
+        { label: 'Pending reviews', value: st.pending_actions.reviews, href: '/reviews', icon: <Star className="h-3.5 w-3.5" /> },
       ]
     : [];
 
@@ -178,78 +222,74 @@ export default function DashboardPage() {
 
       {st && (
         <div className="space-y-2">
-          {/* One consistent grid for everything — backlog alerts (clickable) and money/order
-              stats side by side, same tile size throughout. The old split into a differently
-              styled "pills" row plus two unevenly-sized KPI rows (5 then 4 columns) left tile
-              edges misaligned row to row, which read as cluttered; one grid fixes that and is
-              shorter overall, which is what keeps the whole dashboard inside the viewport. */}
+          {/* Backlog alerts only take up room when there's actually a backlog — a slim banner,
+              not three cards that are usually sitting at "0" taking the same space as the real
+              numbers below. */}
+          {attention.some((a) => a.value > 0) && (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Needs attention</span>
+              {attention.filter((a) => a.value > 0).map((a) => (
+                <Link key={a.label} href={a.href} className="flex items-center gap-1 text-xs font-semibold text-amber-900 hover:underline">
+                  {a.icon}{a.value} {a.label.toLowerCase()}
+                </Link>
+              ))}
+            </div>
+          )}
+
+          {/* Six headline numbers, not twelve — everything else (AOV, expenses, dues detail)
+              rides as a caption on the card it explains, instead of getting its own box. */}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-            {attention.map((a) => (
-              <Link key={a.label} href={a.href} className="block">
-                <KpiTile label={a.label} value={a.value.toLocaleString()} tone={a.kpiTone} icon={a.icon} />
-              </Link>
-            ))}
-            <KpiTile
+            <StatCard
               label="Revenue"
-              value={formatCurrency(st.revenue.total)}
+              value={compactBdt(st.revenue.total)}
+              exactValue={formatCurrency(st.revenue.total)}
+              icon={<Receipt className="h-3.5 w-3.5" />}
               tone="emerald"
-              icon={<Receipt className="h-4 w-4 opacity-60" />}
-              sub={<TrendNote change={data?.trends.revenue_change} />}
+              deltaPct={data?.trends.revenue_change ?? undefined}
+              caption={`${compactBdt(st.revenue.expenses)} expenses this period`}
             />
-            <KpiTile
+            <StatCard
               label="Orders placed"
               value={st.orders.total.toLocaleString()}
+              icon={<ShoppingCart className="h-3.5 w-3.5" />}
               tone="indigo"
-              icon={<ShoppingCart className="h-4 w-4 opacity-60" />}
-              sub={<>{st.orders.sales} paid · {st.orders.cancelled} cancelled<br /><TrendNote change={data?.trends.orders_change} /></>}
+              deltaPct={data?.trends.orders_change ?? undefined}
+              caption={`${st.orders.sales} paid · AOV ${compactBdt(averageOrder)}`}
+              href="/orders"
             />
-            <KpiTile
-              label="Average order value"
-              value={formatCurrency(averageOrder)}
-              tone="amber"
-              sub="Revenue ÷ paid orders"
-            />
-            <KpiTile
+            <StatCard
               label="Customers"
               value={st.users.customers.toLocaleString()}
+              icon={<Users className="h-3.5 w-3.5" />}
               tone="sky"
-              icon={<Users className="h-4 w-4 opacity-60" />}
-              sub={`${st.users.new_customers} new in period · all-time total`}
+              caption={`${st.users.new_customers} new in period`}
+              href="/users"
             />
-            <KpiTile
+            <StatCard
               label="Cash balance"
-              value={formatCurrency(st.cash_balance.current)}
+              value={compactBdt(st.cash_balance.current)}
+              exactValue={formatCurrency(st.cash_balance.current)}
+              icon={<Wallet className="h-3.5 w-3.5" />}
               tone="rose"
-              icon={<Wallet className="h-4 w-4 opacity-60" />}
-              sub="Cash account today"
+              caption="Cash account today"
+              href="/accounts/cash-book"
             />
-            <KpiTile
-              label="Expenses"
-              value={formatCurrency(st.revenue.expenses)}
-              tone="rose"
-              icon={<Receipt className="h-4 w-4 opacity-60" />}
-              sub="All expense categories in period"
-            />
-            <KpiTile
+            <StatCard
               label="Net revenue"
-              value={formatCurrency(st.revenue.net)}
+              value={compactBdt(st.revenue.net)}
+              exactValue={formatCurrency(st.revenue.net)}
+              icon={st.revenue.net >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
               tone={st.revenue.net >= 0 ? 'sky' : 'orange'}
-              icon={st.revenue.net >= 0 ? <TrendingUp className="h-4 w-4 opacity-60" /> : <TrendingDown className="h-4 w-4 opacity-60" />}
-              sub="Revenue minus expenses"
+              caption="Revenue minus expenses"
             />
-            <KpiTile
-              label="Owed to us"
-              value={formatCurrency(st.dues.receivable.total)}
-              tone="emerald"
-              icon={<CircleDollarSign className="h-4 w-4 opacity-60" />}
-              sub={`${st.dues.receivable.count} open order${st.dues.receivable.count === 1 ? '' : 's'} · all-time`}
-            />
-            <KpiTile
-              label="We owe suppliers"
-              value={formatCurrency(st.dues.payable.total)}
+            <StatCard
+              label="Dues"
+              value={`+${compactBdt(st.dues.receivable.total)}`}
+              exactValue={`Owed to us ${formatCurrency(st.dues.receivable.total)} · We owe ${formatCurrency(st.dues.payable.total)}`}
+              icon={<CircleDollarSign className="h-3.5 w-3.5" />}
               tone="amber"
-              icon={<Truck className="h-4 w-4 opacity-60" />}
-              sub={`${st.dues.payable.count} purchase order${st.dues.payable.count === 1 ? '' : 's'} · all-time`}
+              caption={`-${compactBdt(st.dues.payable.total)} we owe suppliers`}
+              href="/accounts/cash-book"
             />
           </div>
 

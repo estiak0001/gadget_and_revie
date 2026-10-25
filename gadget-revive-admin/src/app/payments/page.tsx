@@ -59,8 +59,9 @@ const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: 'cancelled', label: 'Cancelled' },
 ];
 
-const METHOD_LABEL: Record<string, string> = {
-  bkash: 'bKash', nagad: 'Nagad', rocket: 'Rocket', bank_transfer: 'Bank transfer', cash: 'Cash', card: 'Card',
+// Shown until the real payment-methods list loads (Settings > Payment); kept as a fallback too.
+const FALLBACK_METHOD_LABEL: Record<string, string> = {
+  bkash: 'bKash', nagad: 'Nagad', bank_transfer: 'Bank transfer', cash: 'Cash',
 };
 
 const INPUT = 'h-8 rounded-lg border border-gray-300 bg-white px-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500';
@@ -113,6 +114,7 @@ export default function PaymentsPage() {
   const [toDate, setToDate] = useState('');
   const [minAmount, setMinAmount] = useState('');
   const [method, setMethod] = useState('');
+  const [methodLabel, setMethodLabel] = useState<Record<string, string>>(FALLBACK_METHOD_LABEL);
   const [page, setPage] = useState(1);
 
   const [rows, setRows] = useState<Row[]>([]);
@@ -137,6 +139,16 @@ export default function PaymentsPage() {
     const t = setTimeout(() => { setSearch(searchInput.trim()); setPage(1); }, 300);
     return () => clearTimeout(t);
   }, [searchInput]);
+
+  // Unfiltered by is_active — a deactivated method may still be on historical rows.
+  useEffect(() => {
+    adminService.getPaymentMethods().then((res) => {
+      const methods = res.data.data;
+      if (methods.length > 0) {
+        setMethodLabel(Object.fromEntries(methods.map((m) => [m.code, m.name])));
+      }
+    }).catch(() => { /* keep the fallback list */ });
+  }, []);
 
   const loadSummary = useCallback(async () => {
     try {
@@ -329,7 +341,7 @@ export default function PaymentsPage() {
           </div>
           <select className={INPUT} value={method} onChange={(e) => { setMethod(e.target.value); setPage(1); }} disabled={filter === 'due'} title={filter === 'due' ? 'Method filter applies to Partial / Paid / All' : 'Payment method'}>
             <option value="">All methods</option>
-            {Object.entries(METHOD_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            {Object.entries(methodLabel).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
           <input type="date" className={INPUT} value={fromDate} onChange={(e) => { setFromDate(e.target.value); setPage(1); }} title="From date" />
           <input type="date" className={INPUT} value={toDate} onChange={(e) => { setToDate(e.target.value); setPage(1); }} title="To date" />
@@ -393,7 +405,7 @@ export default function PaymentsPage() {
                     <td className="px-3 py-2">
                       <Badge variant={ORDER_STATUS_TONE[row.status] ?? 'default'} className="text-[11px]">{ORDER_STATUS_LABEL[row.status] ?? (row.status || '—')}</Badge>
                     </td>
-                    <td className="px-3 py-2 text-xs text-gray-600">{METHOD_LABEL[row.method] ?? (row.method || '—')}</td>
+                    <td className="px-3 py-2 text-xs text-gray-600">{methodLabel[row.method] ?? (row.method || '—')}</td>
                     <td className="px-3 py-2">
                       <div className="flex items-center justify-end gap-1">
                         {row.canVerify && (

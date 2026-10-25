@@ -40,6 +40,8 @@ class InvestmentController extends BaseController
             'address' => 'nullable|string',
             'notes' => 'nullable|string',
             'is_active' => 'boolean',
+            // Manually entered, not derived from capital contributed — see the migration.
+            'share_percentage' => 'nullable|numeric|min:0|max:100',
         ]);
 
         $investor = Investor::create($data);
@@ -63,6 +65,7 @@ class InvestmentController extends BaseController
             'address' => 'nullable|string',
             'notes' => 'nullable|string',
             'is_active' => 'boolean',
+            'share_percentage' => 'nullable|numeric|min:0|max:100',
         ]);
 
         $old = $investor->toArray();

@@ -35,7 +35,11 @@ class ServiceIntakeController extends BaseController
 
     public function index(Request $request): JsonResponse
     {
-        $query = ServiceIntake::with(['items.problemType', 'customer', 'branchLocation', 'order', 'creator']);
+        // trashed=only shows just the deleted intakes (a "Delete history" tab) — e.g. a voided
+        // receipt, kept visible for reference instead of just vanishing from the list, which
+        // previously left no trace of why the receipt-number sequence jumps (see nextReceiptNumber()).
+        $base = $request->query('trashed') === 'only' ? ServiceIntake::onlyTrashed() : ServiceIntake::query();
+        $query = $base->with(['items.problemType', 'customer', 'branchLocation', 'order', 'creator']);
 
         if ($request->filled('status')) {
             $query->where('status', $request->status);
@@ -68,17 +72,56 @@ class ServiceIntakeController extends BaseController
             $query->whereDate('received_at', '<=', $request->to_date);
         }
 
-        $intakes = $query->latest()->paginate($request->get('per_page', 15));
+        $orderColumn = $request->query('trashed') === 'only' ? 'deleted_at' : 'created_at';
+        $intakes = $query->latest($orderColumn)->paginate($request->get('per_page', 15));
+
+        // Attach who deleted each one and why, from the audit log entry destroy() writes —
+        // batched in one query rather than N+1, and only ever runs on the trashed=only path.
+        if ($request->query('trashed') === 'only') {
+            $ids = $intakes->getCollection()->pluck('id');
+            $logs = AuditLog::where('resource_type', 'ServiceIntake')
+                ->where('action_type', 'delete_service_intake')
+                ->whereIn('resource_id', $ids)
+                ->with('actor:id,name')
+                ->latest('id')
+                ->get()
+                ->unique('resource_id')
+                ->keyBy('resource_id');
+
+            $intakes->getCollection()->transform(function (ServiceIntake $intake) use ($logs) {
+                $log = $logs->get($intake->id);
+                $intake->setAttribute('deleted_by', $log?->actor?->name);
+                $intake->setAttribute('delete_reason', $log?->description);
+
+                return $intake;
+            });
+        }
 
         return $this->paginated($intakes);
     }
 
     public function show(int $id): JsonResponse
     {
-        $intake = ServiceIntake::with(self::RELATIONS)->find($id);
+        // withTrashed() so a deleted intake can still be opened (read-only) from the Delete
+        // history tab instead of 404ing.
+        $intake = ServiceIntake::withTrashed()->with(self::RELATIONS)->find($id);
 
         if (!$intake) {
             return $this->notFound('Service intake not found.');
+        }
+
+        // Same deleted_by/delete_reason enrichment as index()'s trashed=only path -- the View
+        // modal re-fetches via this endpoint, so without this it'd silently drop the fields the
+        // list row already had and show "Deleted by unknown".
+        if ($intake->trashed()) {
+            $log = AuditLog::where('resource_type', 'ServiceIntake')
+                ->where('action_type', 'delete_service_intake')
+                ->where('resource_id', $intake->id)
+                ->with('actor:id,name')
+                ->latest('id')
+                ->first();
+            $intake->setAttribute('deleted_by', $log?->actor?->name);
+            $intake->setAttribute('delete_reason', $log?->description);
         }
 
         return $this->success($intake);
@@ -87,18 +130,23 @@ class ServiceIntakeController extends BaseController
     /**
      * A preview of what receipt_number the next created intake will get -- shown in the Create
      * modal's header so the desk can see it before saving (ServiceIntake only actually assigns
-     * it after insert, once the row's own id is known -- see ServiceIntake::boot()). Reads
-     * MySQL's own AUTO_INCREMENT counter directly rather than MAX(id)+1, which would under-count
-     * after the most recent row is ever deleted (InnoDB doesn't reuse the id). This is a
-     * preview, not a reservation -- a concurrent create could still land first, so the real
-     * badge shown after saving is always the source of truth, not this one.
+     * it after insert, once the row's own id is known -- see ServiceIntake::boot()).
+     *
+     * Previously read MySQL's own AUTO_INCREMENT counter via information_schema.TABLES, to avoid
+     * under-counting after the most recent row is deleted (InnoDB doesn't reuse the id) -- but on
+     * MySQL 8, that column is served from a periodically-refreshed cache
+     * (information_schema_stats_expiry, default 24h), not a live read, so it drifts from reality
+     * as soon as a handful of intakes are created within that window (confirmed: it reported 99
+     * when the real next id was 93). withTrashed()->max('id') + 1 gets the same "don't under-count
+     * past a deleted row" guarantee -- a soft-deleted row still occupies its id, so it still counts
+     * -- without ever being stale, since it reads the real table instead of a cached stat.
+     *
+     * Still just a preview, not a reservation -- a concurrent create could still land first, so
+     * the real badge shown after saving is always the source of truth, not this one.
      */
     public function nextReceiptNumber(): JsonResponse
     {
-        $nextId = DB::selectOne(
-            'SELECT AUTO_INCREMENT AS next_id FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
-            ['service_intakes']
-        )->next_id ?? ((int) ServiceIntake::max('id') + 1);
+        $nextId = (int) ServiceIntake::withTrashed()->max('id') + 1;
 
         return $this->success(['next_receipt_number' => 'RCV-' . str_pad((string) $nextId, 8, '0', STR_PAD_LEFT)]);
     }
@@ -280,7 +328,7 @@ class ServiceIntakeController extends BaseController
         return $this->success($intake->fresh(self::RELATIONS), 'Work status updated successfully.');
     }
 
-    public function destroy(int $id): JsonResponse
+    public function destroy(Request $request, int $id): JsonResponse
     {
         $intake = ServiceIntake::find($id);
 
@@ -292,9 +340,37 @@ class ServiceIntakeController extends BaseController
             return $this->error('Cannot delete an intake that has been converted to an order.', 422);
         }
 
+        $reason = trim((string) $request->input('reason', ''));
+        $oldData = $intake->toArray();
         $intake->delete();
 
+        // Previously undocumented — every other mutation here logs, delete silently didn't,
+        // which is exactly what the Delete history tab (index($trashed=only)) needs to show who
+        // voided a receipt and why.
+        AuditLog::log($request->user(), 'delete_service_intake', 'ServiceIntake', $id, $oldData, null,
+            $reason !== '' ? $reason : "Service intake {$intake->receipt_number} deleted");
+
         return $this->noContent('Service intake deleted successfully.');
+    }
+
+    /**
+     * Undo a soft delete from the Delete history tab. The receipt_number is never reused while
+     * an intake is trashed (see nextReceiptNumber()), so restoring it back can never collide.
+     */
+    public function restore(Request $request, int $id): JsonResponse
+    {
+        $intake = ServiceIntake::onlyTrashed()->find($id);
+
+        if (!$intake) {
+            return $this->notFound('Deleted service intake not found.');
+        }
+
+        $intake->restore();
+
+        AuditLog::log($request->user(), 'restore_service_intake', 'ServiceIntake', $id, null, $intake->toArray(),
+            "Service intake {$intake->receipt_number} restored");
+
+        return $this->success($intake->fresh(self::RELATIONS), 'Service intake restored successfully.');
     }
 
     /**
